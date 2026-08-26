@@ -102,6 +102,7 @@ model Client {
   citizenUser User?     @relation("CitizenAccess")
 
   @@index([officeId, ownerId])
+  @@index([officeId, createdAt])
 }
 
 model Case {
@@ -129,6 +130,7 @@ model Case {
 
   @@index([officeId, ownerId])
   @@index([officeId, lawyerId])
+  @@index([officeId, createdAt])
   @@unique([officeId, number])
 }
 
@@ -146,6 +148,8 @@ model Session {
   notes     String?       @db.Text
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
+
+  @@index([officeId, date])
 }
 
 model Invoice {
@@ -164,6 +168,10 @@ model Invoice {
   notes     String?
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
+
+  @@index([officeId, status])
+  @@index([officeId, createdAt])
+  @@unique([officeId, number])
 }
 
 model Document {
@@ -182,6 +190,7 @@ model Document {
   updatedAt DateTime @updatedAt
 
   @@index([officeId, ownerId])
+  @@index([officeId, createdAt])
 }
 
 model Notification {
@@ -194,6 +203,8 @@ model Notification {
   officeId  String
   office    Office   @relation(fields: [officeId], references: [id])
   createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
 }
 
 model CalendarEvent {

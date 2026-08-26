@@ -1,0 +1,82 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { prisma } from '@/lib/prisma'
+import { requireOfficeUser } from '@/lib/auth-server'
+import { SessionStatus } from '@prisma/client'
+import { caseVisibilityWhere, sessionVisibilityWhere } from '@/lib/tenant-scope'
+import { rateLimit } from '@/lib/api-security'
+import { auditLog } from '@/lib/audit'
+import { notifyUser } from '@/lib/notify'
+
+const SESSION_STATUSES = new Set<string>(Object.values(SessionStatus))
+
+export async function GET(req: NextRequest) {
+  const auth = await requireOfficeUser(req)
+  if (!auth.ok) return auth.response
+
+  const sessions = await prisma.session.findMany({
+    where: sessionVisibilityWhere(auth.user),
+    include: { case: { include: { client: { select: { name: true } } } } },
+    orderBy: { date: 'asc' },
+  })
+  return NextResponse.json(sessions)
+}
+
+export async function POST(req: NextRequest) {
+  const auth = await requireOfficeUser(req)
+  if (!auth.ok) return auth.response
+  const limited = rateLimit(req, `sessions:create:${auth.user.id}`, { limit: 120, windowMs: 60 * 60_000 })
+  if (limited) return limited
+
+  const body = await req.json().catch(() => null)
+  if (
+    !body ||
+    typeof body.caseId !== 'string' ||
+    typeof body.date !== 'string' ||
+    typeof body.time !== 'string' ||
+    typeof body.court !== 'string' ||
+    !body.caseId.trim() ||
+    !body.date.trim() ||
+    !body.time.trim() ||
+    !body.court.trim()
+  ) {
+    return NextResponse.json({ error: 'بيانات الجلسة المطلوبة ناقصة' }, { status: 400 })
+  }
+
+  const date = new Date(body.date)
+  if (Number.isNaN(date.getTime())) {
+    return NextResponse.json({ error: 'تاريخ الجلسة غير صالح' }, { status: 400 })
+  }
+
+  const caseRow = await prisma.case.findFirst({
+    where: caseVisibilityWhere(auth.user, { id: body.caseId }),
+    select: { id: true, number: true, ownerId: true },
+  })
+  if (!caseRow) return NextResponse.json({ error: 'القضية غير موجودة' }, { status: 400 })
+
+  const status = typeof body.status === 'string' && SESSION_STATUSES.has(body.status)
+    ? body.status as SessionStatus
+    : undefined
+
+  const s = await prisma.session.create({
+    data: {
+      caseId: caseRow.id,
+      date,
+      time: body.time.trim(),
+      court: body.court.trim(),
+      judge: typeof body.judge === 'string' && body.judge.trim() ? body.judge.trim() : null,
+      status,
+      notes: typeof body.notes === 'string' && body.notes.trim() ? body.notes.trim() : null,
+      officeId: auth.user.officeId,
+    },
+    include: { case: { include: { client: { select: { name: true } } } } },
+  })
+  await auditLog(req, auth.user, 'session.created', {
+    entityType: 'session',
+    entityId: s.id,
+    metadata: { caseId: caseRow.id, status: s.status },
+  })
+  if (caseRow.ownerId !== auth.user.id) {
+    await notifyUser(caseRow.ownerId, auth.user.officeId, 'جلسة جديدة', `تمت إضافة جلسة بتاريخ ${s.date.toLocaleDateString('ar-JO')} لقضية ${caseRow.number}`)
+  }
+  return NextResponse.json(s, { status: 201 })
+}

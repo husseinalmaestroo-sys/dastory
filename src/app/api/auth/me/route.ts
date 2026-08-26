@@ -1,0 +1,30 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { prisma } from '@/lib/prisma'
+import { isPlatformAdminEmail, requireActiveUser } from '@/lib/auth-server'
+
+export async function GET(req: NextRequest) {
+  const auth = await requireActiveUser(req)
+  if (!auth.ok) return auth.response
+
+  const user = await prisma.user.findUnique({
+    where: { id: auth.user.id },
+    include: { office: { select: { name: true } } },
+  })
+
+  if (!user) return NextResponse.json({ error: 'جلسة منتهية' }, { status: 401 })
+
+  return NextResponse.json({
+    user: {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      officeId: user.officeId,
+      officeName: user.office?.name ?? null,
+      isPlatformAdmin: user.role === 'OFFICE_MANAGER' && isPlatformAdminEmail(user.email),
+      barNumber: user.barNumber,
+      clientId: user.clientId ?? null,
+      twoFactorEnabled: user.twoFactorEnabled,
+    },
+  })
+}

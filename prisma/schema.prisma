@@ -1,0 +1,284 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  OFFICE_MANAGER
+  LAWYER
+  CITIZEN
+}
+
+enum CaseStatus {
+  ACTIVE
+  CLOSED
+  SUSPENDED
+  PENDING
+}
+
+enum SessionStatus {
+  UPCOMING
+  DONE
+  POSTPONED
+}
+
+enum InvoiceStatus {
+  PAID
+  UNPAID
+  PARTIAL
+  OVERDUE
+}
+
+model Office {
+  id            String         @id @default(cuid())
+  name          String
+  phone         String?
+  address       String?
+  active        Boolean        @default(true)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  users         User[]
+  clients       Client[]
+  cases         Case[]
+  sessions      Session[]
+  invoices      Invoice[]
+  documents     Document[]
+  notifications Notification[]
+  events        CalendarEvent[]
+  auditLogs     AuditLog[]
+  timeEntries   TimeEntry[]
+}
+
+model User {
+  id            String         @id @default(cuid())
+  email         String         @unique
+  password      String
+  name          String
+  role          Role
+  phone         String?
+  barNumber     String?
+  officeId      String
+  office        Office         @relation(fields: [officeId], references: [id])
+  sessionVersion Int           @default(0)
+  twoFactorEnabled Boolean      @default(false)
+  twoFactorSecret String?       @db.Text
+  active        Boolean        @default(true)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  cases         Case[]         @relation("LawyerCases")
+  ownedClients  Client[]       @relation("ClientOwner")
+  ownedCases    Case[]         @relation("CaseOwner")
+  ownedDocuments Document[]    @relation("DocumentOwner")
+  notifications Notification[]
+  auditLogs     AuditLog[]     @relation("AuditActor")
+  clientId      String?        @unique
+  linkedClient  Client?        @relation("CitizenAccess", fields: [clientId], references: [id])
+  timeEntries   TimeEntry[]
+  createdEvents CalendarEvent[] @relation("CalendarEventCreator")
+
+  @@index([officeId, role])
+}
+
+model Client {
+  id          String    @id @default(cuid())
+  name        String
+  phone       String?
+  email       String?
+  idNumber    String?
+  address     String?
+  officeId    String
+  office      Office    @relation(fields: [officeId], references: [id])
+  ownerId     String
+  owner       User      @relation("ClientOwner", fields: [ownerId], references: [id])
+  active      Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  cases       Case[]
+  invoices    Invoice[]
+  citizenUser User?     @relation("CitizenAccess")
+
+  @@index([officeId, ownerId])
+}
+
+model Case {
+  id          String     @id @default(cuid())
+  number      String
+  title       String
+  type        String
+  court       String?
+  status      CaseStatus @default(ACTIVE)
+  clientId    String
+  client      Client     @relation(fields: [clientId], references: [id])
+  lawyerId    String?
+  lawyer      User?      @relation("LawyerCases", fields: [lawyerId], references: [id])
+  ownerId     String
+  owner       User       @relation("CaseOwner", fields: [ownerId], references: [id])
+  officeId    String
+  office      Office     @relation(fields: [officeId], references: [id])
+  notes       String?    @db.Text
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  sessions    Session[]
+  invoices    Invoice[]
+  documents   Document[]
+  timeEntries TimeEntry[]
+
+  @@index([officeId, ownerId])
+  @@index([officeId, lawyerId])
+  @@unique([officeId, number])
+}
+
+model Session {
+  id        String        @id @default(cuid())
+  date      DateTime
+  time      String
+  court     String
+  judge     String?
+  caseId    String
+  case      Case          @relation(fields: [caseId], references: [id])
+  officeId  String
+  office    Office        @relation(fields: [officeId], references: [id])
+  status    SessionStatus @default(UPCOMING)
+  notes     String?       @db.Text
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+}
+
+model Invoice {
+  id        String        @id @default(cuid())
+  number    String
+  amount    Float
+  paid      Float         @default(0)
+  status    InvoiceStatus @default(UNPAID)
+  dueDate   DateTime?
+  clientId  String
+  client    Client        @relation(fields: [clientId], references: [id])
+  caseId    String?
+  case      Case?         @relation(fields: [caseId], references: [id])
+  officeId  String
+  office    Office        @relation(fields: [officeId], references: [id])
+  notes     String?
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+}
+
+model Document {
+  id        String   @id @default(cuid())
+  name      String
+  type      String
+  size      Int?
+  url       String?  @db.Text
+  caseId    String?
+  case      Case?    @relation(fields: [caseId], references: [id])
+  officeId  String
+  office    Office   @relation(fields: [officeId], references: [id])
+  ownerId   String
+  owner     User     @relation("DocumentOwner", fields: [ownerId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([officeId, ownerId])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  title     String
+  body      String
+  read      Boolean  @default(false)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  officeId  String
+  office    Office   @relation(fields: [officeId], references: [id])
+  createdAt DateTime @default(now())
+}
+
+model CalendarEvent {
+  id            String   @id @default(cuid())
+  title         String
+  date          DateTime
+  type          String   @default("general")
+  officeId      String
+  office        Office   @relation(fields: [officeId], references: [id])
+  createdById   String?
+  createdBy     User?    @relation("CalendarEventCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt     DateTime @default(now())
+
+  @@index([officeId, date])
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  officeId    String?
+  office      Office?  @relation(fields: [officeId], references: [id], onDelete: SetNull)
+  actorId     String?
+  actor       User?    @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+  actorEmail  String?
+  actorRole   Role?
+  action      String
+  entityType  String?
+  entityId    String?
+  ipAddress   String?
+  userAgent   String?  @db.Text
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([officeId, createdAt])
+  @@index([actorId, createdAt])
+  @@index([action, createdAt])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+model TimeEntry {
+  id        String   @id @default(cuid())
+  officeId  String
+  office    Office   @relation(fields: [officeId], references: [id])
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  caseId    String?
+  case      Case?    @relation(fields: [caseId], references: [id], onDelete: SetNull)
+  task      String
+  minutes   Int
+  billable  Boolean  @default(true)
+  invoiced  Boolean  @default(false)
+  date      DateTime @default(now())
+  createdAt DateTime @default(now())
+
+  @@index([officeId, userId, date])
+  @@index([caseId])
+}
+
+model TrialRequest {
+  id              String   @id @default(cuid())
+  officeName      String
+  officeLicense   String
+  city            String
+  officePhone     String
+  address         String?
+  teamSize        String?
+  specialty       String?
+  lawyerName      String
+  lawyerBarNumber String
+  email           String
+  mobile          String
+  nationalId      String
+  experience      String?
+  status          String   @default("NEW")
+  createdAt       DateTime @default(now())
+
+  @@index([email])
+  @@index([createdAt])
+}

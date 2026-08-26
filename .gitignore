@@ -1,0 +1,37 @@
+# Dependencies
+node_modules
+
+# Build output / caches
+.next
+*.tsbuildinfo
+
+# Env files — never commit real secrets
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+
+# Uploaded documents (user data — never belongs in version control)
+/storage
+
+# Local encrypted DB/file backups produced by scripts/backup-*.sh
+/backups
+
+# Generated Prisma client (if ever configured with a custom output path)
+/src/generated/prisma
+
+# Misc local state
+.data
+*.tmp
+*.sqlite
+*.sqlite3
+*.db
+.DS_Store
+Thumbs.db
+
+# Claude Code local session state — permission history can contain
+# incidental local test data; this file is machine/session-specific and not
+# meant to be shared.
+.claude/settings.local.json

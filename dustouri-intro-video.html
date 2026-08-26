@@ -1,0 +1,472 @@
+<title>دُسْتُورِي — الفيديو التعريفي</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+:root{
+  --navy:#0F172A;
+  --navy-deep:#070E1C;
+  --gold:#C8A84B;
+  --gold-l:#E2C97E;
+  --gold-dim:rgba(200,168,75,.18);
+  --w100:#fff;
+  --w70:rgba(255,255,255,.7);
+  --w40:rgba(255,255,255,.4);
+  --w12:rgba(255,255,255,.12);
+  --w06:rgba(255,255,255,.06);
+}
+
+body{
+  background:var(--navy);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  min-height:100vh;
+  padding:24px;
+  font-family:'Segoe UI',system-ui,-apple-system,Tahoma,Arial,sans-serif;
+  direction:rtl;
+}
+
+/* ── Frame ── */
+.vf{
+  width:100%;
+  max-width:820px;
+  aspect-ratio:16/9;
+  background:var(--navy-deep);
+  border-radius:18px;
+  position:relative;
+  overflow:hidden;
+  border:1px solid rgba(200,168,75,.22);
+  box-shadow:
+    0 0 0 1px rgba(200,168,75,.08),
+    0 32px 90px rgba(0,0,0,.65),
+    0 8px 24px rgba(0,0,0,.5);
+}
+
+canvas#bgc{position:absolute;inset:0;width:100%;height:100%}
+
+/* ambient glows */
+.gl{position:absolute;pointer-events:none;border-radius:50%}
+.gl-1{width:55%;height:70%;top:-20%;right:-10%;
+  background:radial-gradient(ellipse,rgba(200,168,75,.09),transparent 65%)}
+.gl-2{width:45%;height:60%;bottom:-20%;left:-5%;
+  background:radial-gradient(ellipse,rgba(59,130,246,.06),transparent 65%)}
+
+/* ── Scenes ── */
+.sc{
+  position:absolute;inset:0;
+  display:flex;flex-direction:column;
+  align-items:center;justify-content:center;
+  padding:6% 8%;
+  opacity:0;
+  transition:opacity .9s cubic-bezier(.4,0,.2,1);
+  pointer-events:none;
+  z-index:2;
+}
+.sc.on{opacity:1;pointer-events:auto}
+
+/* ── Scene 1: Brand ── */
+.s1-logo{
+  margin-bottom:22px;
+  filter:drop-shadow(0 0 28px rgba(200,168,75,.45));
+  animation:logo-float 4s ease-in-out infinite;
+}
+@keyframes logo-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+
+.s1-name{
+  font-size:clamp(34px,6vw,60px);
+  font-weight:900;
+  color:var(--gold);
+  letter-spacing:.03em;
+  text-shadow:0 0 50px rgba(200,168,75,.45),0 2px 20px rgba(0,0,0,.4);
+  margin-bottom:10px;
+  animation:glow-pulse 3s ease-in-out infinite;
+}
+@keyframes glow-pulse{
+  0%,100%{text-shadow:0 0 50px rgba(200,168,75,.45),0 2px 20px rgba(0,0,0,.4)}
+  50%{text-shadow:0 0 80px rgba(200,168,75,.7),0 2px 20px rgba(0,0,0,.4)}
+}
+.s1-sub{
+  font-size:clamp(12px,2vw,17px);
+  color:var(--w70);
+  font-weight:500;
+  letter-spacing:.06em;
+}
+
+/* ── Feature scenes ── */
+.feat-icon{
+  width:58px;height:58px;
+  background:var(--gold-dim);
+  border:1.5px solid rgba(200,168,75,.3);
+  border-radius:16px;
+  display:flex;align-items:center;justify-content:center;
+  margin-bottom:16px;
+  animation:ring-pulse 3s ease-in-out infinite;
+}
+@keyframes ring-pulse{
+  0%,100%{box-shadow:0 0 0 0 rgba(200,168,75,.35)}
+  60%{box-shadow:0 0 0 14px rgba(200,168,75,0)}
+}
+
+.feat-title{
+  font-size:clamp(20px,3.8vw,36px);
+  font-weight:900;
+  color:var(--w100);
+  text-align:center;
+  margin-bottom:10px;
+  line-height:1.35;
+  text-wrap:balance;
+}
+.feat-title .acc{color:var(--gold-l)}
+
+.feat-desc{
+  font-size:clamp(11px,1.7vw,15px);
+  color:var(--w70);
+  text-align:center;
+  line-height:1.8;
+  max-width:400px;
+  font-weight:400;
+}
+
+/* ── Mini mockups ── */
+.mkp{
+  background:var(--w06);
+  border:1px solid rgba(200,168,75,.12);
+  border-radius:12px;
+  padding:12px 16px;
+  width:100%;max-width:370px;
+  margin-top:14px;
+}
+.mkrow{
+  display:flex;align-items:center;gap:9px;
+  padding:7px 0;
+  border-bottom:1px solid rgba(255,255,255,.04);
+  font-size:clamp(10px,1.5vw,13px);
+  color:var(--w70);
+}
+.mkrow:last-child{border-bottom:none}
+.dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.dg{background:#22C55E}.dy{background:#F59E0B}.db{background:#60A5FA}
+.badge{
+  margin-right:auto;
+  font-size:10px;padding:2px 8px;
+  border-radius:20px;
+  background:rgba(200,168,75,.14);
+  color:var(--gold-l);font-weight:700;
+  flex-shrink:0;
+}
+
+/* ── Chat mockup ── */
+.chatbox{
+  width:100%;max-width:370px;
+  margin-top:14px;
+  display:flex;flex-direction:column;gap:7px;
+}
+.msg{
+  padding:9px 13px;
+  border-radius:12px;
+  font-size:clamp(10px,1.4vw,12.5px);
+  line-height:1.65;
+  max-width:82%;
+}
+.msg.u{
+  background:rgba(200,168,75,.14);
+  border:1px solid rgba(200,168,75,.22);
+  color:var(--w70);
+  align-self:flex-end;text-align:right;
+}
+.msg.a{
+  background:var(--w06);
+  border:1px solid var(--w12);
+  color:var(--w100);
+  align-self:flex-start;text-align:right;
+}
+.typing{
+  display:flex;gap:5px;
+  padding:9px 13px;
+  background:var(--w06);
+  border:1px solid var(--w12);
+  border-radius:12px;
+  width:fit-content;
+  align-self:flex-start;
+}
+.td{
+  width:5px;height:5px;
+  background:var(--gold);border-radius:50%;
+  animation:tbounce 1.4s ease-in-out infinite;
+}
+.td:nth-child(2){animation-delay:.2s}
+.td:nth-child(3){animation-delay:.4s}
+@keyframes tbounce{
+  0%,60%,100%{transform:translateY(0);opacity:.5}
+  30%{transform:translateY(-7px);opacity:1}
+}
+
+/* ── Stats grid ── */
+.sgrid{
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:12px;
+  width:100%;max-width:460px;
+  margin-top:18px;
+}
+.scard{
+  background:var(--w06);
+  border:1px solid rgba(200,168,75,.12);
+  border-radius:12px;
+  padding:14px 10px;text-align:center;
+}
+.snum{
+  display:block;
+  font-size:clamp(20px,3.5vw,30px);
+  font-weight:900;
+  color:var(--gold-l);
+  font-variant-numeric:tabular-nums;
+}
+.slbl{
+  display:block;
+  font-size:10px;
+  color:var(--w40);
+  font-weight:500;
+  margin-top:4px;
+  line-height:1.4;
+}
+
+/* ── CTA ── */
+.cta-h{
+  font-size:clamp(18px,3.2vw,30px);
+  font-weight:900;
+  color:var(--w100);
+  text-align:center;
+  text-wrap:balance;
+  line-height:1.45;
+  margin-bottom:10px;
+}
+.cta-h .g{color:var(--gold-l)}
+
+.cta-btn{
+  display:inline-flex;align-items:center;gap:8px;
+  padding:12px 30px;
+  background:linear-gradient(135deg,var(--gold) 0%,#9A7A2E 100%);
+  border-radius:50px;
+  color:var(--navy-deep);
+  font-weight:900;
+  font-size:clamp(12px,1.8vw,15px);
+  margin-top:18px;
+  box-shadow:0 8px 28px rgba(200,168,75,.38);
+  animation:btn-pulse 2.2s ease-in-out infinite;
+}
+@keyframes btn-pulse{
+  0%,100%{transform:scale(1);box-shadow:0 8px 28px rgba(200,168,75,.38)}
+  50%{transform:scale(1.035);box-shadow:0 12px 42px rgba(200,168,75,.58)}
+}
+
+/* ── Progress dots ── */
+.pdots{
+  position:absolute;bottom:14px;
+  left:50%;transform:translateX(-50%);
+  display:flex;gap:6px;z-index:10;
+}
+.pd{
+  width:6px;height:6px;border-radius:50%;
+  background:rgba(255,255,255,.22);
+  transition:all .4s ease;
+}
+.pd.on{width:22px;border-radius:3px;background:var(--gold)}
+
+@media(prefers-reduced-motion:reduce){
+  *{animation-duration:.01ms!important;transition-duration:.01ms!important}
+}
+</style>
+
+<div class="vf">
+  <div class="gl gl-1"></div>
+  <div class="gl gl-2"></div>
+  <canvas id="bgc"></canvas>
+
+  <!-- S1: Brand -->
+  <div class="sc on" id="s1">
+    <svg class="s1-logo" width="76" height="76" viewBox="0 0 72 72" fill="none">
+      <rect width="72" height="72" rx="15" fill="#0F172A"/>
+      <rect x="1" y="1" width="70" height="70" rx="14" stroke="#C8A84B" stroke-width="1.5" stroke-opacity=".45"/>
+      <line x1="36" y1="11" x2="36" y2="61" stroke="#C8A84B" stroke-width="2.8" stroke-linecap="round"/>
+      <line x1="15" y1="22" x2="57" y2="22" stroke="#C8A84B" stroke-width="2.8" stroke-linecap="round"/>
+      <circle cx="15" cy="32" r="8.5" fill="none" stroke="#C8A84B" stroke-width="2.5"/>
+      <circle cx="57" cy="32" r="8.5" fill="none" stroke="#C8A84B" stroke-width="2.5"/>
+      <line x1="25" y1="61" x2="47" y2="61" stroke="#C8A84B" stroke-width="2.8" stroke-linecap="round"/>
+    </svg>
+    <div class="s1-name">دُسْتُورِي</div>
+    <div class="s1-sub">المنصة القانونية السحابية الأولى في الأردن</div>
+  </div>
+
+  <!-- S2: Cases -->
+  <div class="sc" id="s2">
+    <div class="feat-icon">
+      <svg width="26" height="26" fill="none" stroke="#C8A84B" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2M9 12h6M9 16h4"/>
+      </svg>
+    </div>
+    <div class="feat-title">إدارة <span class="acc">القضايا والجلسات</span></div>
+    <div class="feat-desc">تتبّع كل قضية بدقة — الجلسات، المواعيد، الأطراف، والمستجدات من مكان واحد</div>
+    <div class="mkp">
+      <div class="mkrow"><div class="dot dg"></div>القضية ٢٠٢٥/١١٢ — جلسة غداً<div class="badge">نشطة</div></div>
+      <div class="mkrow"><div class="dot dy"></div>القضية ٢٠٢٤/٣٤٧ — بانتظار الحكم<div class="badge">قيد النظر</div></div>
+      <div class="mkrow"><div class="dot db"></div>القضية ٢٠٢٥/٠٨٩ — رُفعت اليوم<div class="badge">جديدة</div></div>
+    </div>
+  </div>
+
+  <!-- S3: AI -->
+  <div class="sc" id="s3">
+    <div class="feat-icon">
+      <svg width="26" height="26" fill="none" stroke="#C8A84B" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+      </svg>
+    </div>
+    <div class="feat-title">محرك <span class="acc">الذكاء الاصطناعي</span> القانوني</div>
+    <div class="feat-desc">ابحث في التشريعات، حلّل المستندات، واحصل على الإجابة القانونية فوراً</div>
+    <div class="chatbox">
+      <div class="msg u">ما هي مدة التقادم في قضايا الملكية العقارية؟</div>
+      <div class="msg a">وفق القانون المدني الأردني رقم ٤٣ لسنة ١٩٧٦، المادة ٤٤٩، مدة التقادم تبلغ ١٥ سنة…</div>
+      <div class="typing"><div class="td"></div><div class="td"></div><div class="td"></div></div>
+    </div>
+  </div>
+
+  <!-- S4: Stats -->
+  <div class="sc" id="s4">
+    <div class="feat-title">كل ما يحتاجه <span class="acc">مكتبك القانوني</span></div>
+    <div class="feat-desc">الموكلون، المستندات، المالية، والتقارير — كل شيء في منصة واحدة سحابية</div>
+    <div class="sgrid">
+      <div class="scard"><span class="snum" id="cn1">٠</span><span class="slbl">مكتب محاماة</span></div>
+      <div class="scard"><span class="snum" id="cn2">٠</span><span class="slbl">قضية مُدارة</span></div>
+      <div class="scard"><span class="snum" id="cn3">٠</span><span class="slbl">نسبة رضا المستخدمين</span></div>
+    </div>
+  </div>
+
+  <!-- S5: CTA -->
+  <div class="sc" id="s5">
+    <svg width="52" height="52" viewBox="0 0 72 72" fill="none" style="margin-bottom:16px;filter:drop-shadow(0 0 18px rgba(200,168,75,.4))">
+      <rect width="72" height="72" rx="15" fill="#0F172A"/>
+      <rect x="1" y="1" width="70" height="70" rx="14" stroke="#C8A84B" stroke-width="1.5" stroke-opacity=".45"/>
+      <line x1="36" y1="11" x2="36" y2="61" stroke="#C8A84B" stroke-width="2.8" stroke-linecap="round"/>
+      <line x1="15" y1="22" x2="57" y2="22" stroke="#C8A84B" stroke-width="2.8" stroke-linecap="round"/>
+      <circle cx="15" cy="32" r="8.5" fill="none" stroke="#C8A84B" stroke-width="2.5"/>
+      <circle cx="57" cy="32" r="8.5" fill="none" stroke="#C8A84B" stroke-width="2.5"/>
+      <line x1="25" y1="61" x2="47" y2="61" stroke="#C8A84B" stroke-width="2.8" stroke-linecap="round"/>
+    </svg>
+    <div class="cta-h">ابدأ تجربتك المجانية مع <span class="g">دُسْتُورِي</span> اليوم</div>
+    <div class="feat-desc">نظام سحابي متكامل · مصمم للمحامين الأردنيين · آمن وموثوق</div>
+    <div class="cta-btn">
+      <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+      </svg>
+      ابدأ الآن مجاناً
+    </div>
+  </div>
+
+  <!-- Progress dots -->
+  <div class="pdots">
+    <div class="pd on" id="pd0"></div>
+    <div class="pd" id="pd1"></div>
+    <div class="pd" id="pd2"></div>
+    <div class="pd" id="pd3"></div>
+    <div class="pd" id="pd4"></div>
+  </div>
+</div>
+
+<script>
+/* ── Background canvas ── */
+const cv = document.getElementById('bgc');
+const cx = cv.getContext('2d');
+const pts = [];
+
+function rsz(){
+  cv.width = cv.offsetWidth;
+  cv.height = cv.offsetHeight;
+}
+window.addEventListener('resize', rsz);
+rsz();
+
+for(let i=0;i<50;i++) pts.push({
+  x:Math.random()*1200, y:Math.random()*700,
+  vx:(Math.random()-.5)*.22, vy:(Math.random()-.5)*.22,
+  r:Math.random()*1.4+.3,
+  op:Math.random()*.45+.15,
+  pa:Math.random()*Math.PI*2
+});
+
+function drawBg(){
+  if(!cv.width) return;
+  cx.clearRect(0,0,cv.width,cv.height);
+
+  /* subtle grid */
+  cx.lineWidth=.5;
+  cx.strokeStyle='rgba(200,168,75,.045)';
+  for(let x=0;x<cv.width;x+=60){cx.beginPath();cx.moveTo(x,0);cx.lineTo(x,cv.height);cx.stroke()}
+  for(let y=0;y<cv.height;y+=60){cx.beginPath();cx.moveTo(0,y);cx.lineTo(cv.width,y);cx.stroke()}
+
+  /* diagonal lines */
+  cx.strokeStyle='rgba(200,168,75,.025)';
+  for(let i=-cv.height;i<cv.width+cv.height;i+=90){
+    cx.beginPath();cx.moveTo(i,0);cx.lineTo(i+cv.height,cv.height);cx.stroke()
+  }
+
+  /* particles + connections */
+  pts.forEach(p=>{
+    p.x+=p.vx; p.y+=p.vy; p.pa+=.018;
+    if(p.x<0)p.x=cv.width; if(p.x>cv.width)p.x=0;
+    if(p.y<0)p.y=cv.height; if(p.y>cv.height)p.y=0;
+    const op=p.op*(.7+Math.sin(p.pa)*.3);
+    cx.beginPath(); cx.arc(p.x,p.y,p.r,0,Math.PI*2);
+    cx.fillStyle=`rgba(200,168,75,${op})`;cx.fill();
+  });
+
+  for(let i=0;i<pts.length;i++){
+    for(let j=i+1;j<pts.length;j++){
+      const dx=pts[i].x-pts[j].x, dy=pts[i].y-pts[j].y;
+      const d=Math.sqrt(dx*dx+dy*dy);
+      if(d<90){
+        cx.beginPath(); cx.moveTo(pts[i].x,pts[i].y); cx.lineTo(pts[j].x,pts[j].y);
+        cx.strokeStyle=`rgba(200,168,75,${.07*(1-d/90)})`; cx.lineWidth=.5; cx.stroke();
+      }
+    }
+  }
+
+  requestAnimationFrame(drawBg);
+}
+drawBg();
+
+/* ── Scene rotation ── */
+const IDS=['s1','s2','s3','s4','s5'];
+const PDS=['pd0','pd1','pd2','pd3','pd4'];
+let cur=0;
+const DUR=4600;
+
+function toScene(n){
+  document.getElementById(IDS[cur]).classList.remove('on');
+  document.getElementById(PDS[cur]).classList.remove('on');
+  cur=n%IDS.length;
+  document.getElementById(IDS[cur]).classList.add('on');
+  document.getElementById(PDS[cur]).classList.add('on');
+  if(cur===3) animStats();
+}
+setInterval(()=>toScene(cur+1), DUR);
+
+/* ── Counter animation ── */
+const STATS=[
+  {id:'cn1',target:500,suffix:'+',ar:true},
+  {id:'cn2',target:12000,suffix:'+',ar:true},
+  {id:'cn3',target:99,suffix:'%',ar:true},
+];
+function toAr(n){return String(n).replace(/\d/g,d=>'٠١٢٣٤٥٦٧٨٩'[d])}
+function animStats(){
+  STATS.forEach(s=>{
+    let v=0;
+    const el=document.getElementById(s.id);
+    const step=Math.ceil(s.target/55);
+    const t=setInterval(()=>{
+      v=Math.min(v+step, s.target);
+      el.textContent=toAr(v)+s.suffix;
+      if(v>=s.target) clearInterval(t);
+    },36);
+  });
+}
+</script>

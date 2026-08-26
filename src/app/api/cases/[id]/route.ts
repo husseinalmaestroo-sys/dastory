@@ -6,6 +6,7 @@ import { caseVisibilityWhere, clientWritableWhere, documentVisibilityWhere, isOf
 import { rateLimit } from '@/lib/api-security'
 import { auditLog } from '@/lib/audit'
 import { notifyUser } from '@/lib/notify'
+import { deleteDocumentFile } from '@/lib/document-storage'
 
 const CASE_STATUSES = new Set<string>(Object.values(CaseStatus))
 
@@ -128,16 +129,32 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   })
   if (!existing) return NextResponse.json({ error: 'غير موجود' }, { status: 404 })
 
-  await prisma.$transaction([
+  const documentsToRemove = await prisma.document.findMany({
+    where: { caseId: existing.id },
+    select: { url: true },
+  })
+
+  const [, , detachedInvoices] = await prisma.$transaction([
     prisma.document.deleteMany({ where: { caseId: existing.id } }),
     prisma.session.deleteMany({ where: { caseId: existing.id } }),
-    prisma.invoice.deleteMany({ where: { caseId: existing.id } }),
+    // Invoices are billing/accounting records — detach rather than delete,
+    // so a paid invoice is never destroyed just because its case was
+    // removed. caseId is optional; a caseless invoice stays visible via
+    // its client (see invoiceVisibilityWhere).
+    prisma.invoice.updateMany({ where: { caseId: existing.id }, data: { caseId: null } }),
     prisma.case.delete({ where: { id: existing.id } }),
   ])
+
+  // Best-effort: clean up the now-orphaned files on disk. A failure here
+  // (already-missing file, transient I/O error) is logged but must not
+  // fail the request — the DB state above is already committed and is the
+  // source of truth for what the user sees.
+  await Promise.all(documentsToRemove.map((doc) => deleteDocumentFile(doc.url)))
 
   await auditLog(req, auth.user, 'case.deleted', {
     entityType: 'case',
     entityId: existing.id,
+    metadata: { deletedDocuments: documentsToRemove.length, detachedInvoices: detachedInvoices.count },
   })
   return NextResponse.json({ ok: true })
 }

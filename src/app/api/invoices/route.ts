@@ -5,29 +5,37 @@ import { InvoiceStatus } from '@prisma/client'
 import { caseVisibilityWhere, clientWritableWhere, invoiceVisibilityWhere } from '@/lib/tenant-scope'
 import { rateLimit } from '@/lib/api-security'
 import { auditLog } from '@/lib/audit'
+import { buildPage, cursorWhereClause, paginationHeaders, parsePagination } from '@/lib/pagination'
+import type { Prisma } from '@prisma/client'
 
 const INVOICE_STATUSES = new Set<string>(Object.values(InvoiceStatus))
-
-const LIST_CAP = 200
+const DEFAULT_LIMIT = 200
 
 export async function GET(req: NextRequest) {
   const auth = await requireOfficeUser(req)
   if (!auth.ok) return auth.response
 
-  const where = invoiceVisibilityWhere(auth.user)
-  const [invoices, total] = await Promise.all([
+  const pagination = parsePagination(req, DEFAULT_LIMIT)
+  if (!pagination.ok) return pagination.response
+  const { limit, cursor } = pagination.params
+
+  const where = invoiceVisibilityWhere(auth.user, cursorWhereClause('createdAt', 'desc', cursor) as Prisma.InvoiceWhereInput)
+
+  const [rows, total] = await Promise.all([
     prisma.invoice.findMany({
       where,
       include: {
         client: { select: { name: true } },
         case: { select: { number: true, title: true } },
       },
-      orderBy: { createdAt: 'desc' },
-      take: LIST_CAP,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: limit + 1,
     }),
-    prisma.invoice.count({ where }),
+    cursor ? Promise.resolve(undefined) : prisma.invoice.count({ where: invoiceVisibilityWhere(auth.user) }),
   ])
-  return NextResponse.json(invoices, { headers: { 'X-Total-Count': String(total) } })
+
+  const result = buildPage(rows, limit, (r) => r.createdAt)
+  return NextResponse.json(result.page, { headers: paginationHeaders(result, total) })
 }
 
 export async function POST(req: NextRequest) {

@@ -6,19 +6,34 @@ import { caseVisibilityWhere, sessionVisibilityWhere } from '@/lib/tenant-scope'
 import { rateLimit } from '@/lib/api-security'
 import { auditLog } from '@/lib/audit'
 import { notifyUser } from '@/lib/notify'
+import { buildPage, combineWhere, cursorWhereClause, paginationHeaders, parsePagination } from '@/lib/pagination'
+import type { Prisma } from '@prisma/client'
 
 const SESSION_STATUSES = new Set<string>(Object.values(SessionStatus))
+const DEFAULT_LIMIT = 200
 
 export async function GET(req: NextRequest) {
   const auth = await requireOfficeUser(req)
   if (!auth.ok) return auth.response
 
-  const sessions = await prisma.session.findMany({
-    where: sessionVisibilityWhere(auth.user),
+  const pagination = parsePagination(req, DEFAULT_LIMIT)
+  if (!pagination.ok) return pagination.response
+  const { limit, cursor } = pagination.params
+
+  const where = combineWhere(
+    sessionVisibilityWhere(auth.user),
+    cursorWhereClause('date', 'asc', cursor)
+  ) as Prisma.SessionWhereInput
+
+  const rows = await prisma.session.findMany({
+    where,
     include: { case: { include: { client: { select: { name: true } } } } },
-    orderBy: { date: 'asc' },
+    orderBy: [{ date: 'asc' }, { id: 'asc' }],
+    take: limit + 1,
   })
-  return NextResponse.json(sessions)
+
+  const result = buildPage(rows, limit, (r) => r.date)
+  return NextResponse.json(result.page, { headers: paginationHeaders(result) })
 }
 
 export async function POST(req: NextRequest) {

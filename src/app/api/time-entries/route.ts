@@ -4,18 +4,30 @@ import { requireOfficeUser } from '@/lib/auth-server'
 import { caseVisibilityWhere, timeEntryVisibilityWhere } from '@/lib/tenant-scope'
 import { rateLimit } from '@/lib/api-security'
 import { auditLog } from '@/lib/audit'
+import { buildPage, cursorWhereClause, paginationHeaders, parsePagination } from '@/lib/pagination'
+import type { Prisma } from '@prisma/client'
+
+const DEFAULT_LIMIT = 200
 
 export async function GET(req: NextRequest) {
   const auth = await requireOfficeUser(req)
   if (!auth.ok) return auth.response
 
-  const entries = await prisma.timeEntry.findMany({
-    where: timeEntryVisibilityWhere(auth.user),
+  const pagination = parsePagination(req, DEFAULT_LIMIT)
+  if (!pagination.ok) return pagination.response
+  const { limit, cursor } = pagination.params
+
+  const where = timeEntryVisibilityWhere(auth.user, cursorWhereClause('date', 'desc', cursor) as Prisma.TimeEntryWhereInput)
+
+  const rows = await prisma.timeEntry.findMany({
+    where,
     include: { case: { select: { number: true, title: true } }, user: { select: { name: true } } },
-    orderBy: { date: 'desc' },
-    take: 200,
+    orderBy: [{ date: 'desc' }, { id: 'desc' }],
+    take: limit + 1,
   })
-  return NextResponse.json(entries)
+
+  const result = buildPage(rows, limit, (r) => r.date)
+  return NextResponse.json(result.page, { headers: paginationHeaders(result) })
 }
 
 export async function POST(req: NextRequest) {

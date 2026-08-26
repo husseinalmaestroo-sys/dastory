@@ -6,22 +6,29 @@ import { caseVisibilityWhere, clientWritableWhere, isOfficeManager, staffWritabl
 import { rateLimit } from '@/lib/api-security'
 import { auditLog } from '@/lib/audit'
 import { notifyUser } from '@/lib/notify'
+import { buildPage, combineWhere, cursorWhereClause, paginationHeaders, parsePagination } from '@/lib/pagination'
+import type { Prisma } from '@prisma/client'
 
 const CASE_STATUSES = new Set<string>(Object.values(CaseStatus))
 
-const LIST_CAP = 200
+const DEFAULT_LIMIT = 200
 
 export async function GET(req: NextRequest) {
   const auth = await requireOfficeUser(req)
   if (!auth.ok) return auth.response
 
+  const pagination = parsePagination(req, DEFAULT_LIMIT)
+  if (!pagination.ok) return pagination.response
+  const { limit, cursor } = pagination.params
+
   const q = req.nextUrl.searchParams.get('q')?.trim()
-  const extra = q
+  const searchExtra = q
     ? { OR: [{ number: { contains: q } }, { title: { contains: q } }, { type: { contains: q } }, { client: { is: { name: { contains: q } } } }] }
     : {}
 
-  const where = caseVisibilityWhere(auth.user, extra)
-  const [cases, total] = await Promise.all([
+  const where = caseVisibilityWhere(auth.user, combineWhere(searchExtra, cursorWhereClause('createdAt', 'desc', cursor)) as Prisma.CaseWhereInput)
+
+  const [rows, total] = await Promise.all([
     prisma.case.findMany({
       where,
       include: {
@@ -29,12 +36,14 @@ export async function GET(req: NextRequest) {
         lawyer: { select: { name: true } },
         _count: { select: { sessions: true, documents: true } },
       },
-      orderBy: { createdAt: 'desc' },
-      take: LIST_CAP,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: limit + 1,
     }),
-    prisma.case.count({ where }),
+    cursor ? Promise.resolve(undefined) : prisma.case.count({ where: caseVisibilityWhere(auth.user, searchExtra) }),
   ])
-  return NextResponse.json(cases, { headers: { 'X-Total-Count': String(total) } })
+
+  const result = buildPage(rows, limit, (r) => r.createdAt)
+  return NextResponse.json(result.page, { headers: paginationHeaders(result, total) })
 }
 
 export async function POST(req: NextRequest) {

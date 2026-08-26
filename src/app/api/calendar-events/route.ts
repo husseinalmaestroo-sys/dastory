@@ -4,17 +4,33 @@ import { requireOfficeUser } from '@/lib/auth-server'
 import { isOfficeManager } from '@/lib/tenant-scope'
 import { rateLimit } from '@/lib/api-security'
 import { auditLog } from '@/lib/audit'
+import { buildPage, combineWhere, cursorWhereClause, paginationHeaders, parsePagination } from '@/lib/pagination'
+import type { Prisma } from '@prisma/client'
+
+const DEFAULT_LIMIT = 200
 
 export async function GET(req: NextRequest) {
   const auth = await requireOfficeUser(req)
   if (!auth.ok) return auth.response
 
-  const events = await prisma.calendarEvent.findMany({
-    where: { officeId: auth.user.officeId },
+  const pagination = parsePagination(req, DEFAULT_LIMIT)
+  if (!pagination.ok) return pagination.response
+  const { limit, cursor } = pagination.params
+
+  const where = combineWhere(
+    { officeId: auth.user.officeId },
+    cursorWhereClause('date', 'asc', cursor)
+  ) as Prisma.CalendarEventWhereInput
+
+  const rows = await prisma.calendarEvent.findMany({
+    where,
     include: { createdBy: { select: { name: true } } },
-    orderBy: { date: 'asc' },
+    orderBy: [{ date: 'asc' }, { id: 'asc' }],
+    take: limit + 1,
   })
-  return NextResponse.json(events)
+
+  const result = buildPage(rows, limit, (r) => r.date)
+  return NextResponse.json(result.page, { headers: paginationHeaders(result) })
 }
 
 export async function POST(req: NextRequest) {

@@ -4,6 +4,7 @@ import { requireOfficeUser } from '@/lib/auth-server'
 import { timeEntryVisibilityWhere } from '@/lib/tenant-scope'
 import { rateLimit } from '@/lib/api-security'
 import { auditLog } from '@/lib/audit'
+import { timeEntryDeletionGuard } from '@/lib/financial-guards'
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireOfficeUser(req)
@@ -47,8 +48,17 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   if (!auth.ok) return auth.response
 
   const { id } = await params
-  const existing = await prisma.timeEntry.findFirst({ where: timeEntryVisibilityWhere(auth.user, { id }), select: { id: true } })
+  const existing = await prisma.timeEntry.findFirst({ where: timeEntryVisibilityWhere(auth.user, { id }), select: { id: true, invoiced: true } })
   if (!existing) return NextResponse.json({ error: 'غير موجود' }, { status: 404 })
+
+  const guard = timeEntryDeletionGuard(existing)
+  if (!guard.allowed) {
+    await auditLog(req, auth.user, 'timelog.delete_blocked', { entityType: 'time_entry', entityId: existing.id, metadata: { reason: guard.reason } })
+    return NextResponse.json(
+      { error: 'لا يمكن حذف تسجيل وقت مُفوتَر مسبقاً. أزل علامة الفوترة أولاً إذا لزم.' },
+      { status: 409 }
+    )
+  }
 
   await prisma.timeEntry.delete({ where: { id: existing.id } })
   await auditLog(req, auth.user, 'timelog.deleted', { entityType: 'time_entry', entityId: existing.id })

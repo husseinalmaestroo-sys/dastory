@@ -5,6 +5,7 @@ import { InvoiceStatus } from '@prisma/client'
 import { invoiceVisibilityWhere } from '@/lib/tenant-scope'
 import { rateLimit } from '@/lib/api-security'
 import { auditLog } from '@/lib/audit'
+import { invoiceDeletionGuard } from '@/lib/financial-guards'
 
 const INVOICE_STATUSES = new Set<string>(Object.values(InvoiceStatus))
 
@@ -81,9 +82,22 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   const { id } = await params
   const existing = await prisma.invoice.findFirst({
     where: invoiceVisibilityWhere(auth.user, { id }),
-    select: { id: true },
+    select: { id: true, paid: true, status: true },
   })
   if (!existing) return NextResponse.json({ error: 'غير موجود' }, { status: 404 })
+
+  const guard = invoiceDeletionGuard(existing)
+  if (!guard.allowed) {
+    await auditLog(req, auth.user, 'invoice.delete_blocked', {
+      entityType: 'invoice',
+      entityId: existing.id,
+      metadata: { reason: guard.reason, paid: existing.paid, status: existing.status },
+    })
+    return NextResponse.json(
+      { error: 'لا يمكن حذف فاتورة تم تحصيل مبلغ منها. عدّل حالتها أو راجع مدير المكتب.' },
+      { status: 409 }
+    )
+  }
 
   await prisma.invoice.delete({ where: { id: existing.id } })
   await auditLog(req, auth.user, 'invoice.deleted', { entityType: 'invoice', entityId: existing.id })

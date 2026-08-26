@@ -242,6 +242,19 @@ model AuditLog {
   @@index([action, createdAt])
 }
 
+model IdempotencyKey {
+  id             String   @id @default(cuid())
+  userId         String
+  endpoint       String
+  key            String
+  responseStatus Int      @default(0)
+  responseBody   Json?
+  createdAt      DateTime @default(now())
+
+  @@unique([userId, endpoint, key])
+  @@index([createdAt])
+}
+
 model PasswordResetToken {
   id        String    @id @default(cuid())
   userId    String

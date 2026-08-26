@@ -6,6 +6,7 @@ import { rateLimit } from '@/lib/api-security'
 import { auditLog } from '@/lib/audit'
 import { buildPage, combineWhere, cursorWhereClause, paginationHeaders, parsePagination } from '@/lib/pagination'
 import type { Prisma } from '@prisma/client'
+import { withIdempotency } from '@/lib/idempotency'
 
 const DEFAULT_LIMIT = 200
 
@@ -39,24 +40,26 @@ export async function POST(req: NextRequest) {
   const limited = rateLimit(req, `calendar:create:${auth.user.id}`, { limit: 60, windowMs: 60 * 60_000 })
   if (limited) return limited
 
-  const body = await req.json().catch(() => null)
-  if (!body || typeof body.title !== 'string' || !body.title.trim() || typeof body.date !== 'string') {
-    return NextResponse.json({ error: 'عنوان الحدث وتاريخه مطلوبان' }, { status: 400 })
-  }
-  const date = new Date(body.date)
-  if (Number.isNaN(date.getTime())) return NextResponse.json({ error: 'تاريخ غير صالح' }, { status: 400 })
+  return withIdempotency(req, auth.user.id, 'calendar-events:create', async () => {
+    const body = await req.json().catch(() => null)
+    if (!body || typeof body.title !== 'string' || !body.title.trim() || typeof body.date !== 'string') {
+      return { status: 400, body: { error: 'عنوان الحدث وتاريخه مطلوبان' } }
+    }
+    const date = new Date(body.date)
+    if (Number.isNaN(date.getTime())) return { status: 400, body: { error: 'تاريخ غير صالح' } }
 
-  const event = await prisma.calendarEvent.create({
-    data: {
-      title: body.title.trim().slice(0, 200),
-      date,
-      type: typeof body.type === 'string' && body.type.trim() ? body.type.trim().slice(0, 40) : 'general',
-      officeId: auth.user.officeId,
-      createdById: auth.user.id,
-    },
+    const event = await prisma.calendarEvent.create({
+      data: {
+        title: body.title.trim().slice(0, 200),
+        date,
+        type: typeof body.type === 'string' && body.type.trim() ? body.type.trim().slice(0, 40) : 'general',
+        officeId: auth.user.officeId,
+        createdById: auth.user.id,
+      },
+    })
+    await auditLog(req, auth.user, 'calendar.event_created', { entityType: 'calendar_event', entityId: event.id })
+    return { status: 201, body: event }
   })
-  await auditLog(req, auth.user, 'calendar.event_created', { entityType: 'calendar_event', entityId: event.id })
-  return NextResponse.json(event, { status: 201 })
 }
 
 export async function DELETE(req: NextRequest) {

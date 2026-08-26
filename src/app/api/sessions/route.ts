@@ -8,6 +8,7 @@ import { auditLog } from '@/lib/audit'
 import { notifyUser } from '@/lib/notify'
 import { buildPage, combineWhere, cursorWhereClause, paginationHeaders, parsePagination } from '@/lib/pagination'
 import type { Prisma } from '@prisma/client'
+import { withIdempotency } from '@/lib/idempotency'
 
 const SESSION_STATUSES = new Set<string>(Object.values(SessionStatus))
 const DEFAULT_LIMIT = 200
@@ -42,56 +43,58 @@ export async function POST(req: NextRequest) {
   const limited = rateLimit(req, `sessions:create:${auth.user.id}`, { limit: 120, windowMs: 60 * 60_000 })
   if (limited) return limited
 
-  const body = await req.json().catch(() => null)
-  if (
-    !body ||
-    typeof body.caseId !== 'string' ||
-    typeof body.date !== 'string' ||
-    typeof body.time !== 'string' ||
-    typeof body.court !== 'string' ||
-    !body.caseId.trim() ||
-    !body.date.trim() ||
-    !body.time.trim() ||
-    !body.court.trim()
-  ) {
-    return NextResponse.json({ error: 'بيانات الجلسة المطلوبة ناقصة' }, { status: 400 })
-  }
+  return withIdempotency(req, auth.user.id, 'sessions:create', async () => {
+    const body = await req.json().catch(() => null)
+    if (
+      !body ||
+      typeof body.caseId !== 'string' ||
+      typeof body.date !== 'string' ||
+      typeof body.time !== 'string' ||
+      typeof body.court !== 'string' ||
+      !body.caseId.trim() ||
+      !body.date.trim() ||
+      !body.time.trim() ||
+      !body.court.trim()
+    ) {
+      return { status: 400, body: { error: 'بيانات الجلسة المطلوبة ناقصة' } }
+    }
 
-  const date = new Date(body.date)
-  if (Number.isNaN(date.getTime())) {
-    return NextResponse.json({ error: 'تاريخ الجلسة غير صالح' }, { status: 400 })
-  }
+    const date = new Date(body.date)
+    if (Number.isNaN(date.getTime())) {
+      return { status: 400, body: { error: 'تاريخ الجلسة غير صالح' } }
+    }
 
-  const caseRow = await prisma.case.findFirst({
-    where: caseVisibilityWhere(auth.user, { id: body.caseId }),
-    select: { id: true, number: true, ownerId: true },
+    const caseRow = await prisma.case.findFirst({
+      where: caseVisibilityWhere(auth.user, { id: body.caseId }),
+      select: { id: true, number: true, ownerId: true },
+    })
+    if (!caseRow) return { status: 400, body: { error: 'القضية غير موجودة' } }
+
+    const status = typeof body.status === 'string' && SESSION_STATUSES.has(body.status)
+      ? body.status as SessionStatus
+      : undefined
+
+    const s = await prisma.session.create({
+      data: {
+        caseId: caseRow.id,
+        date,
+        time: body.time.trim(),
+        court: body.court.trim(),
+        judge: typeof body.judge === 'string' && body.judge.trim() ? body.judge.trim() : null,
+        status,
+        notes: typeof body.notes === 'string' && body.notes.trim() ? body.notes.trim() : null,
+        officeId: auth.user.officeId,
+      },
+      include: { case: { include: { client: { select: { name: true } } } } },
+    })
+    await auditLog(req, auth.user, 'session.created', {
+      entityType: 'session',
+      entityId: s.id,
+      metadata: { caseId: caseRow.id, status: s.status },
+    })
+    if (caseRow.ownerId !== auth.user.id) {
+      await notifyUser(caseRow.ownerId, auth.user.officeId, 'جلسة جديدة', `تمت إضافة جلسة بتاريخ ${s.date.toLocaleDateString('ar-JO')} لقضية ${caseRow.number}`)
+    }
+    return { status: 201, body: s }
   })
-  if (!caseRow) return NextResponse.json({ error: 'القضية غير موجودة' }, { status: 400 })
-
-  const status = typeof body.status === 'string' && SESSION_STATUSES.has(body.status)
-    ? body.status as SessionStatus
-    : undefined
-
-  const s = await prisma.session.create({
-    data: {
-      caseId: caseRow.id,
-      date,
-      time: body.time.trim(),
-      court: body.court.trim(),
-      judge: typeof body.judge === 'string' && body.judge.trim() ? body.judge.trim() : null,
-      status,
-      notes: typeof body.notes === 'string' && body.notes.trim() ? body.notes.trim() : null,
-      officeId: auth.user.officeId,
-    },
-    include: { case: { include: { client: { select: { name: true } } } } },
-  })
-  await auditLog(req, auth.user, 'session.created', {
-    entityType: 'session',
-    entityId: s.id,
-    metadata: { caseId: caseRow.id, status: s.status },
-  })
-  if (caseRow.ownerId !== auth.user.id) {
-    await notifyUser(caseRow.ownerId, auth.user.officeId, 'جلسة جديدة', `تمت إضافة جلسة بتاريخ ${s.date.toLocaleDateString('ar-JO')} لقضية ${caseRow.number}`)
-  }
-  return NextResponse.json(s, { status: 201 })
 }

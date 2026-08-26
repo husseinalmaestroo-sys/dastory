@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
   if (!pagination.ok) return pagination.response
   const { limit, cursor } = pagination.params
 
-  const q = req.nextUrl.searchParams.get('q')?.trim()
+  const q = req.nextUrl.searchParams.get('q')?.trim().slice(0, 120)
   const searchExtra = q
     ? { OR: [{ name: { contains: q } }, { phone: { contains: q } }, { email: { contains: q } }, { idNumber: { contains: q } }] }
     : {}

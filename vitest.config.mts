@@ -9,5 +9,9 @@ export default defineConfig({
   },
   test: {
     setupFiles: ['./vitest.setup.mts'],
+    // Integration tests hit a real database and live under their own
+    // config (vitest.integration.config.mts, `npm run test:integration`)
+    // — excluded here so `npm test` stays fast and needs no live DB.
+    exclude: ['**/node_modules/**', '**/*.integration.test.ts'],
   },
 })

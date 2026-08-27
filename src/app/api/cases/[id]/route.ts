@@ -7,10 +7,11 @@ import { rateLimit } from '@/lib/api-security'
 import { auditLog } from '@/lib/audit'
 import { notifyUser } from '@/lib/notify'
 import { deleteDocumentFile } from '@/lib/document-storage'
+import { withErrorHandling } from '@/lib/api-handler'
 
 const CASE_STATUSES = new Set<string>(Object.values(CaseStatus))
 
-export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export const GET = withErrorHandling(async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const auth = await requireOfficeUser(req)
   if (!auth.ok) return auth.response
   const limited = rateLimit(req, `cases:update:${auth.user.id}`, { limit: 120, windowMs: 60 * 60_000 })
@@ -38,9 +39,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
   if (!c) return NextResponse.json({ error: 'غير موجود' }, { status: 404 })
   return NextResponse.json(c)
-}
+})
 
-export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export const PATCH = withErrorHandling(async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const auth = await requireOfficeUser(req)
   if (!auth.ok) return auth.response
   const limited = rateLimit(req, `cases:delete:${auth.user.id}`, { limit: 60, windowMs: 60 * 60_000 })
@@ -116,9 +117,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     await notifyUser(data.lawyerId, auth.user.officeId, 'تم تعيينك على قضية', `تم تعيينك على قضية ${existing.number} — ${existing.title}`)
   }
   return NextResponse.json(updated)
-}
+})
 
-export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export const DELETE = withErrorHandling(async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const auth = await requireOfficeUser(req)
   if (!auth.ok) return auth.response
 
@@ -157,4 +158,4 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     metadata: { deletedDocuments: documentsToRemove.length, detachedInvoices: detachedInvoices.count },
   })
   return NextResponse.json({ ok: true })
-}
+})

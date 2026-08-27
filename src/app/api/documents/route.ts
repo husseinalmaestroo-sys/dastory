@@ -4,10 +4,11 @@ import { requireOfficeUser } from '@/lib/auth-server'
 import { documentVisibilityWhere } from '@/lib/tenant-scope'
 import { buildPage, cursorWhereClause, paginationHeaders, parsePagination } from '@/lib/pagination'
 import type { Prisma } from '@prisma/client'
+import { withErrorHandling } from '@/lib/api-handler'
 
 const DEFAULT_LIMIT = 200
 
-export async function GET(req: NextRequest) {
+export const GET = withErrorHandling(async (req: NextRequest) => {
   const auth = await requireOfficeUser(req)
   if (!auth.ok) return auth.response
 
@@ -32,4 +33,4 @@ export async function GET(req: NextRequest) {
     result.page.map((doc) => ({ ...doc, url: `/api/documents/${doc.id}/download` })),
     { headers: paginationHeaders(result, total) }
   )
-}
+})

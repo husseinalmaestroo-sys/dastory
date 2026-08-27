@@ -4,8 +4,9 @@ import bcrypt from 'bcryptjs'
 import { prisma } from '@/lib/prisma'
 import { enforceRequestSecurity } from '@/lib/api-security'
 import { auditLog } from '@/lib/audit'
+import { withErrorHandling } from '@/lib/api-handler'
 
-export async function POST(req: NextRequest) {
+export const POST = withErrorHandling(async (req: NextRequest) => {
   const blocked = enforceRequestSecurity(req, 'auth:reset-password', { limit: 20, windowMs: 60 * 60_000 })
   if (blocked) return blocked
 
@@ -43,4 +44,4 @@ export async function POST(req: NextRequest) {
   await auditLog(req, { id: user.id, email: user.email, role: user.role, officeId: user.officeId }, 'auth.password_reset_completed')
 
   return NextResponse.json({ ok: true })
-}
+})

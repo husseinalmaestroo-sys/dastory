@@ -9,11 +9,12 @@ import { notifyUser } from '@/lib/notify'
 import { buildPage, combineWhere, cursorWhereClause, paginationHeaders, parsePagination } from '@/lib/pagination'
 import type { Prisma } from '@prisma/client'
 import { withIdempotency } from '@/lib/idempotency'
+import { withErrorHandling } from '@/lib/api-handler'
 
 const SESSION_STATUSES = new Set<string>(Object.values(SessionStatus))
 const DEFAULT_LIMIT = 200
 
-export async function GET(req: NextRequest) {
+export const GET = withErrorHandling(async (req: NextRequest) => {
   const auth = await requireOfficeUser(req)
   if (!auth.ok) return auth.response
 
@@ -35,9 +36,9 @@ export async function GET(req: NextRequest) {
 
   const result = buildPage(rows, limit, (r) => r.date)
   return NextResponse.json(result.page, { headers: paginationHeaders(result) })
-}
+})
 
-export async function POST(req: NextRequest) {
+export const POST = withErrorHandling(async (req: NextRequest) => {
   const auth = await requireOfficeUser(req)
   if (!auth.ok) return auth.response
   const limited = rateLimit(req, `sessions:create:${auth.user.id}`, { limit: 120, windowMs: 60 * 60_000 })
@@ -97,4 +98,4 @@ export async function POST(req: NextRequest) {
     }
     return { status: 201, body: s }
   })
-}
+})

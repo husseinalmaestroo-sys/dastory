@@ -3,10 +3,11 @@ import { prisma } from '@/lib/prisma'
 import { requireCitizenUser } from '@/lib/auth-server'
 import { buildPage, combineWhere, cursorWhereClause, paginationHeaders, parsePagination } from '@/lib/pagination'
 import type { Prisma } from '@prisma/client'
+import { withErrorHandling } from '@/lib/api-handler'
 
 const DEFAULT_LIMIT = 200
 
-export async function GET(req: NextRequest) {
+export const GET = withErrorHandling(async (req: NextRequest) => {
   const auth = await requireCitizenUser(req)
   if (!auth.ok) return auth.response
 
@@ -33,4 +34,4 @@ export async function GET(req: NextRequest) {
 
   const result = buildPage(rows, limit, (r) => r.date)
   return NextResponse.json(result.page, { headers: paginationHeaders(result) })
-}
+})

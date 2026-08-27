@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getUser } from '@/lib/auth-server'
 import { auditLog } from '@/lib/audit'
 import { rejectCrossSite } from '@/lib/api-security'
+import { withErrorHandling } from '@/lib/api-handler'
 
-export async function POST(req: NextRequest) {
+export const POST = withErrorHandling(async (req: NextRequest) => {
   const blocked = rejectCrossSite(req)
   if (blocked) return blocked
 
@@ -13,4 +14,4 @@ export async function POST(req: NextRequest) {
   const res = NextResponse.json({ ok: true })
   res.cookies.set('ds_token', '', { maxAge: 0, path: '/' })
   return res
-}
+})

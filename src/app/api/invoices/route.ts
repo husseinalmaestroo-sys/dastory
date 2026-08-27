@@ -7,11 +7,12 @@ import { rateLimit } from '@/lib/api-security'
 import { auditLog } from '@/lib/audit'
 import { buildPage, cursorWhereClause, paginationHeaders, parsePagination } from '@/lib/pagination'
 import { withIdempotency } from '@/lib/idempotency'
+import { withErrorHandling } from '@/lib/api-handler'
 
 const INVOICE_STATUSES = new Set<string>(Object.values(InvoiceStatus))
 const DEFAULT_LIMIT = 200
 
-export async function GET(req: NextRequest) {
+export const GET = withErrorHandling(async (req: NextRequest) => {
   const auth = await requireOfficeUser(req)
   if (!auth.ok) return auth.response
 
@@ -36,9 +37,9 @@ export async function GET(req: NextRequest) {
 
   const result = buildPage(rows, limit, (r) => r.createdAt)
   return NextResponse.json(result.page, { headers: paginationHeaders(result, total) })
-}
+})
 
-export async function POST(req: NextRequest) {
+export const POST = withErrorHandling(async (req: NextRequest) => {
   const auth = await requireOfficeUser(req)
   if (!auth.ok) return auth.response
   const limited = rateLimit(req, `invoices:create:${auth.user.id}`, { limit: 120, windowMs: 60 * 60_000 })
@@ -123,4 +124,4 @@ export async function POST(req: NextRequest) {
     })
     return { status: 201, body: inv }
   })
-}
+})

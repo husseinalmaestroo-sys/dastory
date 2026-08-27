@@ -6,6 +6,7 @@ import { auditLog } from '@/lib/audit'
 import { formatTotpSecret, generateTotpSecret, getTotpUri, verifyTotpCode } from '@/lib/totp'
 import { decryptSecret, encryptSecret, resolveAndMigrateSecret } from '@/lib/secret-crypto'
 import { signToken } from '@/lib/jwt'
+import { withErrorHandling } from '@/lib/api-handler'
 
 function setFullSessionCookie(
   req: NextRequest,
@@ -65,7 +66,7 @@ function publicUser(user: {
   }
 }
 
-export async function GET(req: NextRequest) {
+export const GET = withErrorHandling(async (req: NextRequest) => {
   const auth = await requireActiveUser(req)
   if (!auth.ok) return auth.response
 
@@ -78,9 +79,9 @@ export async function GET(req: NextRequest) {
     enabled: Boolean(user?.twoFactorEnabled),
     setupPending: Boolean(user?.twoFactorSecret && !user.twoFactorEnabled),
   })
-}
+})
 
-export async function POST(req: NextRequest) {
+export const POST = withErrorHandling(async (req: NextRequest) => {
   const auth = await requireActiveUser(req)
   if (!auth.ok) return auth.response
   const limited = rateLimit(req, `2fa:setup:${auth.user.id}`, { limit: 10, windowMs: 60 * 60_000 })
@@ -105,9 +106,9 @@ export async function POST(req: NextRequest) {
     otpauthUrl: getTotpUri(auth.user.email, secret),
     manualKey: formatTotpSecret(secret),
   })
-}
+})
 
-export async function PATCH(req: NextRequest) {
+export const PATCH = withErrorHandling(async (req: NextRequest) => {
   const auth = await requireActiveUser(req)
   if (!auth.ok) return auth.response
   const limited = rateLimit(req, `2fa:enable:${auth.user.id}`, { limit: 10, windowMs: 60 * 60_000 })
@@ -153,9 +154,9 @@ export async function PATCH(req: NextRequest) {
   setFullSessionCookie(req, res, updated)
   await auditLog(req, { id: updated.id, email: updated.email, role: updated.role, officeId: updated.officeId }, 'auth.2fa_enabled')
   return res
-}
+})
 
-export async function DELETE(req: NextRequest) {
+export const DELETE = withErrorHandling(async (req: NextRequest) => {
   const auth = await requireActiveUser(req)
   if (!auth.ok) return auth.response
   const limited = rateLimit(req, `2fa:disable:${auth.user.id}`, { limit: 10, windowMs: 60 * 60_000 })
@@ -200,4 +201,4 @@ export async function DELETE(req: NextRequest) {
   setFullSessionCookie(req, res, updated)
   await auditLog(req, { id: updated.id, email: updated.email, role: updated.role, officeId: updated.officeId }, 'auth.2fa_disabled')
   return res
-}
+})

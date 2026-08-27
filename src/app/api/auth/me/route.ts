@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { isPlatformAdminEmail, requireActiveUser } from '@/lib/auth-server'
+import { withErrorHandling } from '@/lib/api-handler'
 
-export async function GET(req: NextRequest) {
+export const GET = withErrorHandling(async (req: NextRequest) => {
   const auth = await requireActiveUser(req)
   if (!auth.ok) return auth.response
 
@@ -27,4 +28,4 @@ export async function GET(req: NextRequest) {
       twoFactorEnabled: user.twoFactorEnabled,
     },
   })
-}
+})

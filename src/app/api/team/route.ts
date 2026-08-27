@@ -6,12 +6,13 @@ import bcrypt from 'bcryptjs'
 import { staffVisibilityWhere, staffWritableWhere } from '@/lib/tenant-scope'
 import { rateLimit } from '@/lib/api-security'
 import { auditLog } from '@/lib/audit'
+import { withErrorHandling } from '@/lib/api-handler'
 
 function isValidEmail(value: unknown) {
   return typeof value === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())
 }
 
-export async function GET(req: NextRequest) {
+export const GET = withErrorHandling(async (req: NextRequest) => {
   const auth = await requireOfficeUser(req)
   if (!auth.ok) return auth.response
 
@@ -26,9 +27,9 @@ export async function GET(req: NextRequest) {
   })
 
   return NextResponse.json(members)
-}
+})
 
-export async function POST(req: NextRequest) {
+export const POST = withErrorHandling(async (req: NextRequest) => {
   const auth = await requireOfficeManager(req)
   if (!auth.ok) return auth.response
   const limited = rateLimit(req, `team:create:${auth.user.id}`, { limit: 20, windowMs: 60 * 60_000 })
@@ -75,9 +76,9 @@ export async function POST(req: NextRequest) {
     metadata: { role: member.role },
   })
   return NextResponse.json(member, { status: 201 })
-}
+})
 
-export async function PATCH(req: NextRequest) {
+export const PATCH = withErrorHandling(async (req: NextRequest) => {
   const auth = await requireOfficeManager(req)
   if (!auth.ok) return auth.response
   const limited = rateLimit(req, `team:update:${auth.user.id}`, { limit: 60, windowMs: 60 * 60_000 })
@@ -123,4 +124,4 @@ export async function PATCH(req: NextRequest) {
     },
   })
   return NextResponse.json(updated)
-}
+})

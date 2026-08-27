@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { requireOfficeUser } from '@/lib/auth-server'
 import { caseVisibilityWhere, clientVisibilityWhere, invoiceVisibilityWhere, sessionVisibilityWhere } from '@/lib/tenant-scope'
+import { withErrorHandling } from '@/lib/api-handler'
 
-export async function GET(req: NextRequest) {
+export const GET = withErrorHandling(async (req: NextRequest) => {
   const auth = await requireOfficeUser(req)
   if (!auth.ok) return auth.response
 
@@ -34,6 +35,7 @@ export async function GET(req: NextRequest) {
       }),
       include: { case: { select: { number: true, title: true } } },
       orderBy: { date: 'asc' },
+      take: 50,
     }),
   ])
 
@@ -50,4 +52,4 @@ export async function GET(req: NextRequest) {
     recentCases,
     todaySessions,
   })
-}
+})

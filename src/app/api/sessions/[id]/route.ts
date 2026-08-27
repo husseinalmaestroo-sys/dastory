@@ -6,10 +6,11 @@ import { sessionVisibilityWhere } from '@/lib/tenant-scope'
 import { rateLimit } from '@/lib/api-security'
 import { auditLog } from '@/lib/audit'
 import { notifyUser } from '@/lib/notify'
+import { withErrorHandling } from '@/lib/api-handler'
 
 const SESSION_STATUSES = new Set<string>(Object.values(SessionStatus))
 
-export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export const PATCH = withErrorHandling(async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const auth = await requireOfficeUser(req)
   if (!auth.ok) return auth.response
   const limited = rateLimit(req, `sessions:update:${auth.user.id}`, { limit: 120, windowMs: 60 * 60_000 })
@@ -64,9 +65,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     await notifyUser(updated.case.ownerId, auth.user.officeId, 'تأجيل جلسة', `تم تأجيل جلسة قضية ${updated.case.number} إلى ${updated.date.toLocaleDateString('ar-JO')}`)
   }
   return NextResponse.json(updated)
-}
+})
 
-export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export const DELETE = withErrorHandling(async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const auth = await requireOfficeUser(req)
   if (!auth.ok) return auth.response
 
@@ -80,4 +81,4 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   await prisma.session.delete({ where: { id: existing.id } })
   await auditLog(req, auth.user, 'session.deleted', { entityType: 'session', entityId: existing.id })
   return NextResponse.json({ ok: true })
-}
+})

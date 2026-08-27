@@ -5,8 +5,9 @@ import { documentVisibilityWhere } from '@/lib/tenant-scope'
 import { rateLimit } from '@/lib/api-security'
 import { auditLog } from '@/lib/audit'
 import { deleteDocumentFile } from '@/lib/document-storage'
+import { withErrorHandling } from '@/lib/api-handler'
 
-export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export const DELETE = withErrorHandling(async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const auth = await requireOfficeUser(req)
   if (!auth.ok) return auth.response
   const limited = rateLimit(req, `documents:delete:${auth.user.id}`, { limit: 30, windowMs: 60 * 60_000 })
@@ -34,4 +35,4 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     metadata: { name: existing.name, caseId: existing.caseId },
   })
   return NextResponse.json({ ok: true })
-}
+})

@@ -5,8 +5,12 @@ import { timeEntryVisibilityWhere } from '@/lib/tenant-scope'
 import { rateLimit } from '@/lib/api-security'
 import { auditLog } from '@/lib/audit'
 import { timeEntryDeletionGuard } from '@/lib/financial-guards'
+import { withErrorHandling } from '@/lib/api-handler'
 
-export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+// Matches the cap in ../route.ts POST — see the comment there.
+const MAX_MINUTES_PER_ENTRY = 100_000
+
+export const PATCH = withErrorHandling(async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const auth = await requireOfficeUser(req)
   if (!auth.ok) return auth.response
   const limited = rateLimit(req, `timelog:update:${auth.user.id}`, { limit: 120, windowMs: 60 * 60_000 })
@@ -27,6 +31,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (body.minutes !== undefined) {
     const minutes = Number(body.minutes)
     if (!Number.isFinite(minutes) || minutes <= 0) return NextResponse.json({ error: 'المدة غير صالحة' }, { status: 400 })
+    if (minutes > MAX_MINUTES_PER_ENTRY) return NextResponse.json({ error: 'المدة أكبر من المسموح لتسجيل وقت واحد' }, { status: 400 })
     data.minutes = Math.round(minutes)
   }
   if (typeof body.billable === 'boolean') data.billable = body.billable
@@ -41,9 +46,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   })
   await auditLog(req, auth.user, 'timelog.updated', { entityType: 'time_entry', entityId: updated.id, metadata: { fields: Object.keys(data) } })
   return NextResponse.json(updated)
-}
+})
 
-export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export const DELETE = withErrorHandling(async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const auth = await requireOfficeUser(req)
   if (!auth.ok) return auth.response
 
@@ -63,4 +68,4 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   await prisma.timeEntry.delete({ where: { id: existing.id } })
   await auditLog(req, auth.user, 'timelog.deleted', { entityType: 'time_entry', entityId: existing.id })
   return NextResponse.json({ ok: true })
-}
+})

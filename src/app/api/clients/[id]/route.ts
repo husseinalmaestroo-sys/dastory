@@ -4,8 +4,9 @@ import { requireOfficeUser } from '@/lib/auth-server'
 import { clientVisibilityWhere, clientWritableWhere, clientOwnedWhere, invoiceVisibilityWhere, caseVisibilityWhere } from '@/lib/tenant-scope'
 import { rateLimit } from '@/lib/api-security'
 import { auditLog } from '@/lib/audit'
+import { withErrorHandling } from '@/lib/api-handler'
 
-export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export const GET = withErrorHandling(async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const auth = await requireOfficeUser(req)
   if (!auth.ok) return auth.response
   const limited = rateLimit(req, `clients:update:${auth.user.id}`, { limit: 120, windowMs: 60 * 60_000 })
@@ -32,9 +33,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
   if (!client) return NextResponse.json({ error: 'غير موجود' }, { status: 404 })
   return NextResponse.json(client)
-}
+})
 
-export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export const PATCH = withErrorHandling(async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const auth = await requireOfficeUser(req)
   if (!auth.ok) return auth.response
   const limited = rateLimit(req, `clients:delete:${auth.user.id}`, { limit: 60, windowMs: 60 * 60_000 })
@@ -71,9 +72,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     metadata: { fields: Object.keys(data) },
   })
   return NextResponse.json(updated)
-}
+})
 
-export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export const DELETE = withErrorHandling(async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const auth = await requireOfficeUser(req)
   if (!auth.ok) return auth.response
 
@@ -90,4 +91,4 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     entityId: client.id,
   })
   return NextResponse.json({ ok: true })
-}
+})

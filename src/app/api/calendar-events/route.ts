@@ -7,10 +7,11 @@ import { auditLog } from '@/lib/audit'
 import { buildPage, combineWhere, cursorWhereClause, paginationHeaders, parsePagination } from '@/lib/pagination'
 import type { Prisma } from '@prisma/client'
 import { withIdempotency } from '@/lib/idempotency'
+import { withErrorHandling } from '@/lib/api-handler'
 
 const DEFAULT_LIMIT = 200
 
-export async function GET(req: NextRequest) {
+export const GET = withErrorHandling(async (req: NextRequest) => {
   const auth = await requireOfficeUser(req)
   if (!auth.ok) return auth.response
 
@@ -32,9 +33,9 @@ export async function GET(req: NextRequest) {
 
   const result = buildPage(rows, limit, (r) => r.date)
   return NextResponse.json(result.page, { headers: paginationHeaders(result) })
-}
+})
 
-export async function POST(req: NextRequest) {
+export const POST = withErrorHandling(async (req: NextRequest) => {
   const auth = await requireOfficeUser(req)
   if (!auth.ok) return auth.response
   const limited = rateLimit(req, `calendar:create:${auth.user.id}`, { limit: 60, windowMs: 60 * 60_000 })
@@ -60,9 +61,9 @@ export async function POST(req: NextRequest) {
     await auditLog(req, auth.user, 'calendar.event_created', { entityType: 'calendar_event', entityId: event.id })
     return { status: 201, body: event }
   })
-}
+})
 
-export async function DELETE(req: NextRequest) {
+export const DELETE = withErrorHandling(async (req: NextRequest) => {
   const auth = await requireOfficeUser(req)
   if (!auth.ok) return auth.response
 
@@ -78,4 +79,4 @@ export async function DELETE(req: NextRequest) {
   await prisma.calendarEvent.delete({ where: { id: event.id } })
   await auditLog(req, auth.user, 'calendar.event_deleted', { entityType: 'calendar_event', entityId: event.id })
   return NextResponse.json({ ok: true })
-}
+})

@@ -3,8 +3,9 @@ import { prisma } from '@/lib/prisma'
 import { requireOfficeUser } from '@/lib/auth-server'
 import { caseVisibilityWhere, clientVisibilityWhere, documentVisibilityWhere, invoiceVisibilityWhere } from '@/lib/tenant-scope'
 import { rateLimit } from '@/lib/api-security'
+import { withErrorHandling } from '@/lib/api-handler'
 
-export async function GET(req: NextRequest) {
+export const GET = withErrorHandling(async (req: NextRequest) => {
   const auth = await requireOfficeUser(req)
   if (!auth.ok) return auth.response
   const limited = rateLimit(req, `search:${auth.user.id}`, { limit: 60, windowMs: 60_000 })
@@ -42,4 +43,4 @@ export async function GET(req: NextRequest) {
   ])
 
   return NextResponse.json({ query: q, clients, cases, invoices, documents })
-}
+})

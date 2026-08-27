@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { requirePlatformAdmin } from '@/lib/auth-server'
 import { enforceRequestSecurity } from '@/lib/api-security'
+import { withErrorHandling } from '@/lib/api-handler'
 
 const REQUIRED_FIELDS = [
   'officeName',
@@ -28,7 +29,7 @@ function isValidEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
 }
 
-export async function POST(req: NextRequest) {
+export const POST = withErrorHandling(async (req: NextRequest) => {
   const blocked = enforceRequestSecurity(req, 'trial-request:create', { limit: 5, windowMs: 60 * 60_000 })
   if (blocked) return blocked
 
@@ -73,12 +74,12 @@ export async function POST(req: NextRequest) {
   })
 
   return NextResponse.json({ ok: true, id: trialRequest.id }, { status: 201 })
-}
+})
 
-export async function GET(req: NextRequest) {
+export const GET = withErrorHandling(async (req: NextRequest) => {
   const auth = await requirePlatformAdmin(req)
   if (!auth.ok) return auth.response
 
   const requests = await prisma.trialRequest.findMany({ orderBy: { createdAt: 'desc' }, take: 1000 })
   return NextResponse.json(requests)
-}
+})

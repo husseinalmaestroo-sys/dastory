@@ -6,10 +6,11 @@ import { rateLimit } from '@/lib/api-security'
 import { auditLog } from '@/lib/audit'
 import { buildPage, combineWhere, cursorWhereClause, paginationHeaders, parsePagination } from '@/lib/pagination'
 import type { Prisma } from '@prisma/client'
+import { withErrorHandling } from '@/lib/api-handler'
 
 const DEFAULT_LIMIT = 200
 
-export async function GET(req: NextRequest) {
+export const GET = withErrorHandling(async (req: NextRequest) => {
   const auth = await requireOfficeUser(req)
   if (!auth.ok) return auth.response
 
@@ -40,9 +41,9 @@ export async function GET(req: NextRequest) {
 
   const result = buildPage(rows, limit, (r) => r.createdAt)
   return NextResponse.json(result.page, { headers: paginationHeaders(result, total) })
-}
+})
 
-export async function POST(req: NextRequest) {
+export const POST = withErrorHandling(async (req: NextRequest) => {
   const auth = await requireOfficeUser(req)
   if (!auth.ok) return auth.response
   const limited = rateLimit(req, `clients:create:${auth.user.id}`, { limit: 120, windowMs: 60 * 60_000 })
@@ -70,4 +71,4 @@ export async function POST(req: NextRequest) {
     metadata: { hasEmail: Boolean(client.email), hasPhone: Boolean(client.phone) },
   })
   return NextResponse.json(client, { status: 201 })
-}
+})

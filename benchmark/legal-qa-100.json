@@ -1,0 +1,997 @@
+{
+  "_schema": "{ id, question, expected_source, expected_article, difficulty, queryType, category, blocked?, blocked_reason? }",
+  "_ground_truth_policy": "expected_article is populated ONLY where the article was read off the INDEXED text (scripts probe of legal_documents), never from recall. Where it could not be verified it is null and the harness scores that case at LAW level instead. Inventing an article number for a benchmark would be the same failure the product exists to prevent.",
+  "_blocked": "11 cases (المدني فقط) target القانون المدني (id 2, orphan-letter ratio 6.1%), still character-corrupted in the index — kept, marked blocked:true, EXCLUDED from headline averages. قانون العقوبات was UNBLOCKED on 2026-07-18: re-ingested clean from a secondary Jordanian source (source id 170, 476 articles verified, orphan ratio 2.0%); the corrupted id 3 is retained as history with is_current_version=false.",
+  "_scoring_level": "29 cases carry expected_article and are scored at ARTICLE level (the strict test); the other 71 are scored at LAW level because their article could not be verified against the index. Law-level saturates easily, so read the two groups separately before concluding anything about ranking quality.",
+  "_distribution_caveat": "queryType is skewed to how lawyers actually ask: doctrinal 58, definition 29, fact_pattern 11, article_lookup 2. That means this set measures article_lookup weakly — add targeted lookup cases before tuning anything that only affects exact-citation retrieval.",
+  "_difficulty": "easy = a single article answers it verbatim; medium = spans a few articles or needs the statutory term; hard = lay wording far from statutory wording, or the answer spans laws.",
+  "cases": [
+    {
+      "id": "lab-01",
+      "question": "ما هي مكافأة نهاية الخدمة للعامل غير الخاضع للضمان الاجتماعي؟",
+      "expected_source": "قانون العمل",
+      "expected_article": [
+        "32"
+      ],
+      "difficulty": "easy",
+      "queryType": "legal_definition",
+      "category": "عمالي"
+    },
+    {
+      "id": "lab-02",
+      "question": "متى يعتبر فصل العامل تعسفياً وما هي مدة رفع الدعوى؟",
+      "expected_source": "قانون العمل",
+      "expected_article": [
+        "25"
+      ],
+      "difficulty": "medium",
+      "queryType": "doctrinal_question",
+      "category": "عمالي"
+    },
+    {
+      "id": "lab-03",
+      "question": "كم ساعة عمل يومياً وأسبوعياً يجوز تشغيل العامل؟",
+      "expected_source": "قانون العمل",
+      "expected_article": [
+        "56"
+      ],
+      "difficulty": "easy",
+      "queryType": "legal_definition",
+      "category": "عمالي"
+    },
+    {
+      "id": "lab-04",
+      "question": "ما هو أجر العمل الإضافي؟",
+      "expected_source": "قانون العمل",
+      "expected_article": [
+        "59"
+      ],
+      "difficulty": "easy",
+      "queryType": "legal_definition",
+      "category": "عمالي"
+    },
+    {
+      "id": "lab-05",
+      "question": "كم مدة الإجازة السنوية المستحقة للعامل؟",
+      "expected_source": "قانون العمل",
+      "expected_article": [
+        "61"
+      ],
+      "difficulty": "easy",
+      "queryType": "legal_definition",
+      "category": "عمالي"
+    },
+    {
+      "id": "lab-06",
+      "question": "ما هي مدة الإجازة المرضية بأجر كامل؟",
+      "expected_source": "قانون العمل",
+      "expected_article": [
+        "65"
+      ],
+      "difficulty": "easy",
+      "queryType": "legal_definition",
+      "category": "عمالي"
+    },
+    {
+      "id": "lab-07",
+      "question": "ما هي مدة إجازة الأمومة للمرأة العاملة؟",
+      "expected_source": "قانون العمل",
+      "expected_article": [
+        "70"
+      ],
+      "difficulty": "easy",
+      "queryType": "legal_definition",
+      "category": "عمالي"
+    },
+    {
+      "id": "lab-08",
+      "question": "في أي الحالات يجوز لصاحب العمل فصل العامل دون إشعار؟",
+      "expected_source": "قانون العمل",
+      "expected_article": [
+        "28"
+      ],
+      "difficulty": "medium",
+      "queryType": "doctrinal_question",
+      "category": "عمالي"
+    },
+    {
+      "id": "lab-09",
+      "question": "متى يحق للعامل ترك العمل دون إشعار مع احتفاظه بحقوقه؟",
+      "expected_source": "قانون العمل",
+      "expected_article": [
+        "29"
+      ],
+      "difficulty": "medium",
+      "queryType": "doctrinal_question",
+      "category": "عمالي"
+    },
+    {
+      "id": "lab-10",
+      "question": "ما هي مدة الإشعار المطلوبة لإنهاء عقد العمل غير المحدد المدة؟",
+      "expected_source": "قانون العمل",
+      "expected_article": [
+        "23"
+      ],
+      "difficulty": "medium",
+      "queryType": "doctrinal_question",
+      "category": "عمالي"
+    },
+    {
+      "id": "lab-11",
+      "question": "صاحب مصنع باع مشروعه لشخص آخر، فهل تنتهي عقود العمال؟",
+      "expected_source": "قانون العمل",
+      "expected_article": [
+        "16"
+      ],
+      "difficulty": "hard",
+      "queryType": "fact_pattern",
+      "category": "عمالي"
+    },
+    {
+      "id": "lab-12",
+      "question": "شركة تمر بضائقة اقتصادية وتريد تقليص عدد موظفيها، ما الإجراء القانوني؟",
+      "expected_source": "قانون العمل",
+      "expected_article": [
+        "31"
+      ],
+      "difficulty": "hard",
+      "queryType": "fact_pattern",
+      "category": "عمالي"
+    },
+    {
+      "id": "lab-13",
+      "question": "خلال كم يوماً يجب دفع أجر العامل بعد استحقاقه؟",
+      "expected_source": "قانون العمل",
+      "expected_article": [
+        "46"
+      ],
+      "difficulty": "easy",
+      "queryType": "legal_definition",
+      "category": "عمالي"
+    },
+    {
+      "id": "lab-14",
+      "question": "هل يجوز لصاحب العمل حسم مبالغ من أجر العامل؟",
+      "expected_source": "قانون العمل",
+      "expected_article": [
+        "47"
+      ],
+      "difficulty": "medium",
+      "queryType": "doctrinal_question",
+      "category": "عمالي"
+    },
+    {
+      "id": "lab-15",
+      "question": "متى يلزم صاحب العمل بوضع نظام داخلي لتنظيم العمل؟",
+      "expected_source": "قانون العمل",
+      "expected_article": [
+        "55"
+      ],
+      "difficulty": "medium",
+      "queryType": "doctrinal_question",
+      "category": "عمالي"
+    },
+    {
+      "id": "lab-16",
+      "question": "ما هي التزامات صاحب العمل في السلامة والصحة المهنية؟",
+      "expected_source": "قانون العمل",
+      "expected_article": [
+        "78"
+      ],
+      "difficulty": "medium",
+      "queryType": "doctrinal_question",
+      "category": "عمالي"
+    },
+    {
+      "id": "lab-17",
+      "question": "ما هو السن الأدنى لتشغيل الحدث؟",
+      "expected_source": "قانون العمل",
+      "expected_article": [
+        "73"
+      ],
+      "difficulty": "easy",
+      "queryType": "legal_definition",
+      "category": "عمالي"
+    },
+    {
+      "id": "lab-18",
+      "question": "هل يجوز تشغيل من هو دون الثامنة عشرة في الأعمال الخطرة؟",
+      "expected_source": "قانون العمل",
+      "expected_article": [
+        "74"
+      ],
+      "difficulty": "medium",
+      "queryType": "doctrinal_question",
+      "category": "عمالي"
+    },
+    {
+      "id": "lab-19",
+      "question": "توفي عامل أثناء الخدمة، لمن تؤول حقوقه؟",
+      "expected_source": "قانون العمل",
+      "expected_article": [
+        "34"
+      ],
+      "difficulty": "medium",
+      "queryType": "fact_pattern",
+      "category": "عمالي"
+    },
+    {
+      "id": "lab-20",
+      "question": "ما نص المادة 12 من قانون العمل بشأن استقدام العامل غير الأردني؟",
+      "expected_source": "قانون العمل",
+      "expected_article": [
+        "12"
+      ],
+      "difficulty": "easy",
+      "queryType": "article_lookup",
+      "category": "عمالي"
+    },
+    {
+      "id": "com-01",
+      "question": "ما هي الأعمال التجارية البرية؟",
+      "expected_source": "قانون التجارة",
+      "expected_article": [
+        "6"
+      ],
+      "difficulty": "easy",
+      "queryType": "legal_definition",
+      "category": "تجاري وشركات"
+    },
+    {
+      "id": "com-02",
+      "question": "ما حكم إصدار شيك بدون رصيد؟",
+      "expected_source": "قانون التجارة",
+      "expected_article": null,
+      "difficulty": "hard",
+      "queryType": "doctrinal_question",
+      "category": "تجاري وشركات"
+    },
+    {
+      "id": "com-03",
+      "question": "ما هو الرهن التجاري وشروط انعقاده؟",
+      "expected_source": "قانون التجارة",
+      "expected_article": [
+        "60",
+        "61",
+        "62"
+      ],
+      "difficulty": "medium",
+      "queryType": "legal_definition",
+      "category": "تجاري وشركات"
+    },
+    {
+      "id": "com-04",
+      "question": "كيف ينظم القانون الحساب الجاري بين التجار؟",
+      "expected_source": "قانون التجارة",
+      "expected_article": [
+        "106",
+        "107",
+        "108",
+        "111"
+      ],
+      "difficulty": "medium",
+      "queryType": "doctrinal_question",
+      "category": "تجاري وشركات"
+    },
+    {
+      "id": "com-05",
+      "question": "ما هي شروط الوكالة التجارية؟",
+      "expected_source": "قانون التجارة",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "doctrinal_question",
+      "category": "تجاري وشركات"
+    },
+    {
+      "id": "com-06",
+      "question": "ما هي الدفاتر التجارية الإلزامية على التاجر؟",
+      "expected_source": "قانون التجارة",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "doctrinal_question",
+      "category": "تجاري وشركات"
+    },
+    {
+      "id": "com-07",
+      "question": "ما هي شروط اكتساب صفة التاجر؟",
+      "expected_source": "قانون التجارة",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "legal_definition",
+      "category": "تجاري وشركات"
+    },
+    {
+      "id": "com-08",
+      "question": "ما هو السجل التجاري وما الغاية من التسجيل فيه؟",
+      "expected_source": "قانون التجارة",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "legal_definition",
+      "category": "تجاري وشركات"
+    },
+    {
+      "id": "com-09",
+      "question": "ما هي البيانات الإلزامية في سند السحب؟",
+      "expected_source": "قانون التجارة",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "doctrinal_question",
+      "category": "تجاري وشركات"
+    },
+    {
+      "id": "com-10",
+      "question": "ما نص المادة 6 من قانون التجارة؟",
+      "expected_source": "قانون التجارة",
+      "expected_article": [
+        "6"
+      ],
+      "difficulty": "easy",
+      "queryType": "article_lookup",
+      "category": "تجاري وشركات"
+    },
+    {
+      "id": "com-11",
+      "question": "من كم شخص تتألف شركة التضامن؟",
+      "expected_source": "قانون الشركات",
+      "expected_article": [
+        "9"
+      ],
+      "difficulty": "easy",
+      "queryType": "legal_definition",
+      "category": "تجاري وشركات"
+    },
+    {
+      "id": "com-12",
+      "question": "ما هي أنواع الشركات التي يجيز القانون تسجيلها؟",
+      "expected_source": "قانون الشركات",
+      "expected_article": [
+        "6"
+      ],
+      "difficulty": "easy",
+      "queryType": "legal_definition",
+      "category": "تجاري وشركات"
+    },
+    {
+      "id": "com-13",
+      "question": "ما هي إجراءات تأسيس شركة ذات مسؤولية محدودة؟",
+      "expected_source": "قانون الشركات",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "doctrinal_question",
+      "category": "تجاري وشركات"
+    },
+    {
+      "id": "com-14",
+      "question": "ما الفرق بين الشركة المساهمة العامة والشركة المساهمة الخاصة؟",
+      "expected_source": "قانون الشركات",
+      "expected_article": null,
+      "difficulty": "hard",
+      "queryType": "doctrinal_question",
+      "category": "تجاري وشركات"
+    },
+    {
+      "id": "com-15",
+      "question": "كيف تدار الشركة المساهمة العامة ومن يمثلها؟",
+      "expected_source": "قانون الشركات",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "doctrinal_question",
+      "category": "تجاري وشركات"
+    },
+    {
+      "id": "com-16",
+      "question": "ما هي حالات تصفية شركة التضامن وإجراءاتها؟",
+      "expected_source": "قانون الشركات",
+      "expected_article": [
+        "35",
+        "39",
+        "40"
+      ],
+      "difficulty": "medium",
+      "queryType": "doctrinal_question",
+      "category": "تجاري وشركات"
+    },
+    {
+      "id": "com-17",
+      "question": "هل يجوز للشريك في شركة التضامن منافسة الشركة؟",
+      "expected_source": "قانون الشركات",
+      "expected_article": [
+        "21"
+      ],
+      "difficulty": "medium",
+      "queryType": "doctrinal_question",
+      "category": "تجاري وشركات"
+    },
+    {
+      "id": "com-18",
+      "question": "شريك في شركة تضامن يريد بيع حصته لطرف خارجي، هل يحق له؟",
+      "expected_source": "قانون الشركات",
+      "expected_article": null,
+      "difficulty": "hard",
+      "queryType": "fact_pattern",
+      "category": "تجاري وشركات"
+    },
+    {
+      "id": "com-19",
+      "question": "ما هي صلاحيات الهيئة العامة للشركة المساهمة؟",
+      "expected_source": "قانون الشركات",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "doctrinal_question",
+      "category": "تجاري وشركات"
+    },
+    {
+      "id": "com-20",
+      "question": "شركة تعرضت للإعسار، ما الأحكام التي تسري عليها؟",
+      "expected_source": "قانون الشركات",
+      "expected_article": [
+        "31"
+      ],
+      "difficulty": "hard",
+      "queryType": "fact_pattern",
+      "category": "تجاري وشركات"
+    },
+    {
+      "id": "con-01",
+      "question": "ما هي شروط صحة اتفاق التحكيم؟",
+      "expected_source": "قانون التحكيم",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "doctrinal_question",
+      "category": "عقود"
+    },
+    {
+      "id": "con-02",
+      "question": "هل يجوز الطعن في قرار المحكّم وبأي طريق؟",
+      "expected_source": "قانون التحكيم",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "doctrinal_question",
+      "category": "عقود"
+    },
+    {
+      "id": "con-03",
+      "question": "كيف تُشكّل هيئة التحكيم ومن يعيّن المحكمين؟",
+      "expected_source": "قانون التحكيم",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "doctrinal_question",
+      "category": "عقود"
+    },
+    {
+      "id": "con-04",
+      "question": "ما هي أسباب إخلاء المأجور من المستأجر؟",
+      "expected_source": "قانون المالكين والمستأجرين",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "doctrinal_question",
+      "category": "عقود"
+    },
+    {
+      "id": "con-05",
+      "question": "مستأجر لم يدفع الأجرة لثلاثة أشهر، ماذا يملك المالك قانوناً؟",
+      "expected_source": "قانون المالكين والمستأجرين",
+      "expected_article": null,
+      "difficulty": "hard",
+      "queryType": "fact_pattern",
+      "category": "عقود"
+    },
+    {
+      "id": "con-06",
+      "question": "ما هي حقوق المستهلك عند وجود عيب في السلعة؟",
+      "expected_source": "قانون حماية المستهلك",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "doctrinal_question",
+      "category": "عقود"
+    },
+    {
+      "id": "con-07",
+      "question": "اشتريت جهازاً وتبيّن أنه معيب، ما هي خياراتي القانونية؟",
+      "expected_source": "قانون حماية المستهلك",
+      "expected_article": null,
+      "difficulty": "hard",
+      "queryType": "fact_pattern",
+      "category": "عقود"
+    },
+    {
+      "id": "con-08",
+      "question": "ما هو الإعلان المضلل وما جزاؤه؟",
+      "expected_source": "قانون حماية المستهلك",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "legal_definition",
+      "category": "عقود"
+    },
+    {
+      "id": "con-09",
+      "question": "ما هي التزامات الوكيل بالعمولة تجاه موكله؟",
+      "expected_source": "قانون التجارة",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "doctrinal_question",
+      "category": "عقود"
+    },
+    {
+      "id": "con-10",
+      "question": "ما هو عقد السمسرة وكيف يستحق السمسار أجره؟",
+      "expected_source": "قانون التجارة",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "legal_definition",
+      "category": "عقود"
+    },
+    {
+      "id": "con-11",
+      "question": "ما هي مسؤولية الناقل عن هلاك البضاعة؟",
+      "expected_source": "قانون التجارة",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "doctrinal_question",
+      "category": "عقود"
+    },
+    {
+      "id": "con-12",
+      "question": "ما هي شروط نقل ملكية العقار وتسجيله؟",
+      "expected_source": "قانون الملكية العقارية",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "doctrinal_question",
+      "category": "عقود"
+    },
+    {
+      "id": "con-13",
+      "question": "اتفقت مع شخص على بيع أرض دون تسجيل، هل البيع صحيح؟",
+      "expected_source": "قانون الملكية العقارية",
+      "expected_article": null,
+      "difficulty": "hard",
+      "queryType": "fact_pattern",
+      "category": "عقود"
+    },
+    {
+      "id": "con-14",
+      "question": "ما هو الرهن التأميني على العقار؟",
+      "expected_source": "قانون الملكية العقارية",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "legal_definition",
+      "category": "عقود"
+    },
+    {
+      "id": "con-15",
+      "question": "ما هي أركان العقد الصحيح؟",
+      "expected_source": "القانون المدني",
+      "expected_article": null,
+      "difficulty": "easy",
+      "queryType": "legal_definition",
+      "category": "عقود",
+      "blocked": true,
+      "blocked_reason": "القانون المدني تالف في الفهرس (نسبة الحروف اليتيمة 6.1%)"
+    },
+    {
+      "id": "con-16",
+      "question": "متى يجوز فسخ العقد للإخلال بالالتزام؟",
+      "expected_source": "القانون المدني",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "doctrinal_question",
+      "category": "عقود",
+      "blocked": true,
+      "blocked_reason": "القانون المدني تالف في الفهرس"
+    },
+    {
+      "id": "con-17",
+      "question": "ما هو الشرط الجزائي وهل يجوز للمحكمة تعديله؟",
+      "expected_source": "القانون المدني",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "doctrinal_question",
+      "category": "عقود",
+      "blocked": true,
+      "blocked_reason": "القانون المدني تالف في الفهرس"
+    },
+    {
+      "id": "con-18",
+      "question": "ما الفرق بين البطلان والفسخ في العقود؟",
+      "expected_source": "القانون المدني",
+      "expected_article": null,
+      "difficulty": "hard",
+      "queryType": "doctrinal_question",
+      "category": "عقود",
+      "blocked": true,
+      "blocked_reason": "القانون المدني تالف في الفهرس"
+    },
+    {
+      "id": "con-19",
+      "question": "ما هي أحكام عقد المقاولة ومسؤولية المقاول؟",
+      "expected_source": "القانون المدني",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "doctrinal_question",
+      "category": "عقود",
+      "blocked": true,
+      "blocked_reason": "القانون المدني تالف في الفهرس"
+    },
+    {
+      "id": "con-20",
+      "question": "وقّعت عقداً تحت ضغط وإكراه، هل يمكن إبطاله؟",
+      "expected_source": "القانون المدني",
+      "expected_article": null,
+      "difficulty": "hard",
+      "queryType": "fact_pattern",
+      "category": "عقود",
+      "blocked": true,
+      "blocked_reason": "القانون المدني تالف في الفهرس"
+    },
+    {
+      "id": "civ-01",
+      "question": "على من يقع عبء الإثبات في الدعوى؟",
+      "expected_source": "قانون البينات",
+      "expected_article": null,
+      "difficulty": "easy",
+      "queryType": "doctrinal_question",
+      "category": "مدني"
+    },
+    {
+      "id": "civ-02",
+      "question": "ما هي حجية السند الرسمي في الإثبات؟",
+      "expected_source": "قانون البينات",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "legal_definition",
+      "category": "مدني"
+    },
+    {
+      "id": "civ-03",
+      "question": "متى تُقبل شهادة الشهود لإثبات التصرفات؟",
+      "expected_source": "قانون البينات",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "doctrinal_question",
+      "category": "مدني"
+    },
+    {
+      "id": "civ-04",
+      "question": "ما هي اليمين الحاسمة ومتى توجّه؟",
+      "expected_source": "قانون البينات",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "legal_definition",
+      "category": "مدني"
+    },
+    {
+      "id": "civ-05",
+      "question": "ما هو الإقرار وما أثره في الإثبات؟",
+      "expected_source": "قانون البينات",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "legal_definition",
+      "category": "مدني"
+    },
+    {
+      "id": "civ-06",
+      "question": "ما هي المحكمة المختصة بنظر الدعوى الحقوقية؟",
+      "expected_source": "قانون اصول المحاكمات المدنية",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "doctrinal_question",
+      "category": "مدني"
+    },
+    {
+      "id": "civ-07",
+      "question": "ما هي مواعيد الطعن بالاستئناف في الأحكام المدنية؟",
+      "expected_source": "قانون اصول المحاكمات المدنية",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "doctrinal_question",
+      "category": "مدني"
+    },
+    {
+      "id": "civ-08",
+      "question": "كيف يتم تبليغ الأوراق القضائية للمدعى عليه؟",
+      "expected_source": "قانون اصول المحاكمات المدنية",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "doctrinal_question",
+      "category": "مدني"
+    },
+    {
+      "id": "civ-09",
+      "question": "ما هي البيانات الواجب توافرها في لائحة الدعوى؟",
+      "expected_source": "قانون اصول المحاكمات المدنية",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "doctrinal_question",
+      "category": "مدني"
+    },
+    {
+      "id": "civ-10",
+      "question": "ما هي شروط تسجيل الحقوق العينية على العقار؟",
+      "expected_source": "قانون الملكية العقارية",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "doctrinal_question",
+      "category": "مدني"
+    },
+    {
+      "id": "civ-11",
+      "question": "ما هو حق الشفعة ومتى يسقط؟",
+      "expected_source": "قانون الملكية العقارية",
+      "expected_article": null,
+      "difficulty": "hard",
+      "queryType": "doctrinal_question",
+      "category": "مدني"
+    },
+    {
+      "id": "civ-12",
+      "question": "ما هي أحكام نفقة الزوجة؟",
+      "expected_source": "قانون الأحوال الشخصية",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "doctrinal_question",
+      "category": "مدني"
+    },
+    {
+      "id": "civ-13",
+      "question": "لمن تكون حضانة الأطفال بعد الطلاق؟",
+      "expected_source": "قانون الأحوال الشخصية",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "doctrinal_question",
+      "category": "مدني"
+    },
+    {
+      "id": "civ-14",
+      "question": "ما هي شروط صحة عقد الزواج؟",
+      "expected_source": "قانون الأحوال الشخصية",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "doctrinal_question",
+      "category": "مدني"
+    },
+    {
+      "id": "civ-15",
+      "question": "ما هو الخلع وما آثاره؟",
+      "expected_source": "قانون الأحوال الشخصية",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "legal_definition",
+      "category": "مدني"
+    },
+    {
+      "id": "civ-16",
+      "question": "ما هي مدة التقادم في الالتزامات المدنية؟",
+      "expected_source": "القانون المدني",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "doctrinal_question",
+      "category": "مدني",
+      "blocked": true,
+      "blocked_reason": "القانون المدني تالف في الفهرس"
+    },
+    {
+      "id": "civ-17",
+      "question": "ما هي أركان المسؤولية التقصيرية؟",
+      "expected_source": "القانون المدني",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "legal_definition",
+      "category": "مدني",
+      "blocked": true,
+      "blocked_reason": "القانون المدني تالف في الفهرس"
+    },
+    {
+      "id": "civ-18",
+      "question": "ما هو الإثراء بلا سبب؟",
+      "expected_source": "القانون المدني",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "legal_definition",
+      "category": "مدني",
+      "blocked": true,
+      "blocked_reason": "القانون المدني تالف في الفهرس"
+    },
+    {
+      "id": "civ-19",
+      "question": "شخص تسبب بحادث سير وألحق ضرراً بالغير، ما أساس مسؤوليته؟",
+      "expected_source": "القانون المدني",
+      "expected_article": null,
+      "difficulty": "hard",
+      "queryType": "fact_pattern",
+      "category": "مدني",
+      "blocked": true,
+      "blocked_reason": "القانون المدني تالف في الفهرس"
+    },
+    {
+      "id": "civ-20",
+      "question": "ما هي حالات انقضاء الالتزام؟",
+      "expected_source": "القانون المدني",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "doctrinal_question",
+      "category": "مدني",
+      "blocked": true,
+      "blocked_reason": "القانون المدني تالف في الفهرس"
+    },
+    {
+      "id": "cri-01",
+      "question": "ما هي إجراءات الادعاء بالحق الشخصي أمام المحكمة الجزائية؟",
+      "expected_source": "قانون اصول المحاكمات الجزائية",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "doctrinal_question",
+      "category": "جزائي"
+    },
+    {
+      "id": "cri-02",
+      "question": "ما هي صلاحيات المدعي العام في التحقيق؟",
+      "expected_source": "قانون اصول المحاكمات الجزائية",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "doctrinal_question",
+      "category": "جزائي"
+    },
+    {
+      "id": "cri-03",
+      "question": "ما هي مدة التوقيف وشروط تمديده؟",
+      "expected_source": "قانون اصول المحاكمات الجزائية",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "doctrinal_question",
+      "category": "جزائي"
+    },
+    {
+      "id": "cri-04",
+      "question": "متى يجوز إخلاء سبيل الموقوف بكفالة؟",
+      "expected_source": "قانون اصول المحاكمات الجزائية",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "doctrinal_question",
+      "category": "جزائي"
+    },
+    {
+      "id": "cri-05",
+      "question": "ما هي حقوق المشتكى عليه أثناء التحقيق؟",
+      "expected_source": "قانون اصول المحاكمات الجزائية",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "doctrinal_question",
+      "category": "جزائي"
+    },
+    {
+      "id": "cri-06",
+      "question": "ما هي مواعيد الطعن بالأحكام الجزائية؟",
+      "expected_source": "قانون اصول المحاكمات الجزائية",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "doctrinal_question",
+      "category": "جزائي"
+    },
+    {
+      "id": "cri-07",
+      "question": "ما هو التفتيش ومتى يكون مشروعاً؟",
+      "expected_source": "قانون اصول المحاكمات الجزائية",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "legal_definition",
+      "category": "جزائي"
+    },
+    {
+      "id": "cri-08",
+      "question": "ما هي إجراءات إلقاء القبض على المشتبه به؟",
+      "expected_source": "قانون اصول المحاكمات الجزائية",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "doctrinal_question",
+      "category": "جزائي"
+    },
+    {
+      "id": "cri-09",
+      "question": "ما هو دور الضابطة العدلية في جمع الاستدلالات؟",
+      "expected_source": "قانون اصول المحاكمات الجزائية",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "doctrinal_question",
+      "category": "جزائي"
+    },
+    {
+      "id": "cri-10",
+      "question": "متى تسقط الدعوى الجزائية؟",
+      "expected_source": "قانون اصول المحاكمات الجزائية",
+      "expected_article": null,
+      "difficulty": "hard",
+      "queryType": "doctrinal_question",
+      "category": "جزائي"
+    },
+    {
+      "id": "cri-11",
+      "question": "ما هي أركان جريمة إساءة الائتمان؟",
+      "expected_source": "قانون العقوبات",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "legal_definition",
+      "category": "جزائي"
+    },
+    {
+      "id": "cri-12",
+      "question": "موكلي أخذ مبلغاً وقال إنه قرض وليس أمانة، فهل يعد ذلك جريمة؟",
+      "expected_source": "قانون العقوبات",
+      "expected_article": null,
+      "difficulty": "hard",
+      "queryType": "fact_pattern",
+      "category": "جزائي"
+    },
+    {
+      "id": "cri-13",
+      "question": "ما هي أركان جريمة الاحتيال؟",
+      "expected_source": "قانون العقوبات",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "legal_definition",
+      "category": "جزائي"
+    },
+    {
+      "id": "cri-14",
+      "question": "ما الفرق بين الجناية والجنحة والمخالفة؟",
+      "expected_source": "قانون العقوبات",
+      "expected_article": null,
+      "difficulty": "easy",
+      "queryType": "doctrinal_question",
+      "category": "جزائي"
+    },
+    {
+      "id": "cri-15",
+      "question": "ما هي عقوبة السرقة؟",
+      "expected_source": "قانون العقوبات",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "doctrinal_question",
+      "category": "جزائي"
+    },
+    {
+      "id": "cri-16",
+      "question": "ما هو الشروع في الجريمة وما عقوبته؟",
+      "expected_source": "قانون العقوبات",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "legal_definition",
+      "category": "جزائي"
+    },
+    {
+      "id": "cri-17",
+      "question": "ما هي أسباب الإباحة وموانع المسؤولية؟",
+      "expected_source": "قانون العقوبات",
+      "expected_article": null,
+      "difficulty": "hard",
+      "queryType": "doctrinal_question",
+      "category": "جزائي"
+    },
+    {
+      "id": "cri-18",
+      "question": "ما هي عقوبة إصدار شيك بدون رصيد جزائياً؟",
+      "expected_source": "قانون العقوبات",
+      "expected_article": null,
+      "difficulty": "hard",
+      "queryType": "doctrinal_question",
+      "category": "جزائي"
+    },
+    {
+      "id": "cri-19",
+      "question": "ما هو الدفاع الشرعي وشروطه؟",
+      "expected_source": "قانون العقوبات",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "legal_definition",
+      "category": "جزائي"
+    },
+    {
+      "id": "cri-20",
+      "question": "ما هي الظروف المشددة والمخففة للعقوبة؟",
+      "expected_source": "قانون العقوبات",
+      "expected_article": null,
+      "difficulty": "medium",
+      "queryType": "doctrinal_question",
+      "category": "جزائي"
+    }
+  ]
+}

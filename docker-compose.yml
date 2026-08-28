@@ -1,0 +1,90 @@
+services:
+  db:
+    # pgvector's own image = Postgres 16 with the extension already compiled in.
+    # Building it from the stock postgres image means a toolchain in the image
+    # for no benefit.
+    image: pgvector/pgvector:pg16
+    container_name: legal_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: legal
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-legal}
+      POSTGRES_DB: ai_legal
+      # Arabic collation for correct ORDER BY on Arabic titles.
+      LANG: C.UTF-8
+    ports:
+      # Bound to loopback: the app talks to it over the compose network, so
+      # exposing 5432 to the internet would be handing out a public database.
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    command:
+      # Tuned for a 4GB VPS shared with the Node process. shared_buffers at 25%
+      # of RAM is the usual rule; here the app needs its half.
+      - postgres
+      - -c
+      - shared_buffers=512MB
+      - -c
+      - work_mem=32MB
+      - -c
+      - maintenance_work_mem=256MB
+      - -c
+      - effective_cache_size=1536MB
+      # HNSW index builds are the heaviest thing this DB does; without a raised
+      # limit pgvector falls back to a slow serial build.
+      - -c
+      - max_parallel_maintenance_workers=2
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U legal -d ai_legal"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    container_name: legal_app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # Host is `db`, the compose service name — not localhost. Inside the app
+      # container localhost is the app itself.
+      DATABASE_URL: postgresql://legal:${POSTGRES_PASSWORD:-legal}@db:5432/ai_legal
+
+      # Chat and embeddings are separate settings: Claude has no embeddings
+      # endpoint, so a single provider variable could not express "Claude for
+      # answers, OpenAI for vectors".
+      CHAT_PROVIDER: ${CHAT_PROVIDER:-openai}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_CHAT_MODEL: ${OPENAI_CHAT_MODEL:-gpt-4o-mini}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-opus-4-8}
+
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-openai}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
+      EMBEDDING_DIM: ${EMBEDDING_DIM:-1536}
+      VOYAGE_API_KEY: ${VOYAGE_API_KEY:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      IP_HASH_SALT: ${IP_HASH_SALT}
+      STORAGE_DIR: /data/storage
+      RETRIEVAL_TOP_K: ${RETRIEVAL_TOP_K:-8}
+      RETRIEVAL_MIN_SCORE: ${RETRIEVAL_MIN_SCORE:-0.30}
+      ALLOW_GENERAL_FALLBACK: ${ALLOW_GENERAL_FALLBACK:-true}
+      NODE_ENV: production
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      # Uploaded PDFs must outlive the container — they are the only copy, and
+      # a re-index reads them back from here.
+      - ./storage:/data/storage
+    deploy:
+      resources:
+        limits:
+          # A hard ceiling so an OCR run on a huge scan gets OOM-killed on its
+          # own instead of taking Postgres down with it. The container restarts;
+          # the database never notices.
+          memory: 1800M
+
+volumes:
+  pgdata:

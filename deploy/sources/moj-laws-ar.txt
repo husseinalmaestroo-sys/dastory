@@ -1,0 +1,47 @@
+# القوانين الأردنية — وزارة العدل (moj.gov.jo)
+# المصدر: https://www.moj.gov.jo/AR/List/القوانين  — 3 صفحات، 24 قانوناً
+# جُمعت بتاريخ 2026-07-17 عبر متصفح حقيقي.
+#
+# لماذا قائمة يدوية بدل زحف آلي: الترقيم في الموقع يتم عبر ASP.NET __doPostBack
+# مع __VIEWSTATE، ولا توجد روابط صفحات عادية يمكن قراءتها. وأمام الموقع جدار
+# حماية (F5 BIG-IP) — إرسال طلبات POST متكررة بـ viewstate هو بالضبط النمط الذي
+# نُصب لصيده، ونتيجته حظر IP الخادم. جمع الروابط مرة واحدة بالمتصفح ثم تنزيل
+# ملفات ثابتة عادية يحقق الغرض بلا أي التفاف.
+#
+# القوانين الأساسية الناقصة (التجارة، العمل، الشركات، البينات، الأحوال الشخصية،
+# ...) ليست على moj.gov.jo — انظر jordan-core-laws-missing.txt لخطة إدخالها.
+#
+# التحديث: أعد فتح الصفحات الثلاث في المتصفح وأضف الجديد هنا.
+#
+#   npm run fetch  -- --list=deploy/sources/moj-laws-ar.txt --out=./downloads/moj-laws
+#   npm run ingest -- ./downloads/moj-laws --type=law
+
+# ---- الصفحة 1: أحدث التعديلات ----
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/معدل_لقانون_المعاملات_الالكترونية.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/معدل_لقانون_الكاتب_العدل.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/قانون_معدل_لقانون_العقوبات_2025.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/قانون_معدل_لقانون_أصول_المحاكمات_المدنية_رقم_6_لسنة_2024.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/قانــــــون_العفو_العام_رقـم_5_لسنـــــــــــــة_2024.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/قانون_معدل_لقانون_ضمان_ق_الحصول_على_المعلومات_رقم_3_لسنة_2024.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/قانون_معدل_لقانون_اصول_المحاكمات_المدنية_رقم_14_لسنة_2023.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/قانون_معدل_لقانون_العقوبات_رقم_10_لسنة_2022.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/قانون_معدل_لقانون_التنفيذ_رقم_9_لسنة_2022.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/قانون_إدارة_قضايا_الدولة_وتعديلاته_رقم_28_لسنة_2017.pdf
+
+# ---- الصفحة 2 ----
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/قانون_استقلال_القضاء_وتعديلاته_رقم_29_لسنة_2014.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/قانون_الكسب_غير_المشروع_وتعديلاته_رقم_21_لسنة_2014.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/قانون_منع_الاتجار_بالبشر_وتعديلاته_رقم_9_لسنة_2009.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/قانون_الجمعيات_وتعديلاته_رقم_51_لسنة_2008.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/قانون_ضمان_حق_الحصول_على_المعلومات_رقم_47_لسنة_2007.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/قانون_التنفيذ_وتعديلاته_رقم_25_لسنة_2007.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/قانون_الوساطة_لتسوية_النزاعات_المدنية_وتعديلاته_رقم_12_لسنة_2006.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/قانون_مراكز_الاصلاح_والتأهيل_وتعديلاته_رقم_9_لسنة_2004.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/قانون_تشكيل_المحاكم_النظامية_وتعديلاته_رقم_17_لسنة_2001.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/قانون_اصول_المحاكمات_المدنية_وتعديلاته_رقم_24_لسنة_1988.pdf
+
+# ---- الصفحة 3: القوانين الأساسية ----
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/القانون_المدني_رقم_43_لسنة_1976.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/قانون_اصول_المحاكمات_الجزائية_وتعديلاته_رقم_9_لسنة_1961.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/قانون_العقوبات_وتعديلاته_رقم_16_لسنة_1960.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/قانون_الكاتب_العدل_وتعديلاته_رقم_11_لسنة_1952.pdf

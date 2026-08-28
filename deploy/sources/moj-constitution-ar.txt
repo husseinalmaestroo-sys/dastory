@@ -1,0 +1,25 @@
+# الدستور الأردني — وزارة العدل (moj.gov.jo)
+# المصدر: https://www.moj.gov.jo/AR/List/الدستور_الأردني  — صفحة واحدة، 10 فصول
+# جُمعت بتاريخ 2026-07-17.
+#
+# الدستور منشور مقسّماً إلى عشرة ملفات بأسماء "الفصل01".."الفصل10" — أسماء
+# لا تحمل أي معنى يميّزها. لذلك هذه الدفعة تحتاج خيارين إلزاميين:
+#
+#   --type=law          لأن أسماء الملفات لا تدل على نوعها، ويرفض النظام
+#                       التخمين ويتوقف بدلاً من تصنيفها خطأً.
+#   --title-prefix=...  وإلا ظهر في بطاقة الاستشهاد "الفصل01" وحدها، وهي
+#                       بلا معنى أمام المحامي.
+#
+#   npm run fetch  -- --list=deploy/sources/moj-constitution-ar.txt --out=./downloads/moj-dustour
+#   npm run ingest -- ./downloads/moj-dustour --type=law --title-prefix="الدستور الأردني"
+
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/الفصل01.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/الفصل02.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/الفصل03.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/الفصل04.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/الفصل05.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/الفصل06.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/الفصل07.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/الفصل08.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/الفصل09.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/الفصل10.pdf

@@ -1,0 +1,578 @@
+[
+  {
+    "question": "ما الفرق بين البطلان المطلق والبطلان النسبي في القانون المدني الأردني؟ وما أثر كل منهما على العقد؟",
+    "queryType": "doctrinal_question",
+    "n": 8,
+    "confidence": "متوسطة",
+    "confidenceScore": 0.472,
+    "addedTerms": [],
+    "otherSideHit": true,
+    "top": [
+      {
+        "id": "5187",
+        "law": "قانون التحكيم",
+        "article": "49",
+        "matched_by": "vector",
+        "score": 0.0311
+      },
+      {
+        "id": "2399",
+        "law": "قرار الديوان الخاص بتفسير القوانين — 77",
+        "article": null,
+        "matched_by": "vector",
+        "score": 0.0309
+      },
+      {
+        "id": "7419",
+        "law": "قانون المدني",
+        "article": "169",
+        "matched_by": "vector",
+        "score": 0.0306
+      },
+      {
+        "id": "7418",
+        "law": "قانون المدني",
+        "article": "168",
+        "matched_by": "vector",
+        "score": 0.0304
+      },
+      {
+        "id": "2570",
+        "law": "قرار رقم الدعوى 143 2023",
+        "article": null,
+        "matched_by": "vector",
+        "score": 0.0302
+      },
+      {
+        "id": "8923",
+        "law": "قانون اصول المحاكمات المدنية",
+        "article": "133",
+        "matched_by": "vector",
+        "score": 0.0299
+      },
+      {
+        "id": "5373",
+        "law": "قانون الملكية العقارية لسنة أحكام عامة",
+        "article": "139",
+        "matched_by": "vector",
+        "score": 0.0293
+      },
+      {
+        "id": "8833",
+        "law": "قانون اصول المحاكمات المدنية",
+        "article": "52",
+        "matched_by": "vector",
+        "score": 0.0291
+      }
+    ]
+  },
+  {
+    "question": "ما الفرق بين العقد الباطل والعقد القابل للإبطال؟",
+    "queryType": "doctrinal_question",
+    "n": 8,
+    "confidence": "عالية",
+    "confidenceScore": 0.8,
+    "addedTerms": [],
+    "otherSideHit": true,
+    "top": [
+      {
+        "id": "7418",
+        "law": "قانون المدني",
+        "article": "168",
+        "matched_by": "vector",
+        "score": 0.0164
+      },
+      {
+        "id": "7419",
+        "law": "قانون المدني",
+        "article": "169",
+        "matched_by": "vector",
+        "score": 0.0161
+      },
+      {
+        "id": "7417",
+        "law": "قانون المدني",
+        "article": "167",
+        "matched_by": "vector",
+        "score": 0.0159
+      },
+      {
+        "id": "7426",
+        "law": "قانون المدني",
+        "article": "176",
+        "matched_by": "vector",
+        "score": 0.0156
+      },
+      {
+        "id": "7350",
+        "law": "قانون المدني",
+        "article": "100",
+        "matched_by": "vector",
+        "score": 0.0154
+      },
+      {
+        "id": "5187",
+        "law": "قانون التحكيم",
+        "article": "49",
+        "matched_by": "vector",
+        "score": 0.0152
+      },
+      {
+        "id": "7420",
+        "law": "قانون المدني",
+        "article": "170",
+        "matched_by": "vector",
+        "score": 0.0149
+      },
+      {
+        "id": "7958",
+        "law": "قانون المدني",
+        "article": "710",
+        "matched_by": "vector",
+        "score": 0.0147
+      }
+    ]
+  },
+  {
+    "question": "ما الفرق بين الفصل التعسفي والفصل المشروع؟",
+    "queryType": "doctrinal_question",
+    "n": 1,
+    "confidence": "منخفضة",
+    "confidenceScore": 0.05,
+    "addedTerms": [],
+    "otherSideHit": true,
+    "top": [
+      {
+        "id": "5786",
+        "law": "قانون الأحوال الشخصية الأردني",
+        "article": "113",
+        "matched_by": "vector",
+        "score": 0.0164
+      }
+    ]
+  },
+  {
+    "question": "ما الفرق بين المسؤولية العقدية والمسؤولية التقصيرية؟",
+    "queryType": "doctrinal_question",
+    "n": 8,
+    "confidence": "منخفضة",
+    "confidenceScore": 0.325,
+    "addedTerms": [],
+    "otherSideHit": true,
+    "top": [
+      {
+        "id": "7456",
+        "law": "قانون المدني",
+        "article": "206",
+        "matched_by": "vector",
+        "score": 0.0314
+      },
+      {
+        "id": "7426",
+        "law": "قانون المدني",
+        "article": "176",
+        "matched_by": "vector",
+        "score": 0.0311
+      },
+      {
+        "id": "5084",
+        "law": "قانون الشركات",
+        "article": "237",
+        "matched_by": "vector",
+        "score": 0.0309
+      },
+      {
+        "id": "7449",
+        "law": "قانون المدني",
+        "article": "199",
+        "matched_by": "vector",
+        "score": 0.0306
+      },
+      {
+        "id": "5227",
+        "law": "قانون الملكية العقارية لسنة أحكام عامة",
+        "article": "2",
+        "matched_by": "vector",
+        "score": 0.0304
+      },
+      {
+        "id": "5006",
+        "law": "قانون الشركات",
+        "article": "159",
+        "matched_by": "vector",
+        "score": 0.0302
+      },
+      {
+        "id": "7489",
+        "law": "قانون المدني",
+        "article": "239",
+        "matched_by": "vector",
+        "score": 0.0295
+      },
+      {
+        "id": "6522",
+        "law": "قانون حماية المستهلك",
+        "article": "22",
+        "matched_by": "vector",
+        "score": 0.0293
+      }
+    ]
+  },
+  {
+    "question": "ما الفرق بين الجريمة المدنية والجريمة الجزائية؟",
+    "queryType": "doctrinal_question",
+    "n": 8,
+    "confidence": "منخفضة",
+    "confidenceScore": 0.424,
+    "addedTerms": [],
+    "otherSideHit": true,
+    "top": [
+      {
+        "id": "6034",
+        "law": "قانون العقوبات الأردني مع كامل التعديلات",
+        "article": "25 مكرر",
+        "matched_by": "vector",
+        "score": 0.0311
+      },
+      {
+        "id": "6066",
+        "law": "قانون العقوبات الأردني مع كامل التعديلات",
+        "article": "55",
+        "matched_by": "vector",
+        "score": 0.0309
+      },
+      {
+        "id": "9627",
+        "law": "قانون معدل لقانون العقوبات",
+        "article": null,
+        "matched_by": "vector",
+        "score": 0.0306
+      },
+      {
+        "id": "2306",
+        "law": "قرار الديوان الخاص بتفسير القوانين — 30",
+        "article": null,
+        "matched_by": "vector",
+        "score": 0.0302
+      },
+      {
+        "id": "9235",
+        "law": "قانون اصول المحاكمات الجزائية",
+        "article": "29",
+        "matched_by": "vector",
+        "score": 0.0299
+      },
+      {
+        "id": "9211",
+        "law": "قانون اصول المحاكمات الجزائية",
+        "article": "5",
+        "matched_by": "vector",
+        "score": 0.0295
+      },
+      {
+        "id": "2307",
+        "law": "قرار الديوان الخاص بتفسير القوانين — 30",
+        "article": null,
+        "matched_by": "vector",
+        "score": 0.0293
+      },
+      {
+        "id": "9649",
+        "law": "قانون العفو العام",
+        "article": null,
+        "matched_by": "vector",
+        "score": 0.0291
+      }
+    ]
+  },
+  {
+    "question": "ما الفرق بين القرض والوديعة؟",
+    "queryType": "doctrinal_question",
+    "n": 8,
+    "confidence": "عالية",
+    "confidenceScore": 0.784,
+    "addedTerms": [],
+    "otherSideHit": true,
+    "top": [
+      {
+        "id": "8135",
+        "law": "قانون المدني",
+        "article": "889",
+        "matched_by": "vector",
+        "score": 0.0314
+      },
+      {
+        "id": "4269",
+        "law": "قانون التجارة",
+        "article": "115",
+        "matched_by": "vector",
+        "score": 0.0311
+      },
+      {
+        "id": "8123",
+        "law": "قانون المدني",
+        "article": "876",
+        "matched_by": "vector",
+        "score": 0.0306
+      },
+      {
+        "id": "8133",
+        "law": "قانون المدني",
+        "article": "887",
+        "matched_by": "vector",
+        "score": 0.0304
+      },
+      {
+        "id": "8128",
+        "law": "قانون المدني",
+        "article": "882",
+        "matched_by": "vector",
+        "score": 0.0302
+      },
+      {
+        "id": "8127",
+        "law": "قانون المدني",
+        "article": "880",
+        "matched_by": "vector",
+        "score": 0.0299
+      },
+      {
+        "id": "8122",
+        "law": "قانون المدني",
+        "article": "875",
+        "matched_by": "vector",
+        "score": 0.0297
+      },
+      {
+        "id": "8126",
+        "law": "قانون المدني",
+        "article": "879",
+        "matched_by": "vector",
+        "score": 0.0295
+      }
+    ]
+  },
+  {
+    "question": "ما الفرق بين الشرط الفاسخ والشرط الواقف؟",
+    "queryType": "doctrinal_question",
+    "n": 8,
+    "confidence": "متوسطة",
+    "confidenceScore": 0.482,
+    "addedTerms": [],
+    "otherSideHit": false,
+    "top": [
+      {
+        "id": "8483",
+        "law": "قانون المدني",
+        "article": "1237",
+        "matched_by": "vector",
+        "score": 0.0164
+      },
+      {
+        "id": "8487",
+        "law": "قانون المدني",
+        "article": "1241",
+        "matched_by": "vector",
+        "score": 0.0161
+      },
+      {
+        "id": "8490",
+        "law": "قانون المدني",
+        "article": "1244",
+        "matched_by": "vector",
+        "score": 0.0159
+      },
+      {
+        "id": "8489",
+        "law": "قانون المدني",
+        "article": "1243",
+        "matched_by": "vector",
+        "score": 0.0156
+      },
+      {
+        "id": "8493",
+        "law": "قانون المدني",
+        "article": "1247",
+        "matched_by": "vector",
+        "score": 0.0154
+      },
+      {
+        "id": "8494",
+        "law": "قانون المدني",
+        "article": "1248",
+        "matched_by": "vector",
+        "score": 0.0152
+      },
+      {
+        "id": "8491",
+        "law": "قانون المدني",
+        "article": "1245",
+        "matched_by": "vector",
+        "score": 0.0149
+      },
+      {
+        "id": "8492",
+        "law": "قانون المدني",
+        "article": "1246",
+        "matched_by": "vector",
+        "score": 0.0147
+      }
+    ]
+  },
+  {
+    "question": "ما هي شروط بطلان حكم التحكيم؟",
+    "queryType": "doctrinal_question",
+    "n": 8,
+    "confidence": "عالية",
+    "confidenceScore": 0.848,
+    "addedTerms": [
+      "اتفاق التحكيم",
+      "هيئة التحكيم",
+      "المحكم"
+    ],
+    "otherSideHit": true,
+    "top": [
+      {
+        "id": "5187",
+        "law": "قانون التحكيم",
+        "article": "49",
+        "matched_by": "both",
+        "score": 0.0478
+      },
+      {
+        "id": "5185",
+        "law": "قانون التحكيم",
+        "article": "47",
+        "matched_by": "both",
+        "score": 0.0461
+      },
+      {
+        "id": "5179",
+        "law": "قانون التحكيم",
+        "article": "41",
+        "matched_by": "both",
+        "score": 0.0456
+      },
+      {
+        "id": "5154",
+        "law": "قانون التحكيم",
+        "article": "16",
+        "matched_by": "both",
+        "score": 0.0455
+      },
+      {
+        "id": "5176",
+        "law": "قانون التحكيم",
+        "article": "38",
+        "matched_by": "both",
+        "score": 0.0455
+      },
+      {
+        "id": "5166",
+        "law": "قانون التحكيم",
+        "article": "28",
+        "matched_by": "both",
+        "score": 0.0426
+      },
+      {
+        "id": "5184",
+        "law": "قانون التحكيم",
+        "article": "46",
+        "matched_by": "both",
+        "score": 0.0423
+      },
+      {
+        "id": "5165",
+        "law": "قانون التحكيم",
+        "article": "27",
+        "matched_by": "both",
+        "score": 0.0423
+      }
+    ]
+  },
+  {
+    "question": "ما هي أسباب الإباحة وموانع المسؤولية؟",
+    "queryType": "legal_definition",
+    "n": 1,
+    "confidence": "منخفضة",
+    "confidenceScore": 0.05,
+    "addedTerms": [],
+    "otherSideHit": false,
+    "top": [
+      {
+        "id": "6117",
+        "law": "قانون العقوبات الأردني مع كامل التعديلات",
+        "article": "105",
+        "matched_by": "vector",
+        "score": 0.0164
+      }
+    ]
+  },
+  {
+    "question": "ما الفرق بين البطلان والفسخ في العقود؟",
+    "queryType": "doctrinal_question",
+    "n": 8,
+    "confidence": "منخفضة",
+    "confidenceScore": 0.416,
+    "addedTerms": [],
+    "otherSideHit": true,
+    "top": [
+      {
+        "id": "7445",
+        "law": "قانون المدني",
+        "article": "195",
+        "matched_by": "vector",
+        "score": 0.0164
+      },
+      {
+        "id": "8051",
+        "law": "قانون المدني",
+        "article": "804",
+        "matched_by": "vector",
+        "score": 0.0161
+      },
+      {
+        "id": "8138",
+        "law": "قانون المدني",
+        "article": "892",
+        "matched_by": "vector",
+        "score": 0.0159
+      },
+      {
+        "id": "7993",
+        "law": "قانون المدني",
+        "article": "745",
+        "matched_by": "vector",
+        "score": 0.0156
+      },
+      {
+        "id": "7991",
+        "law": "قانون المدني",
+        "article": "743",
+        "matched_by": "vector",
+        "score": 0.0154
+      },
+      {
+        "id": "7482",
+        "law": "قانون المدني",
+        "article": "232",
+        "matched_by": "vector",
+        "score": 0.0152
+      },
+      {
+        "id": "7983",
+        "law": "قانون المدني",
+        "article": "735",
+        "matched_by": "vector",
+        "score": 0.0149
+      },
+      {
+        "id": "7958",
+        "law": "قانون المدني",
+        "article": "710",
+        "matched_by": "vector",
+        "score": 0.0147
+      }
+    ]
+  }
+]

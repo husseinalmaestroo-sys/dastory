@@ -1,0 +1,93 @@
+{
+  "_comment": "Ground truth for scripts/benchmark-rerank.ts. Every question here is answerable from a law whose indexed text has been verified CLEAN (التجارة id 159, العمل id 160, الشركات id 161 — all re-ingested from lob.gov.jo .txt). قانون العقوبات (id 3) is deliberately absent: its stored text is character-corrupted, so any criminal-law question would measure the corpus defect rather than the reranker. Re-ingest it from a clean source before adding جزائي cases.",
+  "_metric": "hit@8 = an ACCEPTED chunk appears in the top 8; rank = its 1-based position; MRR = mean of 1/rank. A case with `expectArticles` is scored at article level (the chunk must be that article of that law); without it, law level. Article-level is where the headroom is: law-level alone scores a saturated 12/12 MRR 1.000 on this corpus, which cannot discriminate between rerankers.",
+  "_ground_truth": "Article numbers were read off the indexed statute text itself (scripts probe of legal_documents), not recalled — e.g. التجارة م.6 opens 'تعد الاعمال التالية ... اعمالا تجارية برية'. Where a topic legitimately spans several articles, all acceptable numbers are listed.",
+  "cases": [
+    {
+      "question": "ما حكم إصدار شيك بدون رصيد؟",
+      "expectLaw": "قانون التجارة",
+      "note": "الشيك — الباب الثالث من الكتاب الرابع"
+    },
+    {
+      "question": "ما هي الأعمال التجارية البرية؟",
+      "expectLaw": "قانون التجارة",
+      "expectArticles": ["6"],
+      "note": "م.6 تعدّد الأعمال التجارية البرية نصاً"
+    },
+    {
+      "question": "ما هو الرهن التجاري وشروطه؟",
+      "expectLaw": "قانون التجارة",
+      "expectArticles": ["60", "61", "62"],
+      "note": "م.60 تعرّف الرهن التجاري، و61-62 شروط الحيازة"
+    },
+    {
+      "question": "كيف ينظم القانون الحساب الجاري بين التجار؟",
+      "expectLaw": "قانون التجارة",
+      "expectArticles": ["106", "107", "108", "111"],
+      "note": "الباب الخامس — الحساب الجاري"
+    },
+    {
+      "question": "ما هي شروط الوكالة التجارية؟",
+      "expectLaw": "قانون التجارة",
+      "note": "الباب الرابع — الوكالة التجارية والوساطة والسمسرة"
+    },
+    {
+      "question": "كيف تحتسب مكافأة نهاية الخدمة للعامل؟",
+      "expectLaw": "قانون العمل",
+      "expectArticles": ["32"],
+      "note": "م.32 حق العامل غير الخاضع للضمان في مكافأة نهاية الخدمة"
+    },
+    {
+      "question": "متى يعتبر فصل العامل فصلاً تعسفياً وما التعويض؟",
+      "expectLaw": "قانون العمل",
+      "note": "الفصل التعسفي"
+    },
+    {
+      "question": "ما هي أحكام ساعات العمل الإضافية وأجرها؟",
+      "expectLaw": "قانون العمل",
+      "expectArticles": ["59"],
+      "note": "م.59 تشغيل العامل أكثر من ساعات العمل مقابل أجر إضافي. الحالة التي كشفت وجود فجوة: الذراع اللغوي يرفع م.54 (سلطة العمل) وم.138 (التقادم) فوقها."
+    },
+    {
+      "question": "ما التزامات صاحب العمل عند إصابة العامل بإصابة عمل؟",
+      "expectLaw": "قانون العمل",
+      "note": "إصابات العمل"
+    },
+    {
+      "question": "ما هي إجراءات تأسيس شركة ذات مسؤولية محدودة؟",
+      "expectLaw": "قانون الشركات",
+      "note": "الشركات ذات المسؤولية المحدودة"
+    },
+    {
+      "question": "كيف تدار الشركة المساهمة العامة ومن يمثلها؟",
+      "expectLaw": "قانون الشركات",
+      "note": "الباب السادس — إدارة الشركة المساهمة العامة"
+    },
+    {
+      "question": "ما هي حالات تصفية الشركة وإجراءاتها؟",
+      "expectLaw": "قانون الشركات",
+      "expectArticles": ["88", "175", "255"],
+      "note": "التصفية موزّعة: م.88 تصفية المساهمة الخاصة، م.175 اختصاص الهيئة العامة، م.255 بطلان التصرف تحت التصفية"
+    },
+    {
+      "question": "على من يقع عبء الإثبات في الدعوى؟",
+      "expectLaw": "البينات",
+      "note": "قانون البينات — أُدخل لاحقاً؛ يضيف مشتّتات إجرائية حقيقية"
+    },
+    {
+      "question": "ما هي شروط صحة اتفاق التحكيم؟",
+      "expectLaw": "التحكيم",
+      "note": "قانون التحكيم"
+    },
+    {
+      "question": "ما هي أسباب إخلاء المأجور من المستأجر؟",
+      "expectLaw": "المالكين والمستأجرين",
+      "note": "يتنافس مع القانون المدني — مشتّت مقصود"
+    },
+    {
+      "question": "ما هي حقوق المستهلك عند وجود عيب في السلعة؟",
+      "expectLaw": "حماية المستهلك",
+      "note": "يتنافس مع أحكام البيع في المدني/التجارة — مشتّت مقصود"
+    }
+  ]
+}

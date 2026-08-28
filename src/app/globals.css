@@ -1,0 +1,72 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-app: "Segoe UI", "Noto Naskh Arabic", "Tahoma", sans-serif;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  @apply bg-ink text-slate-100 antialiased;
+  font-family: var(--font-app);
+}
+
+/* The whole product is Arabic; direction is set on <html> in layout.tsx. */
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  @apply bg-edge rounded-full;
+}
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-slate-600;
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium
+           transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply btn bg-accent text-ink hover:bg-amber-400;
+  }
+  .btn-ghost {
+    @apply btn border border-edge text-slate-300 hover:bg-panel hover:text-white;
+  }
+  .field {
+    @apply w-full rounded-lg border border-edge bg-panel px-3 py-2 text-sm text-slate-100
+           placeholder:text-muted focus:border-accent focus:outline-none;
+  }
+  .card {
+    @apply rounded-xl border border-edge bg-panel;
+  }
+}
+
+/* Answer body: the model emits plain Arabic prose with [1] refs, so this only
+   needs to make long-form text readable, not style rich markdown. */
+.answer {
+  @apply whitespace-pre-wrap leading-[1.9] text-[15px];
+}
+
+.answer .cite {
+  @apply mx-0.5 inline-flex h-5 min-w-5 items-center justify-center rounded
+         bg-accent/15 px-1 align-super text-[11px] font-semibold text-accent;
+}
+
+@keyframes pulse-dot {
+  0%, 80%, 100% { opacity: 0.25; }
+  40% { opacity: 1; }
+}
+.dot {
+  animation: pulse-dot 1.4s infinite ease-in-out both;
+}

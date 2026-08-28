@@ -1,0 +1,54 @@
+# الأنظمة والتعليمات — وزارة العدل (moj.gov.jo)
+# المصدر: https://www.moj.gov.jo/AR/List/الأنظمة  — 4 صفحات، 35 ملفاً
+# جُمعت بتاريخ 2026-07-17 عبر متصفح حقيقي.
+#
+# ملاحظة مهمة: الموقع يضع الأنظمة والتعليمات في القسم نفسه — لا يوجد قسم
+# منفصل اسمه "تعليمات". لذلك لا تمرّر --type لهذه الدفعة: يستنتج النظام النوع
+# من الكلمة الأولى في اسم كل ملف (نظام / تعليمات / لائحة). تمرير --type=regulation
+# هنا سيصنّف التعليمات خطأً كأنظمة.
+#
+#   npm run fetch  -- --list=deploy/sources/moj-regulations-ar.txt --out=./downloads/moj-regs
+#   npm run ingest -- ./downloads/moj-regs --dry-run
+
+# ---- الصفحة 1 ----
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/نظام_رقم_(٤٦)_لسنة_٢٠٢٣_نظام_معدل_لنظام_دور_إيواء_المجنى_عليهم_والمتضررين_من_جرائم_الاتجار_بالبشر.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/نظام_رسوم_الكاتب_العدل_2026.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/نظام_استخدام_الوسائل_الالكترونية_في_معاملات_الكاتب_العدل_2026.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/تعليمات_المراقبة_الالكترونية_2025.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/نظام_معدل_لنظام_التنظيم_اإلداري_لوزارة_العدل_رقم_59_لسنة_2023.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/نظام_صندوق_مساعدة_ضحايا_الاتجار_بالبشر_رقم_6_لسنة_2023.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/نظام_معدل_لنظام_المساعدة_القانونية_رقم_53_لسنة_2022.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/نظام_وسائل_وآليات_تنفيذ_بدائل_العقوبات_السالبة_للحرية_رقم_46_لسنة_2022.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/نظام_وسائل_وآليات_تنفيذ_بدائل_العقوبات_السالبة_للحرية.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/التعليمات_الناظمة_للبيع_بالمزاد_الالكتروني_رقم_1_لسنة_2022.pdf
+
+# ---- الصفحة 2 ----
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/نظام_التنظيم_الاداري_لوزارة_العدل_رقم_2_لسنة_2022.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/قرار_بتحديد_الصحف_الاوسع_انتشارا_لنشر_الاعلانات_والتبليغات_القضائية_لسنة_2021.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/تعليمات_أماكن_حجز_المركبات_رقم_1_لسنة_2021.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/نظام_المركبات_المحجوزة_وتعديلاته_رقم_60_لسنة_2020.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/نظام_المعهد_القضائي_الاردني_رقم_49_لسنة_2020.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/نظام_الخدمة_القضائية_للقضاة_النظاميين_وتعديلاته_رقم_2_لسنة_2020.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/نظام_المساعدة_القانونية_رقم_119_لسنة_2018.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/تعليمات_شؤون_الخبرة_لسنة_2018.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/نظام_استخدام_وسائل_التقنية_الحديثة_في_الاجراءات_الجزائية_رقم_96_لسنة_2018.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/نظام_استعمال_الوسائل_الالكترونية_في_الاجراءات_القضائية_المدنية_رقم_95_لسنة_2018.pdf
+
+# ---- الصفحة 3 ----
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/تعليمات_مهام_مديرية_العقوبات_المجتمعية_في_وزارة_العدل_لسنة_2018.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/نظام_الخبرة_أمام_المحاكم_النظامية_لسنة_2018.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/نظام_صندوق_التكافل_الاجتماعي_لموظفي_وزارة_العدل_رقم_117_لسنة_2017.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/تعليمات_تنظيم_المساعدة_القانونية_المقدمة_من_وزارة_العدل_رقم_1_لسنة_2016.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/تعليمات_تنظيم_عمل_الكاتب_العدل_المرخص_رقم_1_لسنة_2015.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/تعليمات_امتحان_مزاولة_اعمال_الكاتب_العدل_المرخص_رقم_2_لسنة_2015.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/لائحة_أجور_أتعاب_الكاتب_العدل_المرخص_لسنة_2015.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/نظام_ترخيص_الكاتب_العدل_وتعديلاته_رقم_22_لسنة_2015.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/نظام_عمل_دائرة_إشهار_الذمة_المالية_رقم_111_لسنة_2014.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/نظام_المكتب_الفني_لمحكمة_التمييز_وتعديلاته_رقم_7_لسنة_2010.pdf
+
+# ---- الصفحة 4 ----
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/نظام_خدمة_وكلاء_ادارة_قضايا_الدولة_لسنة_2010.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/نظام_اتلاف_القضايا_والاوراق_القضائية_في_المحاكم_النظامية_وتعديلاته_رقم_44_لسنة_2005.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/نظام_تبليغ_الاوراق_القضائية_بواسطة_الشركات_رقم_39_لسنة_2001.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/نظام_الانتقال_والسفر_وتعديلاته_رقم_56_لسنة_1981.pdf
+https://www.moj.gov.jo/ebv4.0/root_storage/ar/eb_list_page/نظام_اتالف_الاوراق_المستعملة_رقم_4_لسنة_1944.pdf

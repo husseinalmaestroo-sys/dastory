@@ -1,0 +1,18 @@
+# Without this file the build context ships your local node_modules — compiled
+# on Windows, wrong ABI for the Linux image — and silently overwrites what
+# `npm ci` builds inside the container. @napi-rs/canvas fails at runtime.
+node_modules
+.next
+storage
+
+# Never bake secrets into an image layer. Compose injects env at runtime.
+.env
+.env.local
+.env.*.local
+
+.git
+.gitignore
+*.tsbuildinfo
+npm-debug.log*
+README.md
+deploy

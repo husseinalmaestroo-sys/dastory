@@ -1,0 +1,25 @@
+[
+  {
+    "question": "ما الفرق بين البطلان المطلق والبطلان النسبي في القانون المدني الأردني؟ وما أثر كل منهما على العقد؟",
+    "mode": "before",
+    "retrieval": {
+      "n": 8,
+      "confidence": "متوسطة",
+      "confidenceScore": 0.694
+    },
+    "firstAttemptRefused": false,
+    "falseRefusalRecovered": false,
+    "usedDirectSourceFallback": false,
+    "finalMode": "grounded",
+    "answerPreview": "في القانون المدني الأردني، يتم التمييز بين **البطلان المطلق** و**البطلان النسبي** من حيث الأسباب والآثار القانونية على العقد. **البطلان المطلق**: يحدث عندما يكون العقد غير مشروع في ذاته أو في وصفه، مثل اختلال ركن من أركانه أو محله أو الغرض منه أو الشكل الذي فرضه القانون لانعقاده. في هذه الحالة، لا يترتب على العقد أي أثر قانوني، ولا يمكن تصحيحه بالإ",
+    "citationsFound": 0,
+    "citationsRedacted": 0,
+    "verification": {
+      "issues": [
+        "INCOMPLETE_ANSWER"
+      ],
+      "severity": "medium"
+    },
+    "latencyMs": 7448
+  }
+]

@@ -1,0 +1,38 @@
+node_modules/
+.next/
+.env
+.env.local
+storage/
+# Fetched source PDFs. Re-creatable from deploy/sources/*.txt, and large —
+# the list is the artifact worth versioning, not the bytes. Same reasoning
+# extends to these: the same corpus (~36MB), fetched the same way, just
+# organized outside downloads/ instead of left in it.
+downloads/
+/*.pdf
+/الأنظمة/
+/الدستور/
+/القوانين/
+/اتفاقيات الوزارة/
+
+# Tesseract's own trained-model data (ara/eng) — third-party binary data
+# identical for anyone who downloads it from Tesseract's own releases, not
+# project-authored content. Same category as node_modules: a dependency,
+# not source.
+*.traineddata
+*.tsbuildinfo
+next-env.d.ts
+
+# Logs
+*.log
+
+# Certificates & private keys — never belong in version control
+*.pem
+*.key
+*.crt
+
+.DS_Store
+Thumbs.db
+
+# Claude Code local session state — machine/session-specific, not meant to
+# be shared (mirrors the same exclusion in the parent dastory repo).
+.claude/settings.local.json

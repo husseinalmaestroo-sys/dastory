@@ -1,20 +1,8 @@
-'use client'
-
-import { useEffect, useState } from 'react'
 import HeroIntroAnimation from '@/components/landing/HeroIntroAnimation'
 
 type AdminVideo = { type: string; url: string; autoplay?: boolean; loop?: boolean; controls?: boolean }
 
-export default function Hero() {
-  const [adminVideo, setAdminVideo] = useState<AdminVideo | null>(null)
-
-  useEffect(() => {
-    const vidData = localStorage.getItem('dstoori_hero_video')
-    if (!vidData) return
-    const v = JSON.parse(vidData) as AdminVideo
-    if (v?.url) setAdminVideo(v)
-  }, [])
-
+export default function Hero({ video }: { video: AdminVideo | null }) {
   function renderAdminVideo(v: AdminVideo) {
     if (v.type === 'yt') {
       const m  = v.url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([A-Za-z0-9_-]{11})/)
@@ -73,7 +61,7 @@ export default function Hero() {
         {/* Left: video */}
         <div className="hero-vid-wrap" style={{ position: 'relative', height: 460, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ width: '100%', height: '100%', borderRadius: 20, overflow: 'hidden', position: 'relative', border: '1px solid rgba(212,175,55,.2)', boxShadow: '0 24px 60px rgba(0,0,0,.4)' }}>
-            {adminVideo ? renderAdminVideo(adminVideo) : <HeroIntroAnimation />}
+            {video ? renderAdminVideo(video) : <HeroIntroAnimation />}
             <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to left,rgba(15,23,42,.25),transparent)', pointerEvents: 'none', borderRadius: 20 }} />
           </div>
           <div style={{ position: 'absolute', inset: -20, background: 'radial-gradient(ellipse at 70% 50%,rgba(212,175,55,.08),transparent 70%)', pointerEvents: 'none', zIndex: -1 }} />

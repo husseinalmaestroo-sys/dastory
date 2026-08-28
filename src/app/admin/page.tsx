@@ -84,33 +84,51 @@ export default function AdminPage() {
       .catch(() => {})
   }, [loggedIn])
 
-  /* Load from localStorage on mount */
+  /* Load the real, DB-backed site settings once logged in as platform admin */
   useEffect(() => {
-    const saved = localStorage.getItem('dstoori_ticker_items')
-    if (saved) setTickerItems(JSON.parse(saved))
-    const savedVid = localStorage.getItem('dstoori_hero_video')
-    if (savedVid) {
-      const v = JSON.parse(savedVid)
-      if (v.type === 'mp4') setMp4Url(v.url); else setYtUrl(v.url)
-      setAutoplay(v.autoplay ?? true)
-      setLoop(v.loop ?? true)
-      setControls(v.controls ?? false)
+    if (!loggedIn) return
+    fetch('/api/site-settings')
+      .then((res) => res.ok ? res.json() : null)
+      .then((s) => {
+        if (!s) return
+        setTickerItems(s.tickerItems)
+        setTickerBg(s.tickerBg)
+        setTickerColor(s.tickerColor)
+        setTickerSpeed(s.tickerSpeed)
+        if (s.heroVideo) {
+          setVtab(s.heroVideo.type)
+          if (s.heroVideo.type === 'mp4') setMp4Url(s.heroVideo.url); else setYtUrl(s.heroVideo.url)
+          setAutoplay(s.heroVideo.autoplay)
+          setLoop(s.heroVideo.loop)
+          setControls(s.heroVideo.controls)
+        }
+        setCtPhone(s.contactPhone)
+        setCtWa(s.contactWhatsapp)
+        setCtEmail(s.contactEmail)
+      })
+      .catch(() => {})
+  }, [loggedIn])
+
+  async function patchSiteSettings(body: Record<string, unknown>, successMsg: string) {
+    try {
+      const res = await fetch('/api/site-settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const data = await res.json()
+      if (!res.ok) { setToast(`⚠ ${data.error || 'تعذر الحفظ'}`); return }
+      setToast(successMsg)
+    } catch {
+      setToast('⚠ تعذر الاتصال بالخادم')
     }
-    const savedContact = localStorage.getItem('dstoori_contact_v1')
-    if (savedContact) {
-      const c = JSON.parse(savedContact)
-      if (c.phone)    setCtPhone(c.phone)
-      if (c.whatsapp) setCtWa(c.whatsapp)
-      if (c.email)    setCtEmail(c.email)
-    }
-  }, [])
+  }
 
   const saveContact = () => {
-    const contact = { phone: ctPhone, whatsapp: ctWa.replace(/\D/g, ''), email: ctEmail }
-    localStorage.setItem('dstoori_contact_v1', JSON.stringify(contact))
-    setCtWa(contact.whatsapp)
-    window.dispatchEvent(new Event('dstoori_contact_updated'))
-    setToast('✓ تم حفظ بيانات التواصل وتطبيقها على الموقع')
+    patchSiteSettings(
+      { contactPhone: ctPhone, contactWhatsapp: ctWa, contactEmail: ctEmail },
+      '✓ تم حفظ بيانات التواصل وتطبيقها على الموقع'
+    )
   }
 
   const login = async () => {
@@ -153,18 +171,20 @@ export default function AdminPage() {
   }
 
   const saveTicker = () => {
-    localStorage.setItem('dstoori_ticker_items', JSON.stringify(tickerItems))
-    localStorage.setItem('dstoori_ticker_bg', tickerBg)
-    localStorage.setItem('dstoori_ticker_color', tickerColor)
-    localStorage.setItem('dstoori_ticker_speed', String(tickerSpeed))
-    setToast('✓ تم حفظ شريط الإعلانات وتطبيقه على الصفحة الرئيسية')
+    if (tickerItems.length === 0) { alert('أضف نصاً واحداً على الأقل للشريط'); return }
+    patchSiteSettings(
+      { tickerItems, tickerBg, tickerColor, tickerSpeed },
+      '✓ تم حفظ شريط الإعلانات وتطبيقه على الصفحة الرئيسية'
+    )
   }
 
   const saveVideo = () => {
     const url = vtab === 'yt' ? ytUrl : mp4Url
     if (!url) { alert('أدخل رابطاً أولاً'); return }
-    localStorage.setItem('dstoori_hero_video', JSON.stringify({ type: vtab, url, autoplay, loop, controls }))
-    setToast('✓ تم حفظ الفيديو وسيظهر على الصفحة الرئيسية عند تحديثها')
+    patchSiteSettings(
+      { heroVideo: { type: vtab, url, autoplay, loop, controls } },
+      '✓ تم حفظ الفيديو وسيظهر على الصفحة الرئيسية عند تحديثها'
+    )
   }
 
   /* ── Styles ── */

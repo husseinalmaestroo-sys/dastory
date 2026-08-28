@@ -26,6 +26,7 @@ export const GET = withErrorHandling(async (req: NextRequest) => {
       barNumber: user.barNumber,
       clientId: user.clientId ?? null,
       twoFactorEnabled: user.twoFactorEnabled,
+      emailVerified: user.emailVerified,
     },
   })
 })

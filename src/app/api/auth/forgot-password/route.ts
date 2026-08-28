@@ -1,19 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createHash, randomBytes } from 'crypto'
-import nodemailer from 'nodemailer'
 import { prisma } from '@/lib/prisma'
-import { enforceRequestSecurity, isHttpsRequest } from '@/lib/api-security'
+import { enforceRequestSecurity } from '@/lib/api-security'
 import { auditLog } from '@/lib/audit'
+import { isSmtpConfigured, requestOrigin, sendMail } from '@/lib/email'
 
 function isValidEmail(value: unknown) {
   return typeof value === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())
-}
-
-function requestOrigin(req: NextRequest) {
-  const configured = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL
-  if (configured) return configured
-  const host = req.headers.get('host')
-  return host ? `${isHttpsRequest(req) ? 'https' : 'http'}://${host}` : ''
 }
 
 const GENERIC_MESSAGE = 'إذا كان هذا البريد مسجلاً لدينا، سيصلك رابط لإعادة تعيين كلمة المرور خلال دقائق.'
@@ -41,18 +34,10 @@ export async function POST(req: NextRequest) {
         data: { userId: user.id, tokenHash, expiresAt: new Date(Date.now() + 30 * 60_000) },
       })
 
-      const resetLink = `${requestOrigin(req)}/?resetToken=${token}`
-      const { SMTP_HOST, SMTP_USER, SMTP_PASS, SMTP_PORT, SMTP_FROM } = process.env
+      const resetLink = `${requestOrigin(req)}/login?resetToken=${token}`
 
-      if (SMTP_HOST && SMTP_USER && SMTP_PASS) {
-        const transporter = nodemailer.createTransport({
-          host: SMTP_HOST,
-          port: parseInt(SMTP_PORT ?? '587'),
-          secure: SMTP_PORT === '465',
-          auth: { user: SMTP_USER, pass: SMTP_PASS },
-        })
-        await transporter.sendMail({
-          from: SMTP_FROM ?? SMTP_USER,
+      if (isSmtpConfigured()) {
+        await sendMail({
           to: user.email,
           subject: 'إعادة تعيين كلمة المرور — دُسْتُورِي',
           text: `مرحباً ${user.name}،\n\nاضغط على الرابط التالي لإعادة تعيين كلمة المرور (صالح لمدة 30 دقيقة):\n${resetLink}\n\nإذا لم تطلب هذا، تجاهل هذه الرسالة.`,

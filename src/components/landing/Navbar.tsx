@@ -2,19 +2,10 @@
 
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { getContactSettings, CS_EVENT, CS_DEFAULTS } from '@/lib/contact-settings'
 
-export default function Navbar() {
+export default function Navbar({ whatsapp }: { whatsapp: string }) {
   const navRef = useRef<HTMLElement>(null)
   const [mobileOpen, setMobileOpen] = useState(false)
-  const [wa, setWa] = useState(CS_DEFAULTS.whatsapp)
-
-  useEffect(() => {
-    const load = () => setWa(getContactSettings().whatsapp)
-    load()
-    window.addEventListener(CS_EVENT, load)
-    return () => window.removeEventListener(CS_EVENT, load)
-  }, [])
 
   useEffect(() => {
     const onScroll = () => {
@@ -79,10 +70,10 @@ export default function Navbar() {
 
         {/* Right side: CTAs + Hamburger */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-          <Link href="/dashboard" className="nav-cta-login" style={{ fontSize: 13, fontWeight: 800, color: 'var(--navy)', border: '2px solid #CBD5E1', borderRadius: 10, padding: '8px 18px', textDecoration: 'none' }}>
+          <Link href="/login" className="nav-cta-login" style={{ fontSize: 13, fontWeight: 800, color: 'var(--navy)', border: '2px solid #CBD5E1', borderRadius: 10, padding: '8px 18px', textDecoration: 'none' }}>
             تسجيل الدخول
           </Link>
-          <a href={`https://wa.me/${wa}?text=${encodeURIComponent('مرحباً، أريد حجز Demo لنظام دُسْتُورِي')}`} target="_blank" rel="noreferrer" className="g-gold" style={{ fontSize: 13, fontWeight: 900, color: '#fff', borderRadius: 10, padding: '9px 24px', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 7, boxShadow: '0 4px 16px rgba(200,168,75,.4)', whiteSpace: 'nowrap' }}>
+          <a href={`https://wa.me/${whatsapp}?text=${encodeURIComponent('مرحباً، أريد حجز Demo لنظام دُسْتُورِي')}`} target="_blank" rel="noreferrer" className="g-gold" style={{ fontSize: 13, fontWeight: 900, color: '#fff', borderRadius: 10, padding: '9px 24px', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 7, boxShadow: '0 4px 16px rgba(200,168,75,.4)', whiteSpace: 'nowrap' }}>
             <svg width="15" height="15" fill="white" viewBox="0 0 24 24">
               <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.115.55 4.101 1.51 5.829L0 24l6.335-1.484A11.945 11.945 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-1.885 0-3.651-.513-5.168-1.406l-.371-.22-3.762.881.895-3.665-.242-.378A9.944 9.944 0 012 12C2 6.477 6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z"/>
             </svg>
@@ -115,7 +106,7 @@ export default function Navbar() {
             {item.label}
           </a>
         ))}
-        <Link href="/dashboard" onClick={() => setMobileOpen(false)} style={{ marginTop: 8, padding: '12px 14px', borderRadius: 10, fontSize: 14, fontWeight: 800, color: 'var(--navy)', textDecoration: 'none', border: '2px solid #E2E8F0', display: 'block', textAlign: 'center' }}>
+        <Link href="/login" onClick={() => setMobileOpen(false)} style={{ marginTop: 8, padding: '12px 14px', borderRadius: 10, fontSize: 14, fontWeight: 800, color: 'var(--navy)', textDecoration: 'none', border: '2px solid #E2E8F0', display: 'block', textAlign: 'center' }}>
           تسجيل الدخول
         </Link>
       </div>

@@ -1,18 +1,4 @@
-'use client'
-
-import { useEffect, useState } from 'react'
-import { getContactSettings, CS_EVENT, CS_DEFAULTS } from '@/lib/contact-settings'
-
-export default function Footer() {
-  const [cs, setCs] = useState(CS_DEFAULTS)
-
-  useEffect(() => {
-    const load = () => setCs(getContactSettings())
-    load()
-    window.addEventListener(CS_EVENT, load)
-    return () => window.removeEventListener(CS_EVENT, load)
-  }, [])
-
+export default function Footer({ phone, email }: { phone: string; email: string }) {
   return (
     <footer className="g-navy" style={{ color: '#fff', padding: '70px 0 30px' }} dir="rtl">
       <div className="px-page" style={{ maxWidth: 1280, margin: '0 auto' }}>
@@ -34,8 +20,8 @@ export default function Footer() {
               نظام سحابي متكامل لإدارة مكاتب وشركات المحاماة الأردنية — مصمم خصيصاً لمتطلبات القانون والسوق الأردني.
             </p>
             <div style={{ marginTop: 20, fontSize: 13, color: 'rgba(255,255,255,.4)', fontWeight: 500, lineHeight: 2 }}>
-              <div>📞 خدمة عملاء الأردن: {cs.phone}</div>
-              <div>✉️ {cs.email}</div>
+              <div>📞 خدمة عملاء الأردن: {phone}</div>
+              <div>✉️ {email}</div>
             </div>
           </div>
 

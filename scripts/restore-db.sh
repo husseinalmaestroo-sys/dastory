@@ -43,6 +43,16 @@ echo "About to restore '$FILE' into database '$TARGET_DB' on $DB_HOST:$DB_PORT."
 echo "This OVERWRITES matching tables in that database. Ctrl+C now to cancel (5s)..."
 sleep 5
 
+# Verified by actually running this script against a database that did not
+# exist yet: without this, the restore below fails outright with "Unknown
+# database" — CREATE DATABASE IF NOT EXISTS makes restoring into a fresh
+# scratch database (the documented, recommended-first workflow in
+# BACKUP.md) work without a manual "create the empty DB" step the docs
+# never actually told you to do.
+echo "Ensuring target database exists ..."
+MYSQL_PWD="$DB_PASS" mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" \
+  -e "CREATE DATABASE IF NOT EXISTS \`$TARGET_DB\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+
 echo "Decrypting + restoring ..."
 openssl enc -d -aes-256-cbc -pbkdf2 -pass env:BACKUP_ENCRYPTION_PASSPHRASE -in "$FILE" \
   | gunzip \

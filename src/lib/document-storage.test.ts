@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdir, readFile, rm, writeFile } from 'fs/promises'
 import { join } from 'path'
-import { deleteDocumentFile } from './document-storage'
+import { DocumentPathError, deleteDocumentFile, readDocumentFile, resolveDocumentPath, writeDocumentFile } from './document-storage'
 
 const TEST_DIR = join(process.cwd(), 'storage', 'case-documents', '__test_office__', '__test_user__')
 
@@ -46,7 +46,7 @@ describe('deleteDocumentFile', () => {
     const maliciousUrl = '../../../../etc/passwd'
 
     await expect(deleteDocumentFile(maliciousUrl)).resolves.toBeUndefined()
-    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('refusing to delete out-of-root path'))
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('refusing to resolve out-of-root path'))
 
     consoleSpy.mockRestore()
   })
@@ -66,5 +66,59 @@ describe('deleteDocumentFile', () => {
 
     await expect(readFile(join(TEST_DIR, 'keep-me.pdf'), 'utf8')).resolves.toBe('test content')
     await expect(readFile(join(TEST_DIR, 'delete-me.pdf'))).rejects.toThrow()
+  })
+})
+
+describe('resolveDocumentPath', () => {
+  it('resolves a normal relative url under the storage root', () => {
+    const resolved = resolveDocumentPath('case-documents/office1/user1/file.pdf')
+    expect(resolved).toContain(join('storage', 'case-documents', 'office1', 'user1', 'file.pdf'))
+  })
+
+  it('throws DocumentPathError for a traversal attempt instead of silently resolving it', () => {
+    expect(() => resolveDocumentPath('../../../../etc/passwd')).toThrow(DocumentPathError)
+  })
+})
+
+describe('writeDocumentFile / readDocumentFile', () => {
+  afterEach(async () => {
+    await rm(join(process.cwd(), 'storage', 'case-documents', '__write_test_office__'), { recursive: true, force: true })
+  })
+
+  it('writes real bytes to disk and reads back the exact same bytes', async () => {
+    const bytes = Buffer.from('hello real file content, not a placeholder')
+    const url = await writeDocumentFile('__write_test_office__', '__write_test_user__', 'my file.pdf', 'PDF', bytes)
+
+    expect(url).toContain('__write_test_office__')
+    expect(url).toContain('__write_test_user__')
+
+    const readBack = await readDocumentFile(url)
+    expect(readBack.equals(bytes)).toBe(true)
+  })
+
+  it('a traversal-shaped original filename cannot escape the office/user directory', async () => {
+    // The "/" in "../.." gets stripped along with every other unsafe
+    // character, so a literal ".." can remain inside the single sanitized
+    // filename component (e.g. "..__..evil.pdf") without being a real
+    // traversal — what actually matters, verified here: the url still has
+    // exactly the 4 expected path segments (no extra "/" smuggled in via
+    // the original filename), and the file genuinely lands inside, and
+    // only inside, this upload's own directory.
+    const bytes = Buffer.from('x')
+    const url = await writeDocumentFile('__write_test_office__', '__write_test_user__', '../../evil<script>.pdf', 'PDF', bytes)
+    const segments = url.split('/')
+    expect(segments).toHaveLength(4)
+    expect(segments.slice(0, 3)).toEqual(['case-documents', '__write_test_office__', '__write_test_user__'])
+    expect(url).not.toContain('<')
+    // And the file is genuinely readable back from exactly that location.
+    await expect(readDocumentFile(url)).resolves.toEqual(bytes)
+  })
+
+  it('two uploads with the same original filename never collide on disk', async () => {
+    const a = await writeDocumentFile('__write_test_office__', '__write_test_user__', 'same-name.pdf', 'PDF', Buffer.from('A'))
+    const b = await writeDocumentFile('__write_test_office__', '__write_test_user__', 'same-name.pdf', 'PDF', Buffer.from('B'))
+    expect(a).not.toBe(b)
+    expect((await readDocumentFile(a)).toString()).toBe('A')
+    expect((await readDocumentFile(b)).toString()).toBe('B')
   })
 })

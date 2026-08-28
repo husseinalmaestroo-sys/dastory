@@ -5,6 +5,8 @@ import { signToken } from '@/lib/jwt'
 import { enforceRequestSecurity, isHttpsRequest } from '@/lib/api-security'
 import { auditLog } from '@/lib/audit'
 import { isPlatformAdminEmail } from '@/lib/auth-server'
+import { issueAndSendVerificationEmail } from '@/lib/email-verification'
+import { startTrialSubscription } from '@/lib/billing'
 
 function isValidEmail(value: unknown) {
   return typeof value === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())
@@ -79,6 +81,7 @@ export async function POST(req: NextRequest) {
         barNumber: created.barNumber,
         clientId: null,
         twoFactorEnabled: created.twoFactorEnabled,
+        emailVerified: created.emailVerified,
       },
     }, { status: 201 })
 
@@ -95,6 +98,17 @@ export async function POST(req: NextRequest) {
       entityId: created.officeId,
       metadata: { officeName: created.office.name },
     })
+
+    // Best-effort: a transient mail failure shouldn't fail account
+    // creation. The user can always trigger a resend once logged in.
+    try {
+      await issueAndSendVerificationEmail(req, created)
+    } catch (err) {
+      console.error('[signup] failed to send verification email', err)
+    }
+    // Also best-effort — see startTrialSubscription's own try/catch.
+    await startTrialSubscription(created.officeId)
+
     return res
   } catch (err) {
     console.error(err)

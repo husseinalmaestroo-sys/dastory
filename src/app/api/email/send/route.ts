@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import nodemailer from 'nodemailer'
 import { prisma } from '@/lib/prisma'
 import { requireOfficeUser } from '@/lib/auth-server'
 import { rateLimit } from '@/lib/api-security'
 import { auditLog } from '@/lib/audit'
 import { clientVisibilityWhere } from '@/lib/tenant-scope'
 import { resolveEmailAuthorization } from '@/lib/email-authorization'
+import { isSmtpConfigured, sendMail } from '@/lib/email'
 
 function isValidEmail(value: unknown) {
   return typeof value === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())
@@ -57,8 +57,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'المستلم غير مرتبط بحساباتك — لا يمكن إرسال بريد له' }, { status: 403 })
     }
 
-    const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM } = process.env
-    if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) {
+    // Relaying mail through the platform is the one abuse-prone action a
+    // freshly-signed-up, unverified account could use for spam — gated
+    // here specifically rather than app-wide, so a new office can use
+    // every other feature (cases, clients, invoices, ...) immediately.
+    if (!auth.user.emailVerified) {
+      await auditLog(req, auth.user, 'email.send_blocked', { metadata: { to: normalizedTo, reason: 'email_not_verified' } })
+      return NextResponse.json({ error: 'يجب تأكيد بريدك الإلكتروني قبل إرسال رسائل عبر المنصة' }, { status: 403 })
+    }
+
+    if (!isSmtpConfigured()) {
       await auditLog(req, auth.user, 'email.send_failed', { metadata: { reason: 'smtp_not_configured' } })
       return NextResponse.json(
         { error: 'البريد الإلكتروني غير معد. أضف SMTP_HOST و SMTP_USER و SMTP_PASS في .env' },
@@ -66,15 +74,7 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const transporter = nodemailer.createTransport({
-      host: SMTP_HOST,
-      port: parseInt(SMTP_PORT ?? '587'),
-      secure: SMTP_PORT === '465',
-      auth: { user: SMTP_USER, pass: SMTP_PASS },
-    })
-
-    await transporter.sendMail({
-      from: SMTP_FROM ?? SMTP_USER,
+    await sendMail({
       to: normalizedTo,
       subject: subject.trim(),
       text: body,

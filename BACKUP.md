@@ -1,6 +1,8 @@
 # Backup & Disaster Recovery
 
-Scripts live in [`scripts/`](scripts/): `backup-db.sh`, `backup-files.sh`, `restore-db.sh`. They've been run and verified locally against a real MySQL database and the `storage/` directory (full round-trip: backup → encrypt → decrypt → restore → row-count check). What they do **not** cover automatically is the parts that need your actual hosting account — those are called out explicitly below as manual steps.
+Scripts live in [`scripts/`](scripts/): `backup-db.sh`, `backup-files.sh`, `restore-db.sh`. Re-verified end-to-end in this session (not just re-asserted from an earlier claim): ran `backup-db.sh` against the real local `dostoori` database, restored the resulting encrypted file into a fresh scratch database with `restore-db.sh`, and confirmed row counts *and* row-level content (spot-checked the `User` table) matched the source exactly across every table. Found and fixed one real gap in the process — see below. What these scripts do **not** cover automatically is the parts that need your actual hosting account — those are called out explicitly below as manual steps.
+
+**Fixed in this session:** `restore-db.sh` previously assumed the target database already existed and failed with `Unknown database` when restoring into a genuinely fresh scratch DB — exactly the documented first-step workflow below. It now runs `CREATE DATABASE IF NOT EXISTS` for the target before restoring, so following the "Restoration procedure" section below works as written, with no undocumented manual prerequisite.
 
 ## What gets backed up
 

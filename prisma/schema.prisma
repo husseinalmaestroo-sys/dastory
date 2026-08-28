@@ -33,6 +33,16 @@ enum InvoiceStatus {
   OVERDUE
 }
 
+// Platform billing status for an office's own subscription to Dostoori —
+// distinct from InvoiceStatus above, which is the law firm's OWN invoices to
+// ITS clients. Not wired to a payment provider yet (see Subscription model).
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+}
+
 model Office {
   id            String         @id @default(cuid())
   name          String
@@ -51,6 +61,9 @@ model Office {
   events        CalendarEvent[]
   auditLogs     AuditLog[]
   timeEntries   TimeEntry[]
+  aiUsage       AiUsageLog[]
+  documentSignatures DocumentSignature[]
+  subscription  Subscription?
 }
 
 model User {
@@ -67,6 +80,7 @@ model User {
   twoFactorEnabled Boolean      @default(false)
   twoFactorSecret String?       @db.Text
   active        Boolean        @default(true)
+  emailVerified Boolean        @default(false)
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
   cases         Case[]         @relation("LawyerCases")
@@ -79,6 +93,10 @@ model User {
   linkedClient  Client?        @relation("CitizenAccess", fields: [clientId], references: [id])
   timeEntries   TimeEntry[]
   createdEvents CalendarEvent[] @relation("CalendarEventCreator")
+  siteSettingsUpdates SiteSettings[]
+  emailVerificationTokens EmailVerificationToken[]
+  aiUsage       AiUsageLog[]
+  signatures    DocumentSignature[]
 
   @@index([officeId, role])
 }
@@ -188,6 +206,8 @@ model Document {
   owner     User     @relation("DocumentOwner", fields: [ownerId], references: [id])
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  signatures      DocumentSignature[] @relation("SignedDocument")
+  usedAsSignature DocumentSignature[] @relation("SignatureImage")
 
   @@index([officeId, ownerId])
   @@index([officeId, createdAt])
@@ -285,6 +305,33 @@ model TimeEntry {
   @@index([caseId])
 }
 
+// Single-row, platform-wide public site content: the landing page's ticker,
+// hero video, and published contact details. Previously stored in each
+// visitor's browser (localStorage) and set independently per admin session —
+// nothing else ever saw those edits. This table is the one row every visitor
+// reads; the admin panel is the only writer, gated on requirePlatformAdmin.
+// Read via getSiteSettings() (src/lib/site-settings.ts), which upserts the
+// row with defaults on first read so the table never needs seeding.
+model SiteSettings {
+  id                String   @id
+  tickerItems       Json
+  tickerBg          String   @default("#0F172A")
+  tickerColor       String   @default("#D4AF37")
+  tickerSpeed       Int      @default(40)
+  heroVideoType     String?
+  heroVideoUrl      String?
+  heroVideoAutoplay Boolean  @default(true)
+  heroVideoLoop     Boolean  @default(true)
+  heroVideoControls Boolean  @default(false)
+  contactPhone      String   @default("+962 79 000 0000")
+  contactWhatsapp   String   @default("9627900000001")
+  contactEmail      String   @default("info@dostoori.jo")
+  updatedAt         DateTime @updatedAt
+  updatedById       String?
+  updatedBy         User?    @relation(fields: [updatedById], references: [id], onDelete: SetNull)
+  updatedByEmail    String?
+}
+
 model TrialRequest {
   id              String   @id @default(cuid())
   officeName      String
@@ -305,4 +352,108 @@ model TrialRequest {
 
   @@index([email])
   @@index([createdAt])
+}
+
+// ── Phase 4: email verification ────────────────────────────────────────────
+// Mirrors PasswordResetToken's pattern exactly: random token, only its hash
+// stored, expires, single-use (usedAt set on consumption, never deleted so a
+// reused/expired attempt can be told apart from a forged one in logs).
+model EmailVerificationToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+// ── Phase 4: AI usage — metadata only, never prompt/response content ───────
+// Exists for rate/cost control and an audit trail of *that* a call happened,
+// deliberately not *what* was asked or answered — a client's legal question
+// is exactly the kind of sensitive content that must not sit in a log table
+// external services or a future support engineer could read.
+model AiUsageLog {
+  id           String   @id @default(cuid())
+  officeId     String
+  office       Office   @relation(fields: [officeId], references: [id])
+  userId       String
+  user         User     @relation(fields: [userId], references: [id])
+  feature      String   // 'assistant' | 'contract_review'
+  model        String
+  inputTokens  Int      @default(0)
+  outputTokens Int      @default(0)
+  latencyMs    Int
+  success      Boolean
+  errorCode    String?
+  createdAt    DateTime @default(now())
+
+  @@index([officeId, createdAt])
+  @@index([userId, createdAt])
+}
+
+// ── Phase 4: signature audit trail ──────────────────────────────────────────
+// This is NOT a qualified/legally-binding electronic signature under any
+// jurisdiction's electronic transactions law — see the disclosure required
+// alongside every use of this model (src/lib/signature.ts). It's an audit
+// record proving *a specific signer, at a specific time, attached a specific
+// drawn-image file to a document whose byte-for-byte content hashed to X at
+// that moment* — real, verifiable integrity metadata, deliberately not
+// dressed up as more than that.
+model DocumentSignature {
+  id               String   @id @default(cuid())
+  documentId       String
+  document         Document @relation("SignedDocument", fields: [documentId], references: [id])
+  signatureImageId String
+  signatureImage   Document @relation("SignatureImage", fields: [signatureImageId], references: [id])
+  signerId         String
+  signer           User     @relation(fields: [signerId], references: [id])
+  officeId         String
+  office           Office   @relation(fields: [officeId], references: [id])
+  documentHash     String   // sha256 of the target document's bytes at signing time
+  ipAddress        String?
+  signedAt         DateTime @default(now())
+
+  @@index([documentId])
+  @@index([officeId, signedAt])
+}
+
+// ── Phase 4: SaaS billing — architecture only, not connected to a payment
+// provider. No Stripe (or other) keys are configured; nothing here can
+// charge a card. Exists so feature-gating logic has something real to read
+// from instead of being hardcoded, and so wiring up a real provider later is
+// "add credentials + a webhook handler," not "design the data model."
+model Plan {
+  id              String   @id @default(cuid())
+  key             String   @unique // matches the 3 tiers actually marketed on the landing page (src/components/landing/Packages.tsx): 'basic' | 'automation' | 'web'
+  name            String
+  // Nullable deliberately: the landing page markets these 3 tiers with NO
+  // public price ("contact us") — a fixed JOD figure here would be an
+  // invented number the marketing page itself doesn't claim.
+  priceMonthlyJod Int?
+  maxUsers        Int?
+  maxCases        Int?
+  aiCallsPerMonth Int?
+  createdAt       DateTime @default(now())
+  subscriptions   Subscription[]
+}
+
+model Subscription {
+  id                   String             @id @default(cuid())
+  officeId             String             @unique
+  office               Office             @relation(fields: [officeId], references: [id])
+  planId               String
+  plan                 Plan               @relation(fields: [planId], references: [id])
+  status               SubscriptionStatus @default(TRIALING)
+  stripeCustomerId     String?
+  stripeSubscriptionId String?            @unique
+  trialEndsAt          DateTime?
+  currentPeriodEnd     DateTime?
+  canceledAt           DateTime?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  @@index([status])
 }

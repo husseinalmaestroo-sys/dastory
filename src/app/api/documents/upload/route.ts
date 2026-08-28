@@ -1,13 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { writeFile, mkdir } from 'fs/promises'
-import { join } from 'path'
-import { randomUUID } from 'crypto'
 import { prisma } from '@/lib/prisma'
 import { requireOfficeUser } from '@/lib/auth-server'
 import { caseVisibilityWhere } from '@/lib/tenant-scope'
 import { rateLimit } from '@/lib/api-security'
 import { auditLog } from '@/lib/audit'
 import { notifyUser } from '@/lib/notify'
+import { writeDocumentFile } from '@/lib/document-storage'
 
 const ALLOWED_TYPES = new Set(['PDF', 'DOC', 'DOCX', 'XLS', 'XLSX', 'PNG', 'JPG', 'JPEG', 'TXT'])
 const ALLOWED_MIME_PREFIXES = ['application/pdf', 'application/msword', 'application/vnd.', 'image/png', 'image/jpeg', 'text/plain']
@@ -62,16 +60,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'محتوى الملف لا يطابق نوعه' }, { status: 400 })
     }
 
-    const uploadDir = join(process.cwd(), 'storage', 'case-documents', auth.user.officeId, auth.user.id)
-    await mkdir(uploadDir, { recursive: true })
-
-    const safeName = file.name
-      .replace(/[^\w.\u0600-\u06FF-]/g, '_')
-      .replace(/_+/g, '_')
-      .slice(0, 120)
-    const uniqueName = `${Date.now()}-${randomUUID()}-${safeName || `document.${ext.toLowerCase()}`}`
-    await writeFile(join(uploadDir, uniqueName), bytes)
-    const storedPath = ['case-documents', auth.user.officeId, auth.user.id, uniqueName].join('/')
+    const storedPath = await writeDocumentFile(auth.user.officeId, auth.user.id, file.name, ext, bytes)
 
     const doc = await prisma.document.create({
       data: {

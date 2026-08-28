@@ -29,6 +29,8 @@ type UserOpts = {
   clientId?: string | null
   twoFactorEnabled?: boolean
   twoFactorSecret?: string | null
+  /** Defaults to true — most tests aren't exercising the email-verification gate and shouldn't have to think about it. Pass false explicitly to test unverified-account behavior. */
+  emailVerified?: boolean
 }
 
 function toTestUser(user: {
@@ -81,6 +83,7 @@ export async function createColleague(officeId: string, opts: UserOpts = {}): Pr
       clientId: opts.clientId ?? null,
       twoFactorEnabled: opts.twoFactorEnabled ?? false,
       twoFactorSecret: opts.twoFactorSecret ?? null,
+      emailVerified: opts.emailVerified ?? true,
     },
   })
   return toTestUser(user, opts.twoFactorEnabled ?? false)
@@ -157,15 +160,20 @@ export async function cleanupOffice(officeId: string) {
   const users = await prisma.user.findMany({ where: { officeId }, select: { id: true } })
   const userIds = users.map((u) => u.id)
   await prisma.idempotencyKey.deleteMany({ where: { userId: { in: userIds } } })
+  await prisma.emailVerificationToken.deleteMany({ where: { userId: { in: userIds } } })
+  await prisma.aiUsageLog.deleteMany({ where: { officeId } })
   await prisma.notification.deleteMany({ where: { officeId } })
   await prisma.calendarEvent.deleteMany({ where: { officeId } })
   await prisma.auditLog.deleteMany({ where: { officeId } })
   await prisma.timeEntry.deleteMany({ where: { officeId } })
+  // Must precede document.deleteMany — DocumentSignature FKs to Document.
+  await prisma.documentSignature.deleteMany({ where: { officeId } })
   await prisma.document.deleteMany({ where: { officeId } })
   await prisma.session.deleteMany({ where: { officeId } })
   await prisma.invoice.deleteMany({ where: { officeId } })
   await prisma.case.deleteMany({ where: { officeId } })
   await prisma.client.deleteMany({ where: { officeId } })
+  await prisma.subscription.deleteMany({ where: { officeId } })
   await prisma.user.updateMany({ where: { officeId }, data: { clientId: null } })
   await prisma.user.deleteMany({ where: { officeId } })
   await prisma.office.delete({ where: { id: officeId } }).catch(() => {})

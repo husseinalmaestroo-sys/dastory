@@ -4,7 +4,10 @@ import { prisma } from '@/lib/prisma'
 import { rejectCrossSite } from '@/lib/api-security'
 
 export function getUser(req: NextRequest): JWTPayload | null {
-  const token = req.cookies.get('ds_token')?.value
+  return getTokenPayload(req.cookies.get('ds_token')?.value)
+}
+
+export function getTokenPayload(token: string | undefined): JWTPayload | null {
   if (!token) return null
   return verifyToken(token)
 }
@@ -13,10 +16,13 @@ type AuthResult<T extends JWTPayload> =
   | { ok: true; user: T }
   | { ok: false; response: NextResponse }
 
-type OfficeUser = JWTPayload & { officeId: string }
+type OfficeUser = ActiveUser & { officeId: string }
 type OfficeManager = OfficeUser & { role: 'OFFICE_MANAGER' }
-type CitizenUser = JWTPayload & { role: 'CITIZEN'; officeId: string; clientId: string }
-type ActiveUser = JWTPayload
+type CitizenUser = ActiveUser & { role: 'CITIZEN'; officeId: string; clientId: string }
+// emailVerified is deliberately NOT part of the JWT payload itself (like
+// active/twoFactorEnabled, it's re-checked fresh from the DB on every
+// request below, not trusted from a token that could be stale for days).
+export type ActiveUser = JWTPayload & { emailVerified: boolean }
 type PlatformAdmin = OfficeManager & { isPlatformAdmin: true }
 
 export function isPlatformAdminEmail(email: string) {
@@ -36,8 +42,14 @@ function forbidden() {
   return NextResponse.json({ error: 'لا تملك صلاحية الوصول' }, { status: 403 })
 }
 
-async function getActiveUser(req: NextRequest): Promise<ActiveUser | null> {
-  const payload = getUser(req)
+/**
+ * Core active-session check, keyed by raw token rather than a NextRequest.
+ * Reused by API routes (via getActiveUser, below) and by Server Components /
+ * layouts, which read the ds_token cookie through next/headers instead of a
+ * NextRequest — see src/lib/session.ts.
+ */
+export async function getActiveUserFromToken(token: string | undefined): Promise<ActiveUser | null> {
+  const payload = getTokenPayload(token)
   if (!payload) return null
 
   const user = await prisma.user.findUnique({
@@ -51,6 +63,7 @@ async function getActiveUser(req: NextRequest): Promise<ActiveUser | null> {
       clientId: true,
       sessionVersion: true,
       twoFactorEnabled: true,
+      emailVerified: true,
       active: true,
       office: { select: { active: true } },
     },
@@ -69,6 +82,7 @@ async function getActiveUser(req: NextRequest): Promise<ActiveUser | null> {
     clientId: user.clientId ?? null,
     sessionVersion: user.sessionVersion,
     twoFactorVerified: user.twoFactorEnabled ? true : payload.twoFactorVerified,
+    emailVerified: user.emailVerified,
   }
 }
 
@@ -76,7 +90,7 @@ export async function requireActiveUser(req: NextRequest): Promise<AuthResult<Ac
   const crossSite = rejectCrossSite(req)
   if (crossSite) return { ok: false, response: crossSite }
 
-  const user = await getActiveUser(req)
+  const user = await getActiveUserFromToken(req.cookies.get('ds_token')?.value)
   if (!user) return { ok: false, response: unauthorized() }
   return { ok: true, user }
 }

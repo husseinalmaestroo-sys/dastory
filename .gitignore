@@ -4,6 +4,14 @@ node_modules
 # Build output / caches
 .next
 *.tsbuildinfo
+/dist
+/build
+/coverage
+
+# Certificates & private keys — never belong in version control
+*.pem
+*.key
+*.crt
 
 # Env files — never commit real secrets
 .env

@@ -1,7 +1,11 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { prisma } from '@/lib/prisma'
 import { POST as aiAssistant } from '@/app/api/ai/assistant/route'
 import { POST as contractReview } from '@/app/api/ai/contract-review/route'
+import { POST as legalSearch } from '@/app/api/search/legal/route'
+import { POST as caseAnalysis } from '@/app/api/ai/case-analysis/route'
+import { POST as contractDraft } from '@/app/api/ai/contract-draft/route'
+import { POST as exportDraftRoute } from '@/app/api/ai/contract-draft/export/route'
 import { POST as runOcr } from '@/app/api/documents/[id]/ocr/route'
 import { POST as signDocument, GET as getSignatures } from '@/app/api/documents/[id]/sign/route'
 import { cleanupOffice, createTestOfficeUser, readJson, testFormRequest, testParams, testRequest } from './helpers'
@@ -9,6 +13,20 @@ import { cleanupOffice, createTestOfficeUser, readJson, testFormRequest, testPar
 const createdOffices: string[] = []
 afterEach(async () => {
   await Promise.all(createdOffices.splice(0).map(cleanupOffice))
+})
+
+// vitest.integration.setup.mts already deletes these before this file's own
+// imports run — but @prisma/client's own .env reload (triggered by `import
+// { prisma }` a few lines up, transitively via helpers.ts) happens *during*
+// that import, i.e. after the setup file's deletes and before any test body.
+// Deleting again here, in a hook that runs after all of this file's imports
+// have fully resolved, is what actually makes "not configured" reflect this
+// file's real intent regardless of what a developer's local .env contains
+// (see isLegalRagConfigured's own comment in legal-rag-client.ts).
+beforeEach(() => {
+  delete process.env.ANTHROPIC_API_KEY
+  delete process.env.AI_LEGAL_SERVICE_URL
+  delete process.env.AI_LEGAL_SERVICE_KEY
 })
 async function trackedUser() {
   const user = await createTestOfficeUser()
@@ -34,12 +52,12 @@ describe('AI routes — auth, tenant isolation, and honest "not configured" beha
     expect(res.status).toBe(401)
   })
 
-  it('assistant returns 503 (not a fake answer) when no provider key is configured', async () => {
+  it('assistant returns 503 (not a fake answer) when ailegal_hussein is not configured', async () => {
     const user = await trackedUser()
     const res = await aiAssistant(testRequest('/api/ai/assistant', { method: 'POST', user, body: { message: 'ما هي مدة التقادم؟' } }))
     expect(res.status).toBe(503)
     const body = await readJson(res)
-    expect(body.text).toBeUndefined() // never a canned/fake text field alongside the error
+    expect(body.answer).toBeUndefined() // never a canned/fake answer field alongside the error
   })
 
   it('assistant rejects an empty message', async () => {
@@ -62,6 +80,138 @@ describe('AI routes — auth, tenant isolation, and honest "not configured" beha
 
     const res = await contractReview(testRequest('/api/ai/contract-review', { method: 'POST', user: officeB, body: { documentId: doc.id } }))
     expect(res.status).toBe(404)
+  })
+})
+
+describe('legal search — calls ailegal_hussein, never a fake local answer', () => {
+  // No AI_LEGAL_SERVICE_URL/KEY in the integration test environment (see
+  // vitest.integration.setup.mts), same reasoning as the assistant's 503
+  // test above: this IS the test that the feature does not fall back to a
+  // fabricated answer when the upstream service isn't configured. The real
+  // HTTP contract (headers, SSE parsing) is covered separately, with fetch
+  // mocked, in src/lib/ai/legal-rag-client.test.ts.
+  it('requires authentication', async () => {
+    const res = await legalSearch(testRequest('/api/search/legal', { method: 'POST', body: { question: 'test' } }))
+    expect(res.status).toBe(401)
+  })
+
+  it('returns 503 (not a fake answer) when ailegal_hussein is not configured', async () => {
+    const user = await trackedUser()
+    const res = await legalSearch(testRequest('/api/search/legal', { method: 'POST', user, body: { question: 'ما هي مدة التقادم؟' } }))
+    expect(res.status).toBe(503)
+    const body = await readJson(res)
+    expect(body.answer).toBeUndefined() // never a canned/fake answer field alongside the error
+  })
+
+  it('rejects an empty question', async () => {
+    const user = await trackedUser()
+    const res = await legalSearch(testRequest('/api/search/legal', { method: 'POST', user, body: { question: '' } }))
+    expect(res.status).toBe(400)
+  })
+
+  it('rejects a question over the length cap', async () => {
+    const user = await trackedUser()
+    const res = await legalSearch(testRequest('/api/search/legal', { method: 'POST', user, body: { question: 'س'.repeat(2001) } }))
+    expect(res.status).toBe(400)
+  })
+})
+
+describe('AI case analysis — calls ailegal_hussein, tenant-scoped like OCR/contract-review', () => {
+  it('requires authentication', async () => {
+    const res = await caseAnalysis(testRequest('/api/ai/case-analysis', { method: 'POST', body: { documentId: 'x' } }))
+    expect(res.status).toBe(401)
+  })
+
+  it('404s on a document from another office before ever reaching ailegal_hussein', async () => {
+    const officeA = await trackedUser()
+    const officeB = await trackedUser()
+    const doc = await prisma.document.create({
+      data: { name: 'case.pdf', type: 'PDF', officeId: officeA.officeId, ownerId: officeA.id, url: 'case-documents/nonexistent/nonexistent.pdf' },
+    })
+    const res = await caseAnalysis(testRequest('/api/ai/case-analysis', { method: 'POST', user: officeB, body: { documentId: doc.id } }))
+    expect(res.status).toBe(404)
+  })
+
+  it('returns 503 (not a fake analysis) when ailegal_hussein is not configured', async () => {
+    const user = await trackedUser()
+    const { writeDocumentFile } = await import('@/lib/document-storage')
+    const url = await writeDocumentFile(user.officeId, user.id, 'case.pdf', 'PDF', Buffer.from('%PDF-1 fake'))
+    const doc = await prisma.document.create({ data: { name: 'case.pdf', type: 'PDF', officeId: user.officeId, ownerId: user.id, url } })
+    const res = await caseAnalysis(testRequest('/api/ai/case-analysis', { method: 'POST', user, body: { documentId: doc.id } }))
+    expect(res.status).toBe(503)
+    const body = await readJson(res)
+    expect(body.analysis).toBeUndefined()
+  })
+
+  it('rejects a request with no documentId', async () => {
+    const user = await trackedUser()
+    const res = await caseAnalysis(testRequest('/api/ai/case-analysis', { method: 'POST', user, body: {} }))
+    expect(res.status).toBe(400)
+  })
+})
+
+describe('AI contract drafting — calls ailegal_hussein, never a locally-fabricated draft', () => {
+  it('requires authentication', async () => {
+    const res = await contractDraft(testRequest('/api/ai/contract-draft', { method: 'POST', body: { fields: {} } }))
+    expect(res.status).toBe(401)
+  })
+
+  it('rejects a request missing required fields with no compensating notes', async () => {
+    const user = await trackedUser()
+    const res = await contractDraft(testRequest('/api/ai/contract-draft', { method: 'POST', user, body: { fields: {} } }))
+    expect(res.status).toBe(400)
+  })
+
+  it('returns 503 (not a fake draft) when ailegal_hussein is not configured, even with valid fields', async () => {
+    const user = await trackedUser()
+    const res = await contractDraft(
+      testRequest('/api/ai/contract-draft', {
+        method: 'POST',
+        user,
+        body: { fields: { contract_type: 'إيجار', party_one_name: 'أحمد', party_two_name: 'سالم', subject: 'شقة سكنية' } },
+      })
+    )
+    expect(res.status).toBe(503)
+    const body = await readJson(res)
+    expect(body.draft).toBeUndefined()
+  })
+
+  it('accepts a request where required fields are missing but substantial notes compensate', async () => {
+    const user = await trackedUser()
+    // Still 503 (not configured) — this proves the *validation* layer accepts
+    // notes-only input and lets it through to the (unconfigured) service,
+    // rather than bouncing it at the 400 stage the field-based test above hits.
+    const res = await contractDraft(
+      testRequest('/api/ai/contract-draft', {
+        method: 'POST',
+        user,
+        body: { fields: {}, notes: 'عقد إيجار شقة سكنية بين أحمد ومالك العقار لمدة سنة واحدة بدءاً من الشهر القادم' },
+      })
+    )
+    expect(res.status).toBe(503)
+  })
+
+  it('export requires authentication', async () => {
+    const res = await exportDraftRoute(testRequest('/api/ai/contract-draft/export', { method: 'POST', body: { draft: 'x', format: 'docx' } }))
+    expect(res.status).toBe(401)
+  })
+
+  it('export rejects an empty draft', async () => {
+    const user = await trackedUser()
+    const res = await exportDraftRoute(testRequest('/api/ai/contract-draft/export', { method: 'POST', user, body: { draft: '', format: 'docx' } }))
+    expect(res.status).toBe(400)
+  })
+
+  it('export returns 503 (not a fake file) when ailegal_hussein is not configured', async () => {
+    const user = await trackedUser()
+    const res = await exportDraftRoute(testRequest('/api/ai/contract-draft/export', { method: 'POST', user, body: { draft: 'نص العقد', format: 'docx' } }))
+    // export/route.ts has no explicit isLegalRagConfigured() check of its own
+    // (mirrors ailegal_hussein's own export endpoint, which isn't behind
+    // requireLawyer either) — but exportDraft() shares callLegalService()
+    // with every other function here, which checks configuration before
+    // attempting any network call, so the 503 still comes from the same
+    // single source of truth rather than needing its own duplicate check.
+    expect(res.status).toBe(503)
   })
 })
 

@@ -1,6 +1,11 @@
 # Dependencies
 node_modules
 
+# ailegal_hussein is its own independent git repository (separate app,
+# separate deploy) living inside this folder — never part of Dostoori's own
+# history. Dostoori calls it over HTTP; see src/lib/ai/legal-rag-client.ts.
+/ailegal_hussein
+
 # Build output / caches
 .next
 *.tsbuildinfo

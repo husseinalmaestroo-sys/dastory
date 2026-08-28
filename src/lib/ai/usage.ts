@@ -12,7 +12,7 @@ type UsageActor = { id: string; officeId: string }
  */
 export async function logAiUsage(
   actor: UsageActor,
-  feature: 'assistant' | 'contract_review',
+  feature: 'assistant' | 'contract_review' | 'legal_search' | 'case_analysis' | 'contract_draft',
   outcome: { model: string; inputTokens: number; outputTokens: number; latencyMs: number; success: boolean; errorCode?: string }
 ) {
   try {

@@ -6,7 +6,7 @@ import type { ChatMessage } from '@/lib/dashboard/types'
 
 const WELCOME: ChatMessage = {
   role: 'a',
-  text: 'مرحباً! أنا مساعد قانوني عام يعمل بالذكاء الاصطناعي (Claude). يمكنني مساعدتك بمعلومات تمهيدية عامة، لكن لا تتوفر لديّ قاعدة بيانات تشريعية أو قضائية أردنية موثّقة للبحث فيها — أي إشارة لمادة قانونية أو حكم قضائي محدد تحتاج تحققاً مستقلاً قبل الاعتماد عليها.',
+  text: 'مرحباً! أنا المساعد القانوني — أبحث فعلياً في نصوص التشريعات الأردنية وقرارات الديوان الخاص بتفسير القانون قبل الإجابة. إن لم أجد سنداً واضحاً في القاعدة، أصرّح بذلك بدل التخمين. كل سؤال يُعامَل بشكل مستقل — لا أحتفظ بسياق الأسئلة السابقة في نفس المحادثة.',
 }
 
 export default function AiAssistantPage() {
@@ -27,15 +27,15 @@ export default function AiAssistantPage() {
       const res = await fetch('/api/ai/assistant', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: question,
-          history: messages.slice(-12).map((m) => ({ role: m.role, text: m.text })),
-        }),
+        body: JSON.stringify({ message: question }),
       })
       const data = await res.json()
       if (res.status === 503) { setNotConfigured(true); setError(data.error); return }
       if (!res.ok) { setError(data.error || 'تعذّر الحصول على رد'); return }
-      setMessages((items) => [...items, { role: 'a', text: data.text, citation: data.disclaimer }])
+      const groundNote = data.grounded
+        ? `مُسند لمصدر موثّق${data.sources?.length ? ` (${data.sources.length} مصدر)` : ''} — ${data.disclaimer ?? ''}`
+        : data.disclaimer
+      setMessages((items) => [...items, { role: 'a', text: data.answer, citation: groundNote }])
     } catch {
       setError('تعذّر الاتصال بالخادم')
     } finally {
@@ -46,10 +46,10 @@ export default function AiAssistantPage() {
   return (
     <div className="pg" style={{ padding: 0 }}>
       <div style={{ padding: '16px 18px 0' }}>
-        <SectionHeader title="المساعد القانوني الذكي" subtitle="يعمل بذكاء اصطناعي حقيقي (Claude) — وليس إجابات جاهزة مسبقاً" />
+        <SectionHeader title="المساعد القانوني الذكي" subtitle="بحث حقيقي في التشريعات الأردنية عبر ailegal_hussein — وليس إجابات جاهزة مسبقاً" />
         {notConfigured && (
           <div style={{ background: 'rgba(245,158,11,.08)', border: '1px solid rgba(245,158,11,.25)', borderRadius: 10, padding: '10px 14px', marginBottom: 12, fontSize: '.82rem', color: '#F59E0B' }}>
-            ⚠️ خدمة الذكاء الاصطناعي غير مُفعّلة على هذا الخادم حالياً (يلزم إعداد ANTHROPIC_API_KEY في متغيرات البيئة).
+            ⚠️ خدمة المساعد القانوني غير مُفعّلة على هذا الخادم حالياً.
           </div>
         )}
         <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginBottom: 12 }}>

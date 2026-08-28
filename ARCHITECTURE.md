@@ -31,7 +31,12 @@ Dostoori is a single Next.js application — no separate backend service, no mic
         Local disk — storage/case-documents/
 ```
 
-There is no Redis, no queue, no vector database, no WebSocket server, and no separate AI/RAG service. Search is plain MySQL `LIKE` queries (see [Search](#search)); the "AI" pages in the dashboard (contract review, legal search, the assistant chat, etc.) are UI mockups with hardcoded example responses — no LLM is called. Building that out is explicitly future work, not part of the current system.
+There is no Redis, no queue, no WebSocket server. Search over Dostoori's own data (cases, clients, invoices) is plain MySQL `LIKE` queries (see [Search](#search)) — that part is unchanged. AI is real, not mockups, split across two backends:
+
+- **Anthropic (Claude), direct, server-side** (`src/lib/ai/client.ts`): contract review (`/dashboard/ai/contract` — analyzes a bilateral agreement's parties/terms/risks) and document OCR. No legal corpus behind either.
+- **`ailegal_hussein`** — a separate, standalone RAG service (own Next.js app, own Postgres+pgvector vector database of real Jordanian legislation/case law, own OpenAI key) living alongside this repo at `./ailegal_hussein`, called over an internal HTTP boundary (`src/lib/ai/legal-rag-client.ts`) after Dostoori's own auth/tenant/rate-limit/monthly-cap checks. Backs legal search (`/dashboard/search/legal`), the general assistant (`/dashboard/ai/assistant`), AI case analysis (`/dashboard/ai/case` — a *dispute* file: parties as plaintiff/defendant, possible defenses, case strength), and AI contract drafting + export (`/dashboard/ai/write` — real generated text and a real DOCX/PDF download, grounded in the same corpus). Case analysis and contract review stay on separate backends deliberately: one analyzes a claim, the other a bilateral agreement, and forcing either through the other endpoint would produce a wrong-shaped result.
+
+Both backends are behind the same layering (auth → tenant scope → rate limit → provider-configured check → monthly cost cap → call → audit log → usage log) and log usage without content (`AiUsageLog` — feature/tokens/latency/success, never the question or answer). See [Known gaps](#known-gaps--not-built).
 
 ---
 
@@ -188,7 +193,7 @@ Required environment variables (validated at startup — the app refuses to boot
 
 Documented here so they're not mistaken for oversights elsewhere:
 
-- **AI features are mockups.** Contract review, contract drafting, the legal assistant chat, case analysis, OCR — all render plausible hardcoded example output. No LLM, no embeddings, no RAG. Explicitly out of scope until a future phase.
+- **Nothing under `/dashboard/ai/*` or `/dashboard/search/legal` is a mockup any more** (see Overview for the split between the Anthropic-backed and `ailegal_hussein`-backed features) — every one calls a real backend, and every one that can't reach it (provider not configured) says so with a 503 rather than a fabricated answer. The general assistant's one real capability regression from switching to `ailegal_hussein`: no multi-turn memory across turns (its `/api/chat` is single-question, stateless) — each follow-up is answered fresh, not with context of earlier turns in the same conversation.
 - **MOJ portal integration doesn't exist.** `/dashboard/moj` links out to `services.moj.gov.jo` and shows a static how-to guide; there is no API integration, because the ministry doesn't publish one (see the guide's own copy).
 - **Backup automation isn't wired up.** `/dashboard/backup` is a real page but every action on it is disabled — no storage provider is connected. `BACKUP.md` documents the manual `mysqldump` procedure actually in use.
 - **Rate limiting doesn't coordinate across instances.** Fine for a single Node process; would need a shared store (e.g. Redis) to scale horizontally. Not a lie in the code — `api-security.ts` says so directly.
@@ -196,4 +201,4 @@ Documented here so they're not mistaken for oversights elsewhere:
 
 ---
 
-> Last updated: Phase 3 (frontend architecture refactor). If you touch anything described above, update this file in the same change — that's the whole point of it existing.
+> Last updated: Phase 5 (ailegal_hussein legal-search integration). If you touch anything described above, update this file in the same change — that's the whole point of it existing.

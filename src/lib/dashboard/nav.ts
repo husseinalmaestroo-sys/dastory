@@ -21,7 +21,7 @@ export const BASE_NAV: NavSection[] = [
     label: 'الذكاء الاصطناعي',
     items: [
       { href: '/dashboard/ai/contract', icon: '📄', label: 'مراجعة العقود AI' },
-      { href: '/dashboard/ai/write', icon: '✍️', label: 'نماذج عقود قابلة للتعبئة' },
+      { href: '/dashboard/ai/write', icon: '✍️', label: 'صياغة العقود بالذكاء الاصطناعي' },
       { href: '/dashboard/ai/assistant', icon: '🤖', label: 'المساعد القانوني' },
       { href: '/dashboard/ai/case', icon: '🧠', label: 'تحليل القضايا AI' },
     ],
@@ -74,7 +74,7 @@ export const PAGE_TITLES: Record<string, string> = {
   '/dashboard/timelog': 'تتبع الوقت',
   '/dashboard/calendar': 'التقويم الشامل',
   '/dashboard/ai/contract': 'مراجعة العقود AI',
-  '/dashboard/ai/write': 'نماذج عقود قابلة للتعبئة',
+  '/dashboard/ai/write': 'صياغة العقود بالذكاء الاصطناعي',
   '/dashboard/ai/assistant': 'المساعد القانوني',
   '/dashboard/ai/case': 'تحليل القضايا AI',
   '/dashboard/documents': 'إدارة الملفات',

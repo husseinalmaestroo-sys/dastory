@@ -12,7 +12,7 @@ Dostoori is a single Next.js application — no separate backend service, no mic
                     Browser
                        │
               ┌────────┴────────┐
-              │   middleware.ts  │  ← CSP/security headers on every request
+              │   proxy.ts  │  ← CSP/security headers on every request
               └────────┬────────┘
                        │
          ┌─────────────┴─────────────┐
@@ -44,7 +44,7 @@ Both backends are behind the same layering (auth → tenant scope → rate limit
 
 | Layer | Technology | Notes |
 |---|---|---|
-| Framework | Next.js 15 (App Router) | `output` is the default (Node server), not `export` |
+| Framework | Next.js 16 (App Router, Turbopack) | `output` is the default (Node server), not `export` |
 | UI | React 19 | Server Components by default; `'use client'` only where interactivity requires it |
 | Language | TypeScript | `strict` mode |
 | ORM | Prisma 5 | MySQL provider |
@@ -104,7 +104,7 @@ src/
     dashboard/                  nav.ts (route map), types.ts, format.ts — dashboard-only
                                  shared config, not business logic
   styles/dashboard-app.css      shared by /login and every /dashboard/* route
-  middleware.ts                 CSP (nonce-based) + security headers on every request
+  proxy.ts                 CSP (nonce-based) + security headers on every request
 prisma/
   schema.prisma
   migrations/                   git-tracked, applied with `prisma migrate deploy`
@@ -185,7 +185,7 @@ Required environment variables (validated at startup — the app refuses to boot
 
 ## Security headers
 
-`middleware.ts` sets a per-request nonce-based CSP (`script-src` is nonce + `strict-dynamic`, no `unsafe-inline` for scripts), plus `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy`, and a restrictive `Permissions-Policy`, on every response. `style-src` keeps `'unsafe-inline'` as a deliberate, documented exception (see the comment block at the top of `middleware.ts`) because the app uses inline `style={{}}` props pervasively — removing that would require rewriting styling app-wide, which is out of scope for a CSP hardening pass.
+`proxy.ts` sets a per-request nonce-based CSP (`script-src` is nonce + `strict-dynamic`, no `unsafe-inline` for scripts), plus `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy`, and a restrictive `Permissions-Policy`, on every response. `style-src` keeps `'unsafe-inline'` as a deliberate, documented exception (see the comment block at the top of `proxy.ts`) because the app uses inline `style={{}}` props pervasively — removing that would require rewriting styling app-wide, which is out of scope for a CSP hardening pass.
 
 ---
 

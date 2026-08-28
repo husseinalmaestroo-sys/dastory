@@ -49,7 +49,13 @@ function buildCsp(nonce: string, https: boolean) {
   return directives.join('; ')
 }
 
-export function middleware(req: NextRequest) {
+// Renamed from `middleware` (Next.js 16 — the `middleware.ts` convention and
+// the `middleware` export name are both deprecated in favor of `proxy.ts` /
+// `proxy`; see ARCHITECTURE.md "Security headers"). Behavior is unchanged —
+// proxy.ts now always runs on the nodejs runtime rather than edge (edge was
+// the only, unconfigurable option for the old middleware convention), which
+// this file never depended on being edge-specific.
+export function proxy(req: NextRequest) {
   const nonce = Buffer.from(crypto.randomUUID()).toString('base64')
   const https = isHttpsRequest(req)
   const csp = buildCsp(nonce, https)

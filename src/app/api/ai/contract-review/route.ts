@@ -5,7 +5,7 @@ import { documentVisibilityWhere } from '@/lib/tenant-scope'
 import { rateLimit } from '@/lib/api-security'
 import { auditLog } from '@/lib/audit'
 import { withErrorHandling } from '@/lib/api-handler'
-import { AI_CONFIGURED, AI_MODEL, AI_REQUEST_TIMEOUT_MS, getAnthropicClient } from '@/lib/ai/client'
+import { isAiConfigured, AI_MODEL, AI_REQUEST_TIMEOUT_MS, getAnthropicClient } from '@/lib/ai/client'
 import { isUnderMonthlyAiCap, logAiUsage } from '@/lib/ai/usage'
 import { extractText, ExtractionError } from '@/lib/ai/extract-text'
 import { readDocumentFile } from '@/lib/document-storage'
@@ -72,7 +72,7 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
   const doc = await prisma.document.findFirst({ where: documentVisibilityWhere(auth.user, { id: documentId }) })
   if (!doc || !doc.url) return NextResponse.json({ error: 'المستند غير موجود' }, { status: 404 })
 
-  if (!AI_CONFIGURED) {
+  if (!isAiConfigured()) {
     return NextResponse.json({ error: 'خدمة مراجعة العقود بالذكاء الاصطناعي غير مُفعّلة على هذا الخادم حالياً' }, { status: 503 })
   }
   if (!(await isUnderMonthlyAiCap(auth.user.officeId))) {

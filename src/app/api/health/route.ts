@@ -3,7 +3,7 @@ import { access, constants } from 'fs/promises'
 import { join } from 'path'
 import { prisma } from '@/lib/prisma'
 import { isSmtpConfigured } from '@/lib/email'
-import { AI_CONFIGURED } from '@/lib/ai/client'
+import { isAiConfigured } from '@/lib/ai/client'
 
 // Public and unauthenticated (standard for a health/liveness endpoint hit by
 // a load balancer or uptime monitor) — deliberately reports only ok/degraded
@@ -29,7 +29,8 @@ export async function GET() {
   }
 
   checks.email = { ok: isSmtpConfigured(), detail: isSmtpConfigured() ? undefined : 'SMTP not configured (optional)' }
-  checks.ai = { ok: AI_CONFIGURED, detail: AI_CONFIGURED ? undefined : 'AI provider not configured (optional)' }
+  const aiConfigured = isAiConfigured()
+  checks.ai = { ok: aiConfigured, detail: aiConfigured ? undefined : 'AI provider not configured (optional)' }
 
   // Only database and storage are load-bearing for the app to function at
   // all; email/AI being unconfigured is a documented, non-degraded state.

@@ -3,14 +3,27 @@ import Anthropic from '@anthropic-ai/sdk'
 // AI features are OPTIONAL infrastructure, unlike JWT_SECRET/DATABASE_URL:
 // the app must still boot and every non-AI feature must still work with no
 // key configured. So this does NOT use env.ts's fail-closed
-// validateStrongSecret() pattern — it's a soft check, read lazily, with
-// AI_CONFIGURED as the single source of truth every AI route checks before
-// doing anything else.
-export const AI_CONFIGURED = Boolean(process.env.ANTHROPIC_API_KEY?.trim())
+// validateStrongSecret() pattern — it's a soft check, with isAiConfigured()
+// as the single source of truth every AI route checks before doing
+// anything else.
+//
+// A function, not a module-level const: the earlier const version froze its
+// value at whatever moment this module first happened to load — harmless
+// today only because ANTHROPIC_API_KEY has no real value in .env yet. The
+// same shape caused a genuine bug in the sibling legal-rag-client.ts
+// (isLegalRagConfigured, see its own comment): @prisma/client's own .env
+// reload can repopulate a var an integration test deliberately deleted
+// *after* this module was first imported but *before* the request under
+// test actually runs, silently flipping "not configured" tests over to
+// trying a real provider call. Reading process.env fresh on every call
+// closes that off entirely, for the same reason it did there.
+export function isAiConfigured(): boolean {
+  return Boolean(process.env.ANTHROPIC_API_KEY?.trim())
+}
 
 let client: Anthropic | null = null
 export function getAnthropicClient(): Anthropic {
-  if (!AI_CONFIGURED) {
+  if (!isAiConfigured()) {
     throw new Error('ANTHROPIC_API_KEY is not configured')
   }
   if (!client) {

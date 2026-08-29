@@ -61,14 +61,20 @@ else
   echo "  Docker already present, skipping."
 fi
 
+# -------------------------------------------------------------- network
+# Shared with Dostoori's compose so the two apps resolve each other by
+# container name. Idempotent — dostoori/deploy/setup-vps.sh creates the same
+# one; whichever runs first wins.
+say "Ensuring shared Docker network"
+docker network create --driver bridge dostoori_net 2>/dev/null && echo "  Created dostoori_net." || echo "  dostoori_net already exists, skipping."
+
 # ---------------------------------------------------------------- firewall
 say "Configuring firewall"
 ufw allow OpenSSH >/dev/null
 ufw allow 'Nginx Full' >/dev/null
-# 3000 and 5432 are deliberately NOT opened. Both bind to 127.0.0.1 in
-# docker-compose.yml; nginx is the only public entrance. An exposed 5432 is a
-# public database, and Docker's iptables rules bypass ufw — so the loopback
-# binding in compose is what actually protects it, not this firewall.
+# 4000 is deliberately NOT opened — it binds to 127.0.0.1 in
+# docker-compose.yml; nginx (legal.<domain>) is the only public entrance,
+# and Dostoori reaches this app over the dostoori_net network, not the host.
 ufw --force enable >/dev/null
 echo "  Only SSH + HTTP/HTTPS are open."
 
@@ -77,16 +83,15 @@ say "Creating .env"
 if [[ ! -f .env ]]; then
   cp .env.example .env
 
-  # Generated, not typed: a human-chosen salt or DB password on a public box is
-  # a guessable one.
+  # Generated, not typed: a human-chosen salt or session secret on a public
+  # box is a guessable one.
   IP_SALT=$(openssl rand -hex 32)
-  PG_PASS=$(openssl rand -hex 16)
+  SESSION_SECRET=$(openssl rand -hex 32)
   ADMIN_PASS=$(openssl rand -base64 18 | tr -d '/+=' | cut -c1-20)
 
   sed -i "s|^IP_HASH_SALT=.*|IP_HASH_SALT=${IP_SALT}|" .env
+  sed -i "s|^LAWYER_SESSION_SECRET=.*|LAWYER_SESSION_SECRET=${SESSION_SECRET}|" .env
   sed -i "s|^ADMIN_PASSWORD=.*|ADMIN_PASSWORD=${ADMIN_PASS}|" .env
-  sed -i "s|^DATABASE_URL=.*|DATABASE_URL=postgresql://legal:${PG_PASS}@db:5432/ai_legal|" .env
-  echo "POSTGRES_PASSWORD=${PG_PASS}" >>.env
 
   echo ""
   echo "  ┌────────────────────────────────────────────────┐"
@@ -94,7 +99,10 @@ if [[ ! -f .env ]]; then
   echo "  │  ${ADMIN_PASS}"
   echo "  └────────────────────────────────────────────────┘"
   echo ""
-  echo "  Still required: open .env and set OPENAI_API_KEY."
+  echo "  Still required in .env (by hand):"
+  echo "    DATABASE_URL          — the Neon Postgres URL (with ?sslmode=require)"
+  echo "    OPENAI_API_KEY        — sk-..."
+  echo "    INTERNAL_SERVICE_KEY  — must EQUAL Dostoori's AI_LEGAL_SERVICE_KEY"
 else
   echo "  .env already exists — left untouched."
 fi
@@ -102,7 +110,9 @@ fi
 say "Bootstrap complete"
 cat <<'EOF'
   Next:
-    1. nano .env                  # set OPENAI_API_KEY
-    2. bash deploy/deploy.sh      # build, migrate, start
-    3. bash deploy/setup-nginx.sh your-domain.com
+    1. nano .env                  # DATABASE_URL (Neon), OPENAI_API_KEY, INTERNAL_SERVICE_KEY
+    2. bash deploy/deploy.sh      # build, migrate, start (publishes 127.0.0.1:4000)
+
+  nginx for this app is handled by dostoori/deploy/setup-nginx.sh (one config,
+  both subdomains) — do NOT run a separate one here.
 EOF

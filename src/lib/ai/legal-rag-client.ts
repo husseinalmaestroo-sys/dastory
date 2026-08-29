@@ -166,15 +166,41 @@ export interface CaseAnalysisResult {
  * analysis pipeline: real text extraction, grounded in the same real legal
  * corpus as askLegalRag, with the same citation-guard discipline. Framed
  * around a dispute (parties as plaintiff/defendant, possible defenses) —
- * not a bilateral agreement, which is why Dostoori's own contract review
- * (src/lib/ai/client.ts, Claude-based) stays on its current path instead of
- * routing through this endpoint. See ARCHITECTURE.md.
+ * not a bilateral agreement. See analyzeContract below for the contract-
+ * shaped equivalent this endpoint is deliberately NOT used for.
  */
 export async function analyzeCaseFile(bytes: Buffer, filename: string, officeId: string): Promise<CaseAnalysisResult> {
   const form = new FormData()
   form.append('file', new Blob([new Uint8Array(bytes)]), filename)
   const res = await callLegalService('/api/cases', officeId, { method: 'POST', body: form }, 60_000)
   return readJsonOrThrow(res, 'تعذّر تحليل ملف القضية')
+}
+
+export interface ContractReviewResult {
+  summary: string
+  parties: string[]
+  keyTerms: { label: string; value: string }[]
+  risks: { severity: 'high' | 'medium' | 'low' | 'info'; title: string; excerpt: string; explanation: string }[]
+  sources: LegalRagCitation[]
+}
+
+/**
+ * Reviews already-extracted contract text via ailegal_hussein's real,
+ * grounded pipeline — its own dedicated prompt (parties/keyTerms/risks;
+ * see ailegal_hussein/src/lib/ai/prompts.ts's buildContractReviewPrompt),
+ * not the litigation-shaped /api/cases above. Sends text, not a file:
+ * Dostoori already extracted it with its own real pipeline (OCR fallback
+ * included, src/lib/ai/extract-text.ts) before calling this — re-extracting
+ * on ailegal_hussein's side would duplicate work, not add safety.
+ */
+export async function analyzeContract(contractText: string, officeId: string): Promise<ContractReviewResult> {
+  const res = await callLegalService(
+    '/api/contract-review',
+    officeId,
+    { method: 'POST', body: JSON.stringify({ contractText }), extraHeaders: { 'Content-Type': 'application/json' } },
+    60_000
+  )
+  return readJsonOrThrow(res, 'تعذّر مراجعة العقد')
 }
 
 export type DraftKind = 'statement_of_claim' | 'reply' | 'defense_memo' | 'petition' | 'contract'

@@ -24,7 +24,6 @@ afterEach(async () => {
 // file's real intent regardless of what a developer's local .env contains
 // (see isLegalRagConfigured's own comment in legal-rag-client.ts).
 beforeEach(() => {
-  delete process.env.ANTHROPIC_API_KEY
   delete process.env.AI_LEGAL_SERVICE_URL
   delete process.env.AI_LEGAL_SERVICE_KEY
 })
@@ -43,10 +42,12 @@ function pngFormData(fieldName: string, filename = 'sig.png') {
 }
 
 describe('AI routes — auth, tenant isolation, and honest "not configured" behavior', () => {
-  // No ANTHROPIC_API_KEY in the integration test environment (see
-  // vitest.integration.setup.mts) — this itself is the test that the
-  // feature does NOT fake a response when unconfigured: it must 503, never
-  // return a fabricated answer.
+  // No AI_LEGAL_SERVICE_URL/KEY in the integration test environment (see
+  // vitest.integration.setup.mts) — every route in this block now calls
+  // ailegal_hussein, not Anthropic (client.ts and @anthropic-ai/sdk were
+  // removed once nothing in the app called them anymore — see
+  // ARCHITECTURE.md). This IS the test that each feature does NOT fake a
+  // response when unconfigured: it must 503, never return a fabricated answer.
   it('assistant requires authentication', async () => {
     const res = await aiAssistant(testRequest('/api/ai/assistant', { method: 'POST', body: { message: 'hello' } }))
     expect(res.status).toBe(401)
@@ -80,6 +81,17 @@ describe('AI routes — auth, tenant isolation, and honest "not configured" beha
 
     const res = await contractReview(testRequest('/api/ai/contract-review', { method: 'POST', user: officeB, body: { documentId: doc.id } }))
     expect(res.status).toBe(404)
+  })
+
+  it('contract review returns 503 (not a fake analysis) when ailegal_hussein is not configured', async () => {
+    const user = await trackedUser()
+    const { writeDocumentFile } = await import('@/lib/document-storage')
+    const url = await writeDocumentFile(user.officeId, user.id, 'contract.pdf', 'PDF', Buffer.from('%PDF-1 fake'))
+    const doc = await prisma.document.create({ data: { name: 'contract.pdf', type: 'PDF', officeId: user.officeId, ownerId: user.id, url } })
+    const res = await contractReview(testRequest('/api/ai/contract-review', { method: 'POST', user, body: { documentId: doc.id } }))
+    expect(res.status).toBe(503)
+    const body = await readJson(res)
+    expect(body.summary).toBeUndefined() // never a canned/fake analysis field alongside the error
   })
 })
 

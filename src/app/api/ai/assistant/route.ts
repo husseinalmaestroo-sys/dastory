@@ -11,10 +11,10 @@ import { isUnderMonthlyAiCap, logAiUsage } from '@/lib/ai/usage'
 // gives a clear Dostoori-side 400 instead of a passthrough error.
 const MAX_MESSAGE_LENGTH = 2000
 
-// Replaces the previous direct-Anthropic implementation (see git history /
-// src/lib/ai/client.ts, still used by contract-review): this now calls
-// ailegal_hussein's real grounded RAG pipeline, same as legal search — see
-// src/app/api/search/legal/route.ts and ARCHITECTURE.md. One real
+// Replaces the previous direct-Anthropic implementation (see git history):
+// this now calls ailegal_hussein's real grounded RAG pipeline, same as
+// legal search — see src/app/api/search/legal/route.ts and ARCHITECTURE.md.
+// One real
 // consequence of the switch: ailegal_hussein's /api/chat is single-question,
 // with no multi-turn context parameter, so a follow-up question is answered
 // fresh each time rather than with memory of earlier turns in the same

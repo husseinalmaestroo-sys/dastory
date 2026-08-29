@@ -20,7 +20,6 @@ process.env.TWO_FACTOR_ENCRYPTION_KEY = 'integration-test-2fa-key-0123456789-abc
 // what those tests are supposed to exercise. Deleting keeps this file the
 // single place that decides "external AI providers are unconfigured in
 // integration tests", independent of whatever any one developer's .env has.
-delete process.env.ANTHROPIC_API_KEY
 delete process.env.AI_LEGAL_SERVICE_URL
 delete process.env.AI_LEGAL_SERVICE_KEY
 delete process.env.STRIPE_SECRET_KEY

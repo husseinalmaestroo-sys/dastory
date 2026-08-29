@@ -3,7 +3,7 @@ import { access, constants } from 'fs/promises'
 import { join } from 'path'
 import { prisma } from '@/lib/prisma'
 import { isSmtpConfigured } from '@/lib/email'
-import { isAiConfigured } from '@/lib/ai/client'
+import { isLegalRagConfigured } from '@/lib/ai/legal-rag-client'
 
 // Public and unauthenticated (standard for a health/liveness endpoint hit by
 // a load balancer or uptime monitor) — deliberately reports only ok/degraded
@@ -29,8 +29,11 @@ export async function GET() {
   }
 
   checks.email = { ok: isSmtpConfigured(), detail: isSmtpConfigured() ? undefined : 'SMTP not configured (optional)' }
-  const aiConfigured = isAiConfigured()
-  checks.ai = { ok: aiConfigured, detail: aiConfigured ? undefined : 'AI provider not configured (optional)' }
+  // Every AI feature in the app now routes through ailegal_hussein (see
+  // ARCHITECTURE.md) — this replaced the earlier Anthropic-direct check,
+  // which would otherwise report status for a provider nothing calls anymore.
+  const aiConfigured = isLegalRagConfigured()
+  checks.ai = { ok: aiConfigured, detail: aiConfigured ? undefined : 'ailegal_hussein not configured (optional)' }
 
   // Only database and storage are load-bearing for the app to function at
   // all; email/AI being unconfigured is a documented, non-degraded state.

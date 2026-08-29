@@ -273,3 +273,47 @@ describe('exportDraft — real /api/draft/export contract (binary response)', ()
     )
   })
 })
+
+describe('analyzeContract — real /api/contract-review contract (JSON, not the litigation-shaped /api/cases)', () => {
+  beforeEach(() => {
+    vi.stubEnv('AI_LEGAL_SERVICE_URL', 'http://localhost:3001')
+    vi.stubEnv('AI_LEGAL_SERVICE_KEY', 'test-shared-secret')
+  })
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.unstubAllGlobals()
+    vi.resetModules()
+  })
+
+  it('POSTs {contractText} as JSON to /api/contract-review, not /api/cases', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        summary: 'عقد إيجار شقة',
+        parties: ['أحمد', 'سالم'],
+        keyTerms: [{ label: 'المدة', value: 'سنة واحدة' }],
+        risks: [{ severity: 'medium', title: 'بند غير واضح', excerpt: 'المستأجر يدفع', explanation: 'صياغة عامة' }],
+        sources: [],
+      })
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { analyzeContract } = await import('./legal-rag-client')
+    const result = await analyzeContract('نص عقد الإيجار الكامل هنا...', 'office-4')
+
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('http://localhost:3001/api/contract-review')
+    expect(init.headers['X-Internal-Service-Key']).toBe('test-shared-secret')
+    expect(JSON.parse(init.body)).toEqual({ contractText: 'نص عقد الإيجار الكامل هنا...' })
+    expect(result.summary).toBe('عقد إيجار شقة')
+    expect(result.parties).toEqual(['أحمد', 'سالم'])
+    expect(result.risks[0].severity).toBe('medium')
+  })
+
+  it('surfaces the upstream error message and status, not a generic failure', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ error: 'نص العقد قصير جداً' }, 400)))
+    const { analyzeContract, LegalRagError } = await import('./legal-rag-client')
+    await expect(analyzeContract('x', 'office-1')).rejects.toSatisfy(
+      (e: unknown) => e instanceof LegalRagError && e.status === 400 && e.message === 'نص العقد قصير جداً'
+    )
+  })
+})

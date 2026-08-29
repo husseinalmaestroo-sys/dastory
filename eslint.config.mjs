@@ -14,18 +14,11 @@ const eslintConfig = defineConfig([
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
       'react/no-unescaped-entities': 'off',
-      // New in the react-hooks version this Next.js upgrade pulled in —
-      // not something this upgrade broke, but something it now catches:
-      // ~18 pre-existing files (dashboard list pages, several modals,
-      // the landing hero animation) fetch-then-setState inside a plain
-      // useEffect, or define a component inline during render. Real,
-      // worth fixing, but restructuring 18 components' data-fetching is
-      // its own body of work, independent of and riskier than a
-      // dependency-version bump — downgraded to warn (visible, not
-      // silenced) rather than fixed under this change. Tracked separately.
-      'react-hooks/set-state-in-effect': 'warn',
-      'react-hooks/static-components': 'warn',
-      'react-hooks/purity': 'warn',
+      // react-hooks/set-state-in-effect, static-components and purity were
+      // briefly downgraded to 'warn' right after the Next 16 upgrade (the
+      // newer eslint-plugin-react-hooks surfaced ~18 pre-existing files) and
+      // have since been fixed — they stay at eslint-config-next's default
+      // 'error' now, no override needed.
     },
   },
   globalIgnores([

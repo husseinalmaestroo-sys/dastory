@@ -12,6 +12,10 @@ export default function NotificationsPage() {
   }, [])
 
   const unread = notifs.filter(n => !n.read).length
+  // Captured once via the lazy initializer — calling Date.now() straight in
+  // the render body (inside timeAgo) trips react-hooks/purity. The "منذ س
+  // دقيقة" labels are relative to first paint, fine for a once-fetched list.
+  const [now] = useState(() => Date.now())
 
   const markAll = async () => {
     await fetch('/api/notifications', { method: 'PATCH' })
@@ -19,7 +23,7 @@ export default function NotificationsPage() {
   }
 
   const timeAgo = (d: string) => {
-    const diff = Date.now() - new Date(d).getTime()
+    const diff = now - new Date(d).getTime()
     const m = Math.floor(diff / 60000)
     if (m < 1) return 'الآن'
     if (m < 60) return `منذ ${m} دقيقة`

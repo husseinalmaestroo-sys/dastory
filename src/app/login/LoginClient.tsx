@@ -56,7 +56,7 @@ export default function LoginClient({ initialResetToken }: { initialResetToken: 
         setAuthMode('2fa')
         return
       }
-      if (data.user?.role === 'CITIZEN') { window.location.href = '/citizen'; return }
+      if (data.user?.role === 'CITIZEN') { router.push('/citizen'); return }
       router.push('/dashboard')
     } catch {
       setLoginError('تعذّر الاتصال بالخادم')
@@ -77,7 +77,7 @@ export default function LoginClient({ initialResetToken }: { initialResetToken: 
       })
       const data = await res.json()
       if (!res.ok) { setLoginError(data.error || 'رمز التحقق غير صحيح'); return }
-      if (data.user?.role === 'CITIZEN') { window.location.href = '/citizen'; return }
+      if (data.user?.role === 'CITIZEN') { router.push('/citizen'); return }
       router.push('/dashboard')
     } catch {
       setLoginError('تعذّر الاتصال بالخادم')

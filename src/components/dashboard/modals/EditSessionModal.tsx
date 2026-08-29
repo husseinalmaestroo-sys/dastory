@@ -6,13 +6,15 @@ import { useDashboard } from '@/components/dashboard/DashboardContext'
 
 export default function EditSessionModal({ sessionId }: { sessionId?: string }) {
   const { closeModal, notifySuccess } = useDashboard()
-  const [loading, setLoading] = useState(true)
+  // Start false when there's nothing to fetch — replaces a synchronous
+  // setLoading(false) in the effect guard (react-hooks/set-state-in-effect).
+  const [loading, setLoading] = useState(!!sessionId)
   const [form, setForm] = useState({ date: '', time: '', court: '', judge: '', status: 'UPCOMING', notes: '' })
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
 
   useEffect(() => {
-    if (!sessionId) { setLoading(false); return }
+    if (!sessionId) return
     fetch('/api/sessions').then(r => r.json()).then(d => {
       const s = Array.isArray(d) ? d.find((item: any) => item.id === sessionId) : null
       if (s) {

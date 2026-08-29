@@ -7,10 +7,12 @@ type Status = 'checking' | 'success' | 'error'
 
 export default function VerifyEmailClient({ token }: { token: string }) {
   const [status, setStatus] = useState<Status>(token ? 'checking' : 'error')
-  const [message, setMessage] = useState('')
+  // Seeded here rather than via a synchronous setMessage in the effect
+  // (react-hooks/set-state-in-effect); with no token the effect does nothing.
+  const [message, setMessage] = useState(token ? '' : 'رابط التأكيد غير مكتمل')
 
   useEffect(() => {
-    if (!token) { setMessage('رابط التأكيد غير مكتمل'); return }
+    if (!token) return
     let alive = true
     fetch('/api/auth/verify-email', {
       method: 'POST',

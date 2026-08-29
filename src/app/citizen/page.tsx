@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { Scale, FileText, Calendar, CreditCard, LogOut, Clock, AlertCircle } from 'lucide-react'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -166,27 +166,33 @@ function CitizenPortal({ user, onLogout }: { user: CitizenUser; onLogout: () => 
   const [cases, setCases] = useState<CitizenCase[]>([])
   const [sessions, setSessions] = useState<CitizenSession[]>([])
   const [invoices, setInvoices] = useState<CitizenInvoice[]>([])
-  const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  // loading is derived: true whenever the tab whose data we last settled
+  // isn't the selected one. Avoids a synchronous setLoading(true) inside the
+  // tab effect (react-hooks/set-state-in-effect).
+  const [loadedTab, setLoadedTab] = useState<Tab | null>(null)
+  const loading = loadedTab !== tab
 
-  const load = useCallback(async (t: Tab) => {
-    setLoading(true)
-    setError('')
-    try {
-      const res = await fetch(`/api/citizen/${t}`)
-      if (!res.ok) throw new Error('فشل تحميل البيانات')
-      const data = await res.json()
-      if (t === 'cases') setCases(data)
-      else if (t === 'sessions') setSessions(data)
-      else setInvoices(data)
-    } catch {
-      setError('تعذّر تحميل البيانات')
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  useEffect(() => { load(tab) }, [tab, load])
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const res = await fetch(`/api/citizen/${tab}`)
+        if (!res.ok) throw new Error('فشل تحميل البيانات')
+        const data = await res.json()
+        if (cancelled) return
+        if (tab === 'cases') setCases(data)
+        else if (tab === 'sessions') setSessions(data)
+        else setInvoices(data)
+        setError('')
+      } catch {
+        if (!cancelled) setError('تعذّر تحميل البيانات')
+      } finally {
+        if (!cancelled) setLoadedTab(tab)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [tab])
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: 'cases', label: 'قضاياي', icon: <Scale className="w-4 h-4" /> },

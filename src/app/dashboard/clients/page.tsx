@@ -12,9 +12,12 @@ export default function ClientsPage() {
   const [search, setSearch] = useState('')
 
   useEffect(() => {
-    setLoading(true)
     const q = search.trim()
     const timer = window.setTimeout(() => {
+      // setLoading lives inside the debounce callback, not synchronously in
+      // the effect body (react-hooks/set-state-in-effect) — the spinner
+      // shows once the fetch actually starts, not on every keystroke.
+      setLoading(true)
       fetch(`/api/clients${q ? `?q=${encodeURIComponent(q)}` : ''}`)
         .then(r => { setTotal(Number(r.headers.get('X-Total-Count') ?? '0')); return r.json() })
         .then(d => { if (Array.isArray(d)) setClients(d) })

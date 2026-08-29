@@ -15,7 +15,9 @@ export default function CasesPage() {
   const [filter, setFilter] = useState('ALL')
 
   useEffect(() => {
-    setLoading(true)
+    // No synchronous setLoading(true) here (react-hooks/set-state-in-effect):
+    // useState(true) covers the first load; a refreshKey-driven refetch
+    // updates the list in place without a spinner flash.
     fetch('/api/cases')
       .then(r => { setTotal(Number(r.headers.get('X-Total-Count') ?? '0')); return r.json() })
       .then(d => { if (Array.isArray(d)) setCases(d) })

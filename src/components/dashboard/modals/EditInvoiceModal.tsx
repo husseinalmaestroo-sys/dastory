@@ -6,13 +6,15 @@ import { useDashboard } from '@/components/dashboard/DashboardContext'
 
 export default function EditInvoiceModal({ invoiceId }: { invoiceId?: string }) {
   const { closeModal, notifySuccess } = useDashboard()
-  const [loading, setLoading] = useState(true)
+  // Start false when there's nothing to fetch — replaces a synchronous
+  // setLoading(false) in the effect guard (react-hooks/set-state-in-effect).
+  const [loading, setLoading] = useState(!!invoiceId)
   const [form, setForm] = useState({ amount: '', paid: '', status: 'UNPAID', dueDate: '', notes: '' })
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
 
   useEffect(() => {
-    if (!invoiceId) { setLoading(false); return }
+    if (!invoiceId) return
     fetch('/api/invoices').then(r => r.json()).then(d => {
       const inv = Array.isArray(d) ? d.find((item: any) => item.id === invoiceId) : null
       if (inv) {

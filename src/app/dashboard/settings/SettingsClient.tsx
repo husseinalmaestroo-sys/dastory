@@ -82,11 +82,13 @@ export default function SettingsClient({
   const [securityError, setSecurityError] = useState('')
   const [securityMessage, setSecurityMessage] = useState('')
   const [auditLogs, setAuditLogs] = useState<AuditLogItem[]>([])
-  const [auditLoading, setAuditLoading] = useState(false)
+  // Starts true for an admin (the mount effect fetches immediately) so there
+  // is no synchronous setAuditLoading(true) inside that effect
+  // (react-hooks/set-state-in-effect); later manual reloads refresh in place.
+  const [auditLoading, setAuditLoading] = useState(isAdmin)
 
   const loadAuditLogs = useCallback(async () => {
     if (!isAdmin) return
-    setAuditLoading(true)
     try {
       const res = await fetch('/api/audit-logs?limit=50')
       if (!res.ok) return
@@ -114,9 +116,18 @@ export default function SettingsClient({
       })
       .catch(() => {})
 
-    loadAuditLogs()
+    // Audit logs fetched inline (setState only in the promise callbacks, not
+    // synchronously in the effect body — react-hooks/set-state-in-effect).
+    // loadAuditLogs() itself stays for the post-action manual refreshes below.
+    if (isAdmin) {
+      fetch('/api/audit-logs?limit=50')
+        .then(r => (r.ok ? r.json() : null))
+        .then(data => { if (alive && Array.isArray(data)) setAuditLogs(data) })
+        .catch(() => {})
+        .finally(() => { if (alive) setAuditLoading(false) })
+    }
     return () => { alive = false }
-  }, [loadAuditLogs])
+  }, [isAdmin])
 
   async function startTwoFactor() {
     setSecurityBusy('start')

@@ -13,7 +13,8 @@ export default function SessionsPage() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    setLoading(true)
+    // No synchronous setLoading(true) (react-hooks/set-state-in-effect):
+    // useState(true) covers first load; a refetch updates in place.
     fetch('/api/sessions').then(r => r.json()).then(d => { if (Array.isArray(d)) setSessions(d) }).catch(() => {}).finally(() => setLoading(false))
   }, [refreshKey])
 

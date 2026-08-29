@@ -29,6 +29,16 @@ function ytToEmbed(url: string) {
   return m ? `https://www.youtube.com/embed/${m[1]}` : ''
 }
 
+// Module scope, not defined inside AdminPage: a component created during
+// render is a new type every render, which breaks reconciliation and trips
+// react-hooks/static-components. It only uses its own props, so hoisting is
+// a pure move.
+function Bx({ type, label }: { type: 'g' | 'r' | 'y' | 'b'; label: string }) {
+  const map = { g: { c: '#10B981', bg: 'rgba(16,185,129,.07)', bc: 'rgba(16,185,129,.3)' }, r: { c: '#EF4444', bg: 'rgba(239,68,68,.07)', bc: 'rgba(239,68,68,.3)' }, y: { c: '#F59E0B', bg: 'rgba(245,158,11,.07)', bc: 'rgba(245,158,11,.3)' }, b: { c: '#60A5FA', bg: 'rgba(96,165,250,.07)', bc: 'rgba(96,165,250,.3)' } }
+  const s = map[type]
+  return <span style={{ display: 'inline-block', fontSize: '.71rem', fontWeight: 700, padding: '2px 8px', borderRadius: 20, border: `1px solid ${s.bc}`, background: s.bg, color: s.c }}>{label}</span>
+}
+
 function Toast({ msg, onDone }: { msg: string; onDone: () => void }) {
   useEffect(() => { const t = setTimeout(onDone, 3000); return () => clearTimeout(t) }, [onDone])
   return (
@@ -196,12 +206,6 @@ export default function AdminPage() {
     btnRed: { background: 'linear-gradient(135deg,#EF4444,#DC2626)', color: '#fff', padding: '8px 16px', borderRadius: 9, fontFamily: "'Cairo',sans-serif", fontSize: '.82rem', fontWeight: 700, cursor: 'pointer', border: 'none' } as React.CSSProperties,
     btnGold: { background: 'linear-gradient(135deg,#D4AF37,#C5A059)', color: '#0A0F1A', padding: '8px 16px', borderRadius: 9, fontFamily: "'Cairo',sans-serif", fontSize: '.82rem', fontWeight: 700, cursor: 'pointer', border: 'none' } as React.CSSProperties,
     btnGhost: { background: 'rgba(255,255,255,.06)', color: '#94A3B8', border: '1px solid rgba(255,255,255,.08)', padding: '8px 16px', borderRadius: 9, fontFamily: "'Cairo',sans-serif", fontSize: '.82rem', fontWeight: 700, cursor: 'pointer' } as React.CSSProperties,
-  }
-
-  const Bx = ({ type, label }: { type: 'g'|'r'|'y'|'b'; label: string }) => {
-    const map = { g: { c: '#10B981', bg: 'rgba(16,185,129,.07)', bc: 'rgba(16,185,129,.3)' }, r: { c: '#EF4444', bg: 'rgba(239,68,68,.07)', bc: 'rgba(239,68,68,.3)' }, y: { c: '#F59E0B', bg: 'rgba(245,158,11,.07)', bc: 'rgba(245,158,11,.3)' }, b: { c: '#60A5FA', bg: 'rgba(96,165,250,.07)', bc: 'rgba(96,165,250,.3)' } }
-    const s = map[type]
-    return <span style={{ display: 'inline-block', fontSize: '.71rem', fontWeight: 700, padding: '2px 8px', borderRadius: 20, border: `1px solid ${s.bc}`, background: s.bg, color: s.c }}>{label}</span>
   }
 
   /* ─── Login Screen ──────────────────── */

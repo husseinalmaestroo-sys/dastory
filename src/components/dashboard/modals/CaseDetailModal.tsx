@@ -9,7 +9,10 @@ export default function CaseDetailModal({ caseId }: { caseId?: string }) {
   const { closeModal, notifySuccess, bumpRefresh, isAdmin } = useDashboard()
   const [tab, setTab] = useState<'details' | 'sessions' | 'files'>('details')
   const [c, setC] = useState<any>(null)
-  const [loading, setLoading] = useState(true)
+  // Initial value covers the mount fetch; callers that re-fetch (saveEdit)
+  // flip it themselves. Keeps setState out of the effect-driven loadCase
+  // (react-hooks/set-state-in-effect).
+  const [loading, setLoading] = useState(!!caseId)
   const [editing, setEditing] = useState(false)
   const [lawyers, setLawyers] = useState<any[]>([])
   const [editForm, setEditForm] = useState({ number: '', title: '', type: '', court: '', notes: '', status: 'ACTIVE', lawyerId: '' })
@@ -17,8 +20,7 @@ export default function CaseDetailModal({ caseId }: { caseId?: string }) {
   const [editErr, setEditErr] = useState('')
 
   const loadCase = useCallback(() => {
-    if (!caseId) { setLoading(false); return }
-    setLoading(true)
+    if (!caseId) return
     fetch(`/api/cases/${caseId}`).then(r => r.json()).then(d => {
       setC(d)
       setEditForm({
@@ -49,6 +51,7 @@ export default function CaseDetailModal({ caseId }: { caseId?: string }) {
       })
       if (!res.ok) { const d = await res.json(); setEditErr(d.error || 'خطأ في الحفظ'); return }
       setEditing(false)
+      setLoading(true)
       loadCase()
       bumpRefresh()
     } catch { setEditErr('تعذّر الاتصال بالخادم') } finally { setEditBusy(false) }

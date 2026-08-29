@@ -9,7 +9,10 @@ export default function ClientDetailModal({ clientId }: { clientId?: string }) {
   const { closeModal, notifySuccess, bumpRefresh } = useDashboard()
   const [tab, setTab] = useState<'data' | 'cases' | 'invoices' | 'account'>('data')
   const [client, setClient] = useState<any>(null)
-  const [loading, setLoading] = useState(true)
+  // Initial value covers the mount fetch; callers that re-fetch
+  // (createCitizenAccount) flip it themselves. Keeps setState out of the
+  // effect-driven loadClient (react-hooks/set-state-in-effect).
+  const [loading, setLoading] = useState(!!clientId)
   const [accEmail, setAccEmail] = useState('')
   const [accPass, setAccPass] = useState('')
   const [accLoading, setAccLoading] = useState(false)
@@ -21,8 +24,7 @@ export default function ClientDetailModal({ clientId }: { clientId?: string }) {
   const [editErr, setEditErr] = useState('')
 
   const loadClient = useCallback(() => {
-    if (!clientId) { setLoading(false); return }
-    setLoading(true)
+    if (!clientId) return
     fetch(`/api/clients/${clientId}`).then(r => r.json()).then(d => {
       setClient(d)
       setEditForm({ name: d.name ?? '', phone: d.phone ?? '', email: d.email ?? '', idNumber: d.idNumber ?? '', address: d.address ?? '' })

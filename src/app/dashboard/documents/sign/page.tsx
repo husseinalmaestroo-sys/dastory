@@ -22,7 +22,11 @@ export default function EsignPage() {
   const [saveErr, setSaveErr] = useState('')
   const [lastSignature, setLastSignature] = useState<{ documentHash: string; signedAt: string; disclosure: string } | null>(null)
   const [history, setHistory] = useState<SignatureRecord[]>([])
-  const [loadingHistory, setLoadingHistory] = useState(false)
+  // Which document `history` currently belongs to. loadingHistory is derived
+  // from this — no setLoading call inside the selectedDoc effect
+  // (react-hooks/set-state-in-effect).
+  const [historyDocId, setHistoryDocId] = useState('')
+  const loadingHistory = !!selectedDoc && historyDocId !== selectedDoc
 
   const loadDocs = useCallback(() => {
     fetch('/api/documents').then(r => r.json()).then(d => { if (Array.isArray(d)) setDocs(d) }).catch(() => {})
@@ -31,16 +35,24 @@ export default function EsignPage() {
 
   const chosen = docs.find(d => d.id === selectedDoc)
 
+  // Render-phase reset when the selected document changes — React's "adjust
+  // state when a prop changes" pattern, deliberately not an effect.
+  const [trackedDoc, setTrackedDoc] = useState(selectedDoc)
+  if (selectedDoc !== trackedDoc) {
+    setTrackedDoc(selectedDoc)
+    setLastSignature(null)
+    setHistory([])
+    setHistoryDocId('')
+  }
+
   const loadHistory = useCallback((documentId: string) => {
-    if (!documentId) { setHistory([]); return }
-    setLoadingHistory(true)
+    if (!documentId) return
     fetch(`/api/documents/${documentId}/sign`)
       .then(r => r.ok ? r.json() : { signatures: [] })
-      .then(d => setHistory(Array.isArray(d.signatures) ? d.signatures : []))
-      .catch(() => setHistory([]))
-      .finally(() => setLoadingHistory(false))
+      .then(d => { setHistory(Array.isArray(d.signatures) ? d.signatures : []); setHistoryDocId(documentId) })
+      .catch(() => { setHistory([]); setHistoryDocId(documentId) })
   }, [])
-  useEffect(() => { loadHistory(selectedDoc); setLastSignature(null) }, [selectedDoc, loadHistory])
+  useEffect(() => { loadHistory(selectedDoc) }, [selectedDoc, loadHistory])
 
   async function saveSignature() {
     const canvas = canvasRef.current

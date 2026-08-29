@@ -19,7 +19,9 @@ export default function DocumentsPage() {
   const [uploadError, setUploadError] = useState('')
 
   const loadDocs = useCallback(() => {
-    setLoading(true)
+    // No synchronous setLoading(true) — this runs from the mount effect
+    // (react-hooks/set-state-in-effect). useState(true) covers first load;
+    // the post-upload caller flips it itself.
     fetch('/api/documents').then(r => r.json()).then(d => { if (Array.isArray(d)) setDocs(d) }).catch(() => {}).finally(() => setLoading(false))
   }, [])
 
@@ -47,6 +49,7 @@ export default function DocumentsPage() {
       const data = await res.json()
       if (!res.ok) { setUploadError(data.error || 'فشل الرفع'); return }
       setPendingFile(null); setSelectedCase('')
+      setLoading(true)
       loadDocs()
     } catch { setUploadError('تعذّر رفع الملف') }
     finally { setUploading(false) }

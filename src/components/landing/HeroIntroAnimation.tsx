@@ -106,10 +106,19 @@ export default function HeroIntroAnimation() {
     return () => clearInterval(t)
   }, [])
 
+  // Reset the counters the moment scene 3 becomes active — a guarded
+  // render-phase update (React's "adjust state when a value changes"
+  // pattern), not a synchronous setState in the effect below
+  // (react-hooks/set-state-in-effect).
+  const [countedScene, setCountedScene] = useState(scene)
+  if (scene !== countedScene) {
+    setCountedScene(scene)
+    if (scene === 3) { setS1(0); setS2(0); setS3(0) }
+  }
+
   // Stats counter on scene 3
   useEffect(() => {
     if (scene !== 3) return
-    setS1(0); setS2(0); setS3(0)
     const t = setInterval(() => {
       setS1(v => Math.min(v + 10, 500))
       setS2(v => Math.min(v + 240, 12000))

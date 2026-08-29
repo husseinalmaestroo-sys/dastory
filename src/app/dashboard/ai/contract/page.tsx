@@ -4,11 +4,22 @@ import { useRef, useState } from 'react'
 import { Badge, SectionHeader } from '@/components/dashboard/ui'
 
 type Risk = { severity: 'high' | 'medium' | 'low' | 'info'; title: string; excerpt: string; explanation: string }
+type Citation = {
+  ref: number
+  title: string
+  articleNumber: string | number | null
+  lawName: string | null
+  court: string | null
+  decisionNumber: string | null
+  year: number | null
+  excerpt: string
+}
 type ReviewResult = {
   summary: string
   parties: string[]
   keyTerms: { label: string; value: string }[]
   risks: Risk[]
+  sources: Citation[]
   extractionMethod: string
   truncated: boolean
   disclaimer: string
@@ -135,11 +146,39 @@ export default function AiContractPage() {
               </div>
             </div>
           )}
+          {result && result.sources.length > 0 && (
+            <div className="card">
+              <div className="ct">📚 المصادر القانونية ({result.sources.length})</div>
+              <div style={{ fontSize: '.76rem', color: '#64748B', marginBottom: 8 }}>
+                نصوص أردنية استُرجعت من قاعدة ailegal_hussein وأُشير إليها بـ[رقم] في الملاحظات أعلاه.
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {result.sources.map((s) => (
+                  <div key={s.ref} style={{ padding: 10, borderRadius: 9, background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.06)' }}>
+                    <b style={{ fontSize: '.8rem', color: '#E2E8F0' }}>
+                      [{s.ref}] {s.lawName || s.title}
+                      {s.articleNumber ? ` — المادة ${s.articleNumber}` : ''}
+                    </b>
+                    {(s.court || s.decisionNumber || s.year) && (
+                      <div style={{ fontSize: '.74rem', color: '#64748B', marginTop: 4 }}>
+                        {[s.court, s.decisionNumber ? `قرار رقم ${s.decisionNumber}` : null, s.year].filter(Boolean).join(' · ')}
+                      </div>
+                    )}
+                    {s.excerpt && (
+                      <div style={{ fontSize: '.76rem', color: '#94A3B8', background: 'rgba(0,0,0,.15)', borderRadius: 6, padding: '6px 9px', marginTop: 6, fontStyle: 'italic' }}>
+                        「{s.excerpt}」
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {!result && !busy && (
             <div className="card">
               <div className="ct">💡 كيف تعمل هذه الأداة</div>
               <div style={{ color: '#94A3B8', fontSize: '.82rem', lineHeight: 1.8 }}>
-                يُستخرج النص الفعلي من الملف الذي ترفعه (طبقة نص PDF، أو Word، أو تعرّف ضوئي حقيقي على الحروف للصور والملفات الممسوحة ضوئياً)، ثم يُرسَل هذا النص فقط إلى نموذج ذكاء اصطناعي (Claude) لتحليله. لا توجد نتائج جاهزة مسبقاً — التحليل يعتمد كلياً على محتوى ملفك.
+                يُستخرج النص الفعلي من الملف الذي ترفعه (طبقة نص PDF، أو Word، أو تعرّف ضوئي حقيقي على الحروف للصور والملفات الممسوحة ضوئياً)، ثم يُرسَل هذا النص فقط إلى خدمة ailegal_hussein التي تحلّله وتستند في ملاحظاتها القانونية إلى نصوص تشريعية أردنية حقيقية تُذكر في المصادر. لا توجد نتائج جاهزة مسبقاً — التحليل يعتمد كلياً على محتوى ملفك.
               </div>
             </div>
           )}

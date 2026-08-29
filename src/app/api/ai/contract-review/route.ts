@@ -109,10 +109,14 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
       ...r,
       excerpt: r.excerpt && contractText.includes(r.excerpt) ? r.excerpt : '',
     }))
+    // ailegal_hussein always returns sources as an array (possibly empty);
+    // coerce anyway so a shape change upstream degrades to "no sources"
+    // rather than throwing on .length here.
+    const sources = Array.isArray(result.sources) ? result.sources : []
 
     await auditLog(req, auth.user, 'ai.contract_reviewed', {
       entityType: 'document', entityId: doc.id,
-      metadata: { extractionMethod: extracted.method, truncated, riskCount: verifiedRisks.length, sourceCount: result.sources.length },
+      metadata: { extractionMethod: extracted.method, truncated, riskCount: verifiedRisks.length, sourceCount: sources.length },
     })
     await logAiUsage(auth.user, 'contract_review', {
       model: 'ailegal_hussein', inputTokens: 0, outputTokens: 0,
@@ -124,7 +128,7 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
       parties: result.parties,
       keyTerms: result.keyTerms,
       risks: verifiedRisks,
-      sources: result.sources,
+      sources,
       extractionMethod: extracted.method,
       truncated,
       disclaimer: 'تحليل آلي أولي بالذكاء الاصطناعي — لا يغني عن مراجعة محامٍ مرخّص، وقد يفوّت بنوداً أو يسيء تفسيرها.',

@@ -1,5 +1,10 @@
 generator client {
   provider = "prisma-client-js"
+  // "native" for local dev (Windows/macOS); "debian-openssl-3.0.x" for the
+  // production Docker image (node:22-slim = Debian, OpenSSL 3). Without the
+  // second target the query engine binary is missing at runtime in the
+  // container. See Dockerfile / HOSTINGER_DEPLOY.md.
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
 datasource db {

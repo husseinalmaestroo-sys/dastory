@@ -11,6 +11,9 @@
     "test:integration": "vitest run --config vitest.integration.config.mts",
     "postinstall": "prisma generate"
   },
+  "engines": {
+    "node": ">=22"
+  },
   "dependencies": {
     "@prisma/client": "^5.22.0",
     "@types/bcryptjs": "^2.4.6",
@@ -18,7 +21,6 @@
     "@types/nodemailer": "^8.0.1",
     "autoprefixer": "^10.5.2",
     "bcryptjs": "^3.0.3",
-    "canvas": "^3.2.3",
     "jsonwebtoken": "^9.0.3",
     "lucide-react": "^0.419.0",
     "mammoth": "^1.12.1",
@@ -36,6 +38,7 @@
     "@types/node": "^22",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",
+    "canvas": "^3.2.3",
     "eslint": "^9",
     "eslint-config-next": "^16.3.3",
     "postcss": "^8",

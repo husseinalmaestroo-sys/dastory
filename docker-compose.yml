@@ -1,0 +1,61 @@
+services:
+  db:
+    image: mysql:8
+    container_name: dostoori_db
+    restart: unless-stopped
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-dostoori}
+      MYSQL_USER: ${MYSQL_USER:-dostoori}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?set MYSQL_PASSWORD in .env}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD in .env}
+    ports:
+      # Loopback only — the app reaches it over the compose network as `db`.
+      # Publishing it at all is just for host-side mysqldump backups.
+      - "127.0.0.1:3306:3306"
+    volumes:
+      - dbdata:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    container_name: dostoori_app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      # Host is `db` (the compose service), not localhost. Built from the
+      # MYSQL_* values so there is one source of truth for the credentials.
+      DATABASE_URL: mysql://${MYSQL_USER:-dostoori}:${MYSQL_PASSWORD}@db:3306/${MYSQL_DATABASE:-dostoori}
+      # ailegal_hussein on the shared `dostoori_net` network — its container is
+      # named `legal_app` and listens on 3000 inside its own container. Stays
+      # on the box; never goes out through nginx/TLS.
+      AI_LEGAL_SERVICE_URL: http://legal_app:3000
+      NODE_ENV: production
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      # Uploaded case documents must outlive the container.
+      - ./storage:/app/storage
+    mem_limit: 1500m
+    networks:
+      - default
+      - dostoori_net
+
+volumes:
+  dbdata:
+
+networks:
+  # Created once by deploy/setup-vps.sh: `docker network create dostoori_net`.
+  # Shared with ailegal_hussein/docker-compose.yml so the two apps resolve
+  # each other by container name.
+  dostoori_net:
+    external: true

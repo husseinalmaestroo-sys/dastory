@@ -1,0 +1,28 @@
+# Build context excludes — keep the image lean and secrets out of it.
+node_modules
+.next
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+storage
+ailegal_hussein
+
+# Tests never run in the image
+**/*.test.ts
+**/*.test.tsx
+**/*.integration.test.ts
+src/__integration__
+vitest.config.mts
+vitest.integration.config.mts
+vitest.setup.mts
+vitest.integration.setup.mts
+
+# Local / editor / CI noise
+.claude
+.vscode
+*.log
+npm-debug.log*
+coverage
+.DS_Store

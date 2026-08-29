@@ -1,116 +1,201 @@
-# خطوات رفع النظام على Hostinger
+# نشر النظام على Hostinger — خادم VPS واحد، تطبيقان في Docker
 
-## 1. إعداد قاعدة البيانات
+هذا الدليل يغطّي نشر **Dostoori** و**ailegal_hussein** معاً على **Hostinger KVM VPS**
+عبر Docker. (استضافة Hostinger المشتركة / Business لا تصلح: `ailegal_hussein` يشغّل
+Chromium فعلياً لتصدير PDF، ونداءات الذكاء الاصطناعي تستغرق 15–60 ثانية، و`/api/chat`
+يبثّ عبر SSE — والاستضافة المشتركة تقطع هذا كلّه.)
 
-في hPanel > Databases > MySQL Databases:
-- أنشئ قاعدة بيانات جديدة (مثلاً `u123456_dostoori`)
-- أنشئ مستخدم MySQL وامنحه كامل الصلاحيات على القاعدة
-- سجّل: اسم المستخدم، كلمة المرور، اسم القاعدة
-
-## 2. إعداد متغيرات البيئة
-
-انسخ `.env.example` إلى `.env` وعبّئ البيانات. **لا تستخدم القيم التوضيحية كما هي — التطبيق يرفض الإقلاع إذا كانت قيمة افتراضية معروفة أو أقصر من 32 حرفاً**، بغض النظر عن NODE_ENV:
+## البنية
 
 ```
-DATABASE_URL="mysql://USERNAME:PASSWORD@localhost:3306/DATABASE_NAME"
-
-# سلسلة عشوائية فريدة لا تقل عن 32 حرفاً. ولّدها بأمر مثل:
-#   node -e "console.log(require('crypto').randomBytes(48).toString('base64'))"
-JWT_SECRET="..."
-
-# مفتاح تشفير أسرار المصادقة الثنائية (2FA) — مطلوب أيضاً، وبنفس الشروط أعلاه.
-# ولّده بنفس الأمر أعلاه (بقيمة مختلفة عن JWT_SECRET).
-TWO_FACTOR_ENCRYPTION_KEY="..."
+                    ┌─────────────────── VPS (Ubuntu 22/24) ───────────────────┐
+   app.<domain> ───►│ nginx ─► 127.0.0.1:3000  dostoori_app  ─┐                │
+ legal.<domain> ───►│         ─► 127.0.0.1:4000  legal_app  ◄─┘ (dostoori_net) │
+                    │                              │                            │
+                    │  dostoori_db (MySQL 8, حاوية) │  Neon (Postgres+pgvector,  │
+                    │                              │   سحابي — الفهرس جاهز)     │
+                    └──────────────────────────────┴────────────────────────────┘
 ```
 
-راجع قسم "متغيرات البيئة المطلوبة" أسفل هذا الملف للقائمة الكاملة.
+- `dostoori_app` ينادي `ailegal_hussein` داخلياً على `http://legal_app:3000` عبر شبكة
+  Docker مشتركة `dostoori_net` — لا يمرّ عبر nginx ولا TLS.
+- MySQL في حاوية على نفس الخادم. Postgres يبقى على **Neon** (الفهرس القانوني الكامل
+  مُدخَل ومُختبَر هناك — لا حاجة لإعادة الإدخال).
+- المتطلّب الموصى به: **KVM 4GB+**. الـ 2GB ضيّقة (بناءان لـ Next + MySQL)؛ سكربت
+  الإعداد يضيف 2GB swap كشبكة أمان.
 
-## 3. رفع الملفات
+---
 
-### الطريقة الأسهل — Node.js App على Hostinger:
-1. ارفع المجلد الكامل عبر Git أو File Manager
-2. في hPanel > Websites > Manage > Node.js:
-   - Node.js version: **18.x** أو أعلى
-   - Startup file: `node_modules/.bin/next`
-   - Application mode: Production
+## 1. DNS
 
-### أوامر البناء (تُشغَّل من SSH Terminal):
-```bash
-npm install
-npx prisma generate
-npx prisma migrate deploy
-npm run build
-npm start
-```
+سجّلين من نوع A يشيران إلى عنوان الخادم، **قبل** تشغيل `setup-nginx.sh` (certbot يتحقّق
+من الملكية عبر HTTP):
 
-**لماذا `migrate deploy` وليس `db push`:** `db push` يزامن الـ schema مباشرة بلا سجل قابل للمراجعة، وقد يقترح إعادة إنشاء أعمدة/جداول بصمت إذا اعتبر التغيير "غير آمن". `migrate deploy` يطبّق فقط ملفات SQL موجودة فعلاً في `prisma/migrations/` (مُراجَعة ومُثبَّتة في git)، بالترتيب، مرة واحدة لكل migration — هذا هو المسار المخصص للإنتاج، ولا يتطلب اتصالاً تفاعلياً.
+| السجل | القيمة |
+|---|---|
+| `app.<domain>` | IP الخادم |
+| `legal.<domain>` | IP الخادم |
 
-**لا تُشغّل `prisma/seed.ts` على بيئة الإنتاج.** هذا السكربت لبيانات التجربة المحلية فقط — يمسح البيانات الموجودة وينشئ حسابات بكلمات مرور معروفة وثابتة (مثل `Manager1@2025`)، وهو مرفوض تلقائياً عندما يكون `NODE_ENV=production` ما لم تحدّد `ALLOW_DEV_SEED=true` صراحةً.
+---
 
-## 4. سير عمل الـ Migrations المستقبلية
+## 2. جلب الشيفرة
 
-`prisma/migrations/` مُتتبَّع في git، ويبدأ بـ:
-- `20260826130000_init` — migration أساسية (baseline) تمثّل الـ schema كما كانت قبل هذه المرحلة، مُسجَّلة كـ "مُطبَّقة مسبقاً" على قاعدة البيانات الموجودة دون تنفيذ أي SQL عليها (كانت مطابقة تماماً أصلاً).
-- `20260826140000_phase2_indexes_and_constraints` — فهارس جديدة + قيد تفرّد على رقم الفاتورة (`Invoice.number` ضمن كل مكتب)، تحقّقتُ من عدم وجود أرقام فواتير مكرّرة قبل تطبيقه.
-
-**لأي تعديل مستقبلي على `schema.prisma`:**
+ريبو GitHub واحد، فرعان. `ailegal_hussein` مُتجاهَل في `.gitignore` الخاص بـ Dostoori
+ويُستنسَخ منفصلاً داخله:
 
 ```bash
-# محلياً، مع قاعدة بيانات تطوير:
-npx prisma migrate dev --name وصف_قصير_للتغيير
+ssh root@YOUR_VPS_IP
+cd /opt
+git clone <repo> dostoori && cd dostoori          # الفرع: main
+git clone <repo> ailegal_hussein
+(cd ailegal_hussein && git checkout ailegal-hussein)
 ```
 
-هذا الأمر تفاعلي (يطلب تأكيداً إن كان التغيير قد يفقد بيانات) وينشئ ملف SQL جديداً تحت `prisma/migrations/`. راجع الملف الناتج، تأكّد أنه لا يحذف بيانات دون قصد، ثم أضِفه لِـ git مع باقي التغيير.
+---
 
-**على الإنتاج:**
+## 3. التمهيد (مرّة واحدة)
 
 ```bash
-npx prisma migrate deploy
+bash deploy/setup-vps.sh
 ```
 
-يطبّق فقط الـ migrations التي لم تُطبَّق بعد، بالترتيب. **لا تُشغّل `prisma migrate dev` أو `prisma db push` على الإنتاج أبداً** — الأول تفاعلي وقد يطلب حذف بيانات، والثاني لا يترك أي سجل قابل للمراجعة.
+يُثبّت Docker، ويُنشئ swap والجدار الناري وشبكة `dostoori_net`، ويولّد `dostoori/.env`
+بقيم عشوائية لـ `JWT_SECRET` و`TWO_FACTOR_ENCRYPTION_KEY` و`MYSQL_PASSWORD` و
+`MYSQL_ROOT_PASSWORD`.
 
-**إن تعذّر توفر بيئة تفاعلية** (كما في هذه الجلسة نفسها) لتوليد migration جديدة، البديل الآمن:
+---
+
+## 4. تعبئة ملفّي `.env`
+
+### `ailegal_hussein/.env`
+`deploy/setup-vps.sh` داخل مجلد `ailegal_hussein` يولّد `IP_HASH_SALT` و
+`LAWYER_SESSION_SECRET` و`ADMIN_PASSWORD`. أضِف يدوياً:
+
+| المتغير | القيمة |
+|---|---|
+| `DATABASE_URL` | رابط Neon كاملاً مع `?sslmode=require` |
+| `OPENAI_API_KEY` | `sk-...` |
+| `INTERNAL_SERVICE_KEY` | سلسلة عشوائية — **يجب أن تساوي** `AI_LEGAL_SERVICE_KEY` أدناه. ولّدها بـ `openssl rand -hex 32` |
+
+### `dostoori/.env`
+
+| المتغير | القيمة |
+|---|---|
+| `AI_LEGAL_SERVICE_URL` | `http://legal_app:3000` |
+| `AI_LEGAL_SERVICE_KEY` | نفس `INTERNAL_SERVICE_KEY` أعلاه |
+| `APP_URL` | `https://app.<domain>` |
+| `PLATFORM_ADMIN_EMAILS` | بريد مدير المنصة |
+| `SMTP_*` | اختياري — بدونها إرسال البريد يرجع 503 بدل تعطّل صامت |
+
+> `DATABASE_URL` في Dostoori لا يُضبَط يدوياً — `docker-compose.yml` يبنيه من `MYSQL_*`
+> ويوجّهه إلى حاوية `db`.
+
+---
+
+## 5. النشر
+
+الترتيب مهم — `ailegal_hussein` أولاً كي يكون `legal_app` جاهزاً قبل أن يفحص Dostoori
+مسار الذكاء الاصطناعي:
 
 ```bash
-npx prisma migrate diff --from-schema-datasource prisma/schema.prisma --to-schema-datamodel prisma/schema.prisma --script > prisma/migrations/TIMESTAMP_name/migration.sql
-npx prisma migrate deploy
+cd /opt/dostoori/ailegal_hussein && bash deploy/deploy.sh   # يبني، يهاجر (Neon)، يشغّل على 127.0.0.1:4000
+cd /opt/dostoori                  && bash deploy/deploy.sh   # يبني، prisma migrate deploy، يشغّل على 127.0.0.1:3000
+bash deploy/setup-nginx.sh <domain>                          # nginx: ملف واحد، السجلّان، ثم certbot لكليهما
 ```
 
-هذا يولّد نفس SQL الذي كان سيولّده `migrate dev`، لكن دون الحاجة لتأكيد تفاعلي — راجع الملف الناتج يدوياً قبل التطبيق بما أن الخطوة التفاعلية (التي كانت لتحذّر من فقدان بيانات محتمل) غير موجودة هنا.
+`dostoori/deploy/deploy.sh` يتحقّق من `GET /api/health` = 200 (قاعدة البيانات + التخزين
+هما الفحصان الحاملان؛ البريد/الذكاء الاصطناعي غير المُعدّين حالة موثّقة غير "متدهورة").
 
-## 5. إنشاء أول حساب حقيقي
+---
 
-لا يوجد بيانات دخول افتراضية بعد الرفع. أنشئ أول مكتب/مدير عبر صفحة التسجيل الذاتي في التطبيق نفسه:
+## 6. أول حساب حقيقي
+
+لا بيانات دخول افتراضية. أنشئ أول مكتب/مدير عبر صفحة التسجيل الذاتي:
 
 ```
-POST /api/auth/signup   (أو من صفحة "إنشاء حساب" في الواجهة)
+POST /api/auth/signup   (أو زر "إنشاء حساب" في الواجهة)
 ```
 
-يختار مدير المكتب بريده وكلمة مروره بنفسه أثناء التسجيل — لا حاجة لأي seed أو بيانات دخول موثقة مسبقاً.
+**لا تُشغّل `prisma/seed.ts` على الإنتاج** — يمسح البيانات وينشئ حسابات بكلمات مرور
+معروفة، ومرفوض تلقائياً عند `NODE_ENV=production` ما لم يُضبَط `ALLOW_DEV_SEED=true`.
 
-## 6. ملاحظات مهمة
+---
 
-- **المنفذ المحلي**: XAMPP يستخدم 3307 — Hostinger يستخدم **3306** (الافتراضي)
-- **NODE_ENV**: يفضَّل ضبطه على `production`، لكن لم يعد التطبيق يعتمد عليه لأي قرار أمني (مثل صحة JWT_SECRET أو علامة Secure على الكوكيز) — تلك الفحوصات تعمل دائماً بغض النظر عن NODE_ENV
-- **prisma generate**: يُشغَّل تلقائياً عند `npm install` (postinstall script)
-- **HTTPS**: تأكد أن الموقع يعمل عبر HTTPS في الإنتاج — الكوكيز الحساسة (الجلسة) تُعلَّم كـ Secure تلقائياً بناءً على بروتوكول الطلب الفعلي (أو ترويسة `x-forwarded-proto` خلف أي proxy)
-- **Rate limiting يعمل في ذاكرة عملية واحدة فقط** (`src/lib/api-security.ts`) — صحيح وكافٍ طالما التطبيق يعمل كعملية Node واحدة. إذا شُغِّل مستقبلاً كأكثر من نسخة/container خلف موزّع أحمال (scaling أفقي)، كل نسخة تطبّق حدودها الخاصة بشكل مستقل — عميل يتنقّل بين نسختين يحصل فعلياً على `limit × عدد النسخ`، وأي إعادة تشغيل تصفّر عدّادات الجميع. هذا ليس مشكلة نظرية؛ إن وصلتم لهذه المرحلة، استبدلوا التخزين الداخلي بمخزن مشترك (Redis عادة) بدلاً من محاولة الالتفاف عليه بـ sticky sessions.
+## 7. الترحيلات (Migrations) المستقبلية
 
-## 7. النسخ الاحتياطي
+```bash
+# محلياً، مع قاعدة تطوير:
+npx prisma migrate dev --name وصف_قصير
+# راجع ملف SQL الناتج، أضِفه لِـ git.
 
-راجع [BACKUP.md](BACKUP.md) للاستراتيجية الكاملة. باختصار: `scripts/backup-db.sh` و `scripts/backup-files.sh` جاهزتان ومُختبرتان محلياً؛ الجزء الذي يحتاج إعداداً يدوياً على الاستضافة الفعلية هو التخزين خارج الخادم (rclone) وجدولة cron — كلاهما موثّق في BACKUP.md.
+# على الإنتاج (يطبّق فقط ما لم يُطبَّق، بالترتيب، بلا تأكيد تفاعلي):
+cd /opt/dostoori && docker compose run --rm app npx prisma migrate deploy
+```
 
-**قبل تطبيق أي migration جديدة على الإنتاج، خذ نسخة احتياطية أولاً** (`scripts/backup-db.sh`) — `migrate deploy` يُطبَّق تلقائياً دون تأكيد تفاعلي.
+**خذ نسخة احتياطية قبل أي ترحيل** (القسم 8). لا تُشغّل `migrate dev` ولا `db push` على
+الإنتاج أبداً.
 
-## 8. متغيرات البيئة المطلوبة
+`ailegal_hussein` يستخدم `db/schema.sql` عبر `npm run db:migrate` (idempotent)، ويُنفَّذ
+تلقائياً ضمن `deploy/deploy.sh`.
+
+---
+
+## 8. النسخ الاحتياطي
+
+راجع [BACKUP.md](BACKUP.md). التغيير الوحيد في نمط الحاويات: MySQL صار داخل حاوية، فنسخ
+قاعدة البيانات:
+
+```bash
+cd /opt/dostoori
+docker compose exec -T db mysqldump -u root -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE" > backup.sql
+```
+
+`scripts/backup-files.sh` (لمجلد `storage/`) يعمل كما هو — المجلد مربوط bind mount من
+المضيف. الجزء الذي يحتاج إعداداً يدوياً: التخزين خارج الخادم (rclone) وجدولة cron —
+موثّقان في BACKUP.md. **خذ نسخة قبل كل `migrate deploy`.**
+
+---
+
+## 9. تحديث الشيفرة لاحقاً
+
+```bash
+cd /opt/dostoori/ailegal_hussein && git pull && bash deploy/deploy.sh
+cd /opt/dostoori                  && git pull && bash deploy/deploy.sh
+```
+
+كلا السكربتين يعيدان البناء والتشغيل بأقل توقّف. `restart: unless-stopped` في الـ compose
+يعيد رفع الحاويات بعد إعادة تشغيل الخادم.
+
+---
+
+## 10. ملاحظات
+
+- **HTTPS**: الكوكيز الحساسة (الجلسة) تُعلَّم `Secure` تلقائياً حسب `x-forwarded-proto`
+  الذي يمرّره nginx — لا تعطّل الـ redirect الذي يضيفه certbot.
+- **Rate limiting يعمل في ذاكرة عملية واحدة** (`src/lib/api-security.ts`) — صحيح وكافٍ
+  طالما التطبيق عملية Node واحدة (وهو كذلك هنا). التوسّع الأفقي لاحقاً يحتاج مخزناً
+  مشتركاً (Redis).
+- **مهلة nginx** مضبوطة على 300 ثانية و`proxy_buffering off` — ضروريان لنداءات LLM
+  الطويلة ولبثّ SSE في `/api/chat`.
+- **ailegal_hussein**: حُذفت خدمة `db` من `docker-compose.yml` الخاص به (Postgres على
+  Neon)، و`deploy/setup-nginx.sh` الخاص به مُلغى — الـ nginx لكليهما من هنا.
+- **صور Docker**: `next.config.ts` يستخدم `output: 'standalone'`، و`prisma/schema.prisma`
+  يضيف `debian-openssl-3.0.x` لهدف Prisma، و`canvas` انتقلت إلى `devDependencies`
+  (اختبارات فقط) — كلّها لتصغير صورة الإنتاج وتفادي بناء أصلي لا لزوم له.
+
+---
+
+## 11. متغيرات البيئة — Dostoori
 
 | المتغير | مطلوب؟ | ملاحظات |
 |---|---|---|
-| `DATABASE_URL` | مطلوب | اتصال MySQL |
-| `JWT_SECRET` | مطلوب | ≥32 حرفاً، ليس قيمة افتراضية معروفة — التطبيق يرفض الإقلاع بدونه |
-| `TWO_FACTOR_ENCRYPTION_KEY` | مطلوب | نفس الشروط أعلاه — يُستخدم لتشفير أسرار 2FA في قاعدة البيانات |
-| `PLATFORM_ADMIN_EMAILS` | اختياري | افتراضياً `admin@dostoori.jo` — قائمة بريد مديري المنصة (يفصل بينها بفاصلة) |
-| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` / `SMTP_FROM` | اختياري | بدونها، إرسال البريد من التطبيق (نسيت كلمة المرور، بريد المكتب) يرجع خطأ 503 بدل تعطّل صامت |
-| `NEXT_PUBLIC_APP_URL` أو `APP_URL` | اختياري | يُستخدم لبناء روابط كاملة (مثل رابط إعادة تعيين كلمة المرور)؛ بدونه يُستنتج من ترويسات الطلب |
+| `MYSQL_DATABASE` / `MYSQL_USER` / `MYSQL_PASSWORD` / `MYSQL_ROOT_PASSWORD` | مطلوب (Docker) | حاوية MySQL؛ `DATABASE_URL` يُبنى منها تلقائياً في الـ compose |
+| `DATABASE_URL` | مطلوب (غير Docker فقط) | اتصال MySQL — لا يُضبَط في نشر Docker |
+| `JWT_SECRET` | مطلوب | ≥32 حرفاً، ليس قيمة معروفة — التطبيق يرفض الإقلاع بدونه |
+| `TWO_FACTOR_ENCRYPTION_KEY` | مطلوب | نفس الشروط — لتشفير أسرار 2FA |
+| `AI_LEGAL_SERVICE_URL` | مطلوب للذكاء الاصطناعي | رابط ailegal_hussein؛ `http://legal_app:3000` في Docker. بدونه كل `/dashboard/ai/*` و`/dashboard/search/legal` ترجع 503 |
+| `AI_LEGAL_SERVICE_KEY` | مطلوب للذكاء الاصطناعي | **يجب أن يساوي** `INTERNAL_SERVICE_KEY` في ailegal_hussein |
+| `PLATFORM_ADMIN_EMAILS` | اختياري | افتراضياً `admin@dostoori.jo` |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` / `SMTP_FROM` | اختياري | بدونها إرسال البريد يرجع 503 |
+| `APP_URL` أو `NEXT_PUBLIC_APP_URL` | اختياري | لبناء روابط كاملة؛ بدونه يُستنتج من ترويسات الطلب |
 | `BACKUP_ENCRYPTION_PASSPHRASE` / `BACKUP_RCLONE_REMOTE` | اختياري | لسكربتات النسخ الاحتياطي فقط، راجع BACKUP.md |

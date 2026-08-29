@@ -6,7 +6,7 @@ import type { ChatMessage } from '@/lib/dashboard/types'
 
 const WELCOME: ChatMessage = {
   role: 'a',
-  text: 'مرحباً! أنا المساعد القانوني — أبحث فعلياً في نصوص التشريعات الأردنية وقرارات الديوان الخاص بتفسير القانون قبل الإجابة. إن لم أجد سنداً واضحاً في القاعدة، أصرّح بذلك بدل التخمين. كل سؤال يُعامَل بشكل مستقل — لا أحتفظ بسياق الأسئلة السابقة في نفس المحادثة.',
+  text: 'مرحباً! أنا المساعد القانوني — أبحث فعلياً في نصوص التشريعات الأردنية وقرارات الديوان الخاص بتفسير القانون قبل الإجابة. إن لم أجد سنداً واضحاً في القاعدة، أصرّح بذلك بدل التخمين. يمكنك طرح أسئلة متابعة ضمن نفس المحادثة وسأفهمها في سياق ما سبق، ومع ذلك يبقى كل جواب مُسنداً إلى مصادره الخاصة.',
 }
 
 export default function AiAssistantPage() {
@@ -20,6 +20,14 @@ export default function AiAssistantPage() {
     const question = value.trim()
     if (!question || busy) return
     setError('')
+    // Prior turns (everything after the canned welcome), for follow-up
+    // context. ailegal_hussein uses these only to resolve references like
+    // "وهل ينطبق على..." into a standalone question — each answer is still
+    // grounded on its own.
+    const history = messages.slice(1).map((m) => ({
+      role: m.role === 'u' ? 'user' : 'assistant',
+      content: m.text,
+    }))
     setMessages((items) => [...items, { role: 'u', text: question }])
     setInput('')
     setBusy(true)
@@ -27,7 +35,7 @@ export default function AiAssistantPage() {
       const res = await fetch('/api/ai/assistant', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: question }),
+        body: JSON.stringify({ message: question, history }),
       })
       const data = await res.json()
       if (res.status === 503) { setNotConfigured(true); setError(data.error); return }

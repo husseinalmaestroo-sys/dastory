@@ -67,14 +67,20 @@ export interface LegalRagFilters {
  * per-caller rate limit and cost cap apply per Dostoori office, not shared
  * across all of them.
  */
+/** Prior turns of the same conversation, oldest first. ailegal_hussein uses
+ *  them only to rewrite a follow-up into a standalone question before its
+ *  normal single-question pipeline runs — see its /api/chat condenseFollowUp. */
+export type ChatTurn = { role: 'user' | 'assistant'; content: string }
+
 export async function askLegalRag(
   question: string,
   filters: LegalRagFilters | undefined,
-  officeId: string
+  officeId: string,
+  history?: ChatTurn[]
 ): Promise<LegalRagResult> {
   const res = await callLegalService('/api/chat', officeId, {
     method: 'POST',
-    body: JSON.stringify({ question, filters }),
+    body: JSON.stringify({ question, filters, history: history?.length ? history : undefined }),
     extraHeaders: { 'Content-Type': 'application/json' },
   })
   if (!res.ok || !res.body) throw new LegalRagError('تعذّر الحصول على استجابة من خدمة البحث القانوني', 502)

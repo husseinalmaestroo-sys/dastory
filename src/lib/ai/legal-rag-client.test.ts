@@ -66,6 +66,29 @@ describe('askLegalRag — the real ailegal_hussein HTTP contract', () => {
     expect(JSON.parse(init.body)).toEqual({ question: 'هل يجوز كذا؟', filters: { category: 'عمل' } })
   })
 
+  it('forwards prior turns as `history` when given, and omits the key entirely when not', async () => {
+    // A fresh Response per call — the SSE body is a one-shot stream.
+    const fetchMock = vi.fn().mockImplementation(async () =>
+      sseResponse('event: done\ndata: {"grounded":false,"mode":"refused","sources":[]}\n\n', 200, {
+        'Content-Type': 'text/event-stream',
+      })
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const { askLegalRag } = await import('./legal-rag-client')
+
+    await askLegalRag('وهل ينطبق على الموظف المؤقت؟', undefined, 'office-9', [
+      { role: 'user', content: 'هل يجوز فصل الموظف أثناء الإجازة المرضية؟' },
+      { role: 'assistant', content: 'لا يجوز، مع استثناءات...' },
+    ])
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).history).toEqual([
+      { role: 'user', content: 'هل يجوز فصل الموظف أثناء الإجازة المرضية؟' },
+      { role: 'assistant', content: 'لا يجوز، مع استثناءات...' },
+    ])
+
+    await askLegalRag('سؤال مستقل', undefined, 'office-9', [])
+    expect('history' in JSON.parse(fetchMock.mock.calls[1][1].body)).toBe(false)
+  })
+
   it('accumulates delta events into the answer when done has no content override', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       sseResponse(

@@ -458,6 +458,56 @@ export function buildCaseAnalysisPrompt(caseText: string, chunks: RetrievedChunk
 }
 
 /**
+ * A bilateral agreement (lease, sale, employment, NDA...), not a dispute —
+ * deliberately separate from buildCaseAnalysisPrompt above. A contract has
+ * no plaintiff/defendant/case_type/possible_defenses; forcing one through
+ * the other's shape produces a wrong-shaped, misleading analysis. Response
+ * shape matches Dostoori's own pre-existing ContractReviewResult exactly
+ * (summary/parties/keyTerms/risks) so the integration only swaps which
+ * backend produces it, not what the frontend expects.
+ */
+export function buildContractReviewPrompt(contractText: string, chunks: RetrievedChunk[]) {
+  return {
+    system: `${CLOSED_DOMAIN_RULES}
+
+مهمتك الآن مختلفة عمّا ورد أعلاه: مراجعة نص عقد ثنائي رفعه المحامي (إيجار، بيع،
+عمل، شراكة، NDA، إلخ) — وليس ملف قضية أو نزاع قضائي، ولا سؤالاً عاماً.
+
+تمييز جوهري بين مصدرين للمعلومة:
+1. "نص العقد" المرفق أدناه: منه تُستخرج الأطراف والبنود والالتزامات كما وردت
+   فيه حرفياً — هذا وصف لما في الملف، لا يحتاج استشهاداً بقاعدة البيانات، ولا
+   ينطبق عليه شرط الرفض الكامل الوارد أعلاه (عقد بلا أي مصدر قانوني مسترجَع
+   لا يزال عقداً قابلاً للتلخيص ووصف بنوده).
+2. "المصادر القانونية" المرفقة أدناه (إن وُجدت): أي إشارة إلى قانون أو نظام
+   محدد يجب أن تستند إليها حصراً مع استشهاد [1] [2]. إن لم تجد سنداً لملاحظة
+   قانونية، اذكرها كتقييم صياغي عام بلا استشهاد بدل اختلاق مصدر.
+
+أعد ردك بصيغة JSON صالحة فقط، بلا أي نص خارجها، بهذا الشكل بالضبط:
+{
+  "summary": "ملخص من 2-3 جمل لموضوع العقد وأطرافه كما وردت في النص",
+  "parties": ["اسم كل طرف ورد صراحة في النص"],
+  "keyTerms": [{"label": "عنوان البند", "value": "القيمة أو الوصف كما ورد في النص"}],
+  "risks": [{"severity": "high" | "medium" | "low" | "info", "title": "عنوان مختصر", "excerpt": "اقتباس حرفي قصير من نص العقد يتعلق بهذه الملاحظة، أو نص فارغ إن لم يكن هناك اقتباس محدد", "explanation": "شرح المخاطرة أو الملاحظة — استشهد بـ[n] فقط إن كانت مبنية فعلاً على مصدر قانوني مسترجَع أدناه، وإلا فلا تضع أي رقم بين قوسين"}]
+}
+
+قواعد صارمة إضافية خاصة بالعقود:
+- كل "excerpt" يجب أن يكون اقتباساً حرفياً موجوداً فعلاً في نص العقد المرفق، أو نصاً فارغاً — لا تقتبس من المصادر القانونية هنا.
+- لا تذكر أرقام مواد قانونية في "explanation" إلا إذا كانت ضمن المصادر القانونية المرفقة فعلياً مع استشهاد [n] صحيح.
+- إن كان نص العقد غامضاً أو ناقصاً، اذكر ذلك في "risks" بدل افتراض معلومات غير موجودة.`,
+    user: [
+      chunks.length > 0
+        ? ["=================== مصادر قانونية ذات صلة (إن وُجدت) ===================", formatSources(chunks)].join("\n")
+        : "لا توجد مصادر قانونية مسترجَعة ذات صلة مباشرة بهذا العقد — لا تستشهد بأي رقم مادة أو قانون في explanation.",
+      "=================== نص العقد المرفوع ===================",
+      contractText,
+      "=================== نهاية ===================",
+      "",
+      "راجع العقد وأعد JSON فقط.",
+    ].join("\n"),
+  };
+}
+
+/**
  * The ungrounded path: an orientation answer when the knowledge base has
  * nothing, built from the model's general knowledge.
  *

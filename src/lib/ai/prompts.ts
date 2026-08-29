@@ -171,6 +171,43 @@ export function buildChatPrompt(question: string, chunks: RetrievedChunk[]) {
   };
 }
 
+export type ConversationTurn = { role: "user" | "assistant"; content: string };
+
+/**
+ * Rewrites a follow-up that only makes sense in context ("وهل ينطبق على
+ * الموظف المؤقت؟") into a standalone legal question that retrieval and the
+ * grounded pipeline can handle with no memory of their own. This is the ONLY
+ * place conversation history touches this service — everything downstream of
+ * it (retrieval, buildChatPrompt, the citation guards, self-verify) still
+ * sees exactly one self-contained question, unchanged. If the follow-up is
+ * already standalone the model is told to return it verbatim; route.ts falls
+ * back to the raw text on any failure, so a bad rewrite can only cost a
+ * retrieval, never break the request.
+ */
+export function buildCondensePrompt(history: ConversationTurn[], followUp: string) {
+  const transcript = history
+    .map((t) => `${t.role === "user" ? "المحامي" : "المساعد"}: ${t.content}`)
+    .join("\n");
+  return {
+    system: `أنت أداة إعادة صياغة داخل مساعد قانوني أردني. مهمتك الوحيدة: تحويل السؤال الجديد إلى سؤال مستقل مكتفٍ بذاته يمكن فهمه دون قراءة المحادثة السابقة.
+
+قواعد صارمة:
+- أعد سؤالاً واحداً فقط بالعربية الفصحى، بلا أي نص قبله أو بعده، بلا شرح، بلا علامات اقتباس.
+- عوّض الضمائر والإشارات ("ذلك"، "هذه الحالة"، "وماذا عن..."، "وهل ينطبق") بما تشير إليه فعلاً من المحادثة.
+- لا تُضِف معلومات أو افتراضات ليست في المحادثة، ولا تُجب عن السؤال.
+- إن كان السؤال الجديد مستقلاً وواضحاً أصلاً، أعِده كما هو حرفياً.
+- حافظ على نطاق السؤال القانوني كما هو؛ لا توسّعه ولا تضيّقه.`,
+    user: [
+      "=================== المحادثة السابقة ===================",
+      transcript,
+      "=================== السؤال الجديد ===================",
+      followUp,
+      "",
+      "أعد السؤال المستقل فقط:",
+    ].join("\n"),
+  };
+}
+
 /**
  * First-attempt prompt for a DETECTED comparison question ("ما الفرق بين X و
  * Y؟" — see search/comparison.ts) — used instead of buildChatPrompt when

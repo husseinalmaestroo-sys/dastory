@@ -14,6 +14,7 @@ import { getChatProvider } from "@/lib/ai";
 import {
   buildChatPrompt,
   buildComparisonPrompt,
+  buildCondensePrompt,
   buildGapFillPrompt,
   buildGeneralPrompt,
   buildHybridAnalysisPrompt,
@@ -26,6 +27,7 @@ import {
   GENERAL_ANSWER_DISCLAIMER,
   GROUNDED_ANSWER_DISCLAIMER,
   GAP_MARKER_RE,
+  type ConversationTurn,
 } from "@/lib/ai/prompts";
 import { redactCitations, stripInvalidCitations, verifyCitedNumbers } from "@/lib/ai/guard";
 import { verifyAndCleanCitations } from "@/lib/ai/citation-verify";
@@ -49,7 +51,56 @@ const Body = z.object({
       sourceType: z.string().optional(),
     })
     .optional(),
+  // Optional prior turns for follow-up questions. Used ONLY to rewrite the
+  // question into standalone form (condenseFollowUp) before the normal
+  // single-question pipeline runs — nothing downstream sees it. Capped hard:
+  // a caller that sends a whole transcript still costs one small rewrite call.
+  history: z
+    .array(
+      z.object({
+        role: z.enum(["user", "assistant"]),
+        content: z.string().min(1).max(4000),
+      })
+    )
+    .max(12)
+    .optional(),
 });
+
+/**
+ * Turns a context-dependent follow-up into a standalone question via one
+ * small model call (see buildCondensePrompt). Never throws: on an empty,
+ * over-long, or errored rewrite it returns the raw question, so the worst
+ * case is retrieval on the un-rewritten text — exactly today's behavior.
+ */
+async function condenseFollowUp(
+  history: ConversationTurn[],
+  rawQuestion: string
+): Promise<{ question: string; tokensIn: number; tokensOut: number }> {
+  const unchanged = { question: rawQuestion, tokensIn: 0, tokensOut: 0 };
+  if (history.length === 0) return unchanged;
+  try {
+    const { system, user } = buildCondensePrompt(history, rawQuestion);
+    const provider = getChatProvider();
+    const res = await provider.chat(
+      [
+        { role: "system", content: system },
+        { role: "user", content: user },
+      ],
+      { maxTokens: 200 }
+    );
+    const rewritten = res.text.trim().replace(/^["'«»]+|["'«»]+$/g, "").trim();
+    // A sane rewrite is one line and roughly question-sized. Anything that
+    // came back long, empty, or multi-paragraph is the model answering or
+    // rambling instead of rewriting — fall back rather than retrieve on it.
+    if (!rewritten || rewritten.length > 600 || rewritten.includes("\n\n")) {
+      return { ...unchanged, tokensIn: res.tokensIn, tokensOut: res.tokensOut };
+    }
+    return { question: rewritten, tokensIn: res.tokensIn, tokensOut: res.tokensOut };
+  } catch (err) {
+    logError("[chat] follow-up condense failed — using the question as-is:", err);
+    return unchanged;
+  }
+}
 
 const ESCAPED_NO_BASIS = NO_BASIS_ANSWER.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -150,11 +201,7 @@ async function handlePost(req: NextRequest): Promise<Response> {
   if (!parsed.success) {
     return Response.json({ error: parsed.error.issues[0]?.message ?? "طلب غير صالح" }, { status: 400 });
   }
-  // Normalized once, at the entry point — every downstream consumer (intent
-  // parsing, expansion, embedding, the confidence/analysis payload) reads
-  // this same normalized text, never the raw request body.
-  const { question: rawQuestion, filters = {} } = parsed.data;
-  const question = normalizeQuery(rawQuestion);
+  const { question: rawQuestion, filters = {}, history = [] } = parsed.data;
 
   const { sessionId } = await getSession();
 
@@ -203,6 +250,20 @@ async function handlePost(req: NextRequest): Promise<Response> {
       { status: 429 }
     );
   }
+
+  // Follow-up rewrite: runs AFTER the cost caps (it is itself a small model
+  // call) and BEFORE anything reads the question text. Everything from here
+  // down — normalization, intent parsing, expansion, embedding, retrieval,
+  // the confidence/analysis payload — sees this one standalone, normalized
+  // string, exactly as it did when the endpoint took a single question and
+  // nothing else. `history` is not referenced again past this line.
+  const condensed = await condenseFollowUp(history, rawQuestion);
+  const condenseTokensIn = condensed.tokensIn;
+  const condenseTokensOut = condensed.tokensOut;
+  if (condensed.question !== rawQuestion) {
+    console.log(`[chat] condensed follow-up -> "${condensed.question.slice(0, 120)}"`);
+  }
+  const question = normalizeQuery(condensed.question);
 
   // Fire-and-forget: a usage-tracking write nothing below reads back (see
   // touchSession's own header comment for why awaiting this used to sit on
@@ -367,8 +428,9 @@ async function handlePost(req: NextRequest): Promise<Response> {
         sourcesUsed: [],
         grounded: false,
         mode: "refused",
-        tokensIn: 0,
-        tokensOut: 0,
+        // Only the follow-up rewrite call spent anything on this path.
+        tokensIn: condenseTokensIn,
+        tokensOut: condenseTokensOut,
         embeddingTokens,
         latencyMs: Date.now() - started,
         category: filters.category ?? null,
@@ -379,7 +441,7 @@ async function handlePost(req: NextRequest): Promise<Response> {
     }
 
     return sseResponse(
-      generalAnswerStream({ question, sessionId, costKey: ipKey, embeddingTokens, started, filters, send, analysisPayload })
+      generalAnswerStream({ question, sessionId, costKey: ipKey, embeddingTokens, started, filters, send, analysisPayload, condenseTokensIn, condenseTokensOut })
     );
   }
 
@@ -774,8 +836,9 @@ async function handlePost(req: NextRequest): Promise<Response> {
           sourcesUsed: grounded ? citations : [],
           grounded,
           mode,
-          tokensIn,
-          tokensOut,
+          // + the follow-up rewrite call, when this request carried history.
+          tokensIn: tokensIn + condenseTokensIn,
+          tokensOut: tokensOut + condenseTokensOut,
           embeddingTokens,
           latencyMs: Date.now() - started,
           category: filters.category ?? null,
@@ -805,6 +868,8 @@ type GeneralArgs = {
   filters: { category?: string };
   send: (ctrl: ReadableStreamDefaultController, event: string, data: unknown) => void;
   analysisPayload: ReturnType<typeof toAnalysisPayload>;
+  condenseTokensIn: number;
+  condenseTokensOut: number;
 };
 
 /**
@@ -878,8 +943,8 @@ function generalAnswerStream(a: GeneralArgs): ReadableStream {
           // this, admin/stats's general_answers count (WHERE mode = 'general')
           // silently undercounts, since e.mode defaults to NULL, not "general".
           mode: "general",
-          tokensIn: result.tokensIn,
-          tokensOut: result.tokensOut,
+          tokensIn: result.tokensIn + a.condenseTokensIn,
+          tokensOut: result.tokensOut + a.condenseTokensOut,
           embeddingTokens: a.embeddingTokens,
           latencyMs: Date.now() - a.started,
           category: a.filters.category ?? null,

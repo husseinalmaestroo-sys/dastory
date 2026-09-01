@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
+import * as Sentry from '@sentry/nextjs'
 
 // Wraps a Route Handler so an unexpected exception (a DB constraint
 // violation not pre-checked by the route, a connection drop, etc.) always
@@ -27,6 +28,8 @@ export function withErrorHandling<Args extends unknown[]>(
         console.error('[api] unique constraint violation', err.meta)
         return NextResponse.json({ error: 'يوجد سجل بنفس القيمة مسبقاً' }, { status: 409 })
       }
+      // No-op when SENTRY_DSN is unset; scrubbed by beforeSend when it isn't.
+      Sentry.captureException(err)
       console.error('[api] unhandled error', err)
       return NextResponse.json({ error: 'خطأ في الخادم' }, { status: 500 })
     }

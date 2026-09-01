@@ -1,4 +1,5 @@
 import type { NextConfig } from 'next'
+import { withSentryConfig } from '@sentry/nextjs/config'
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
@@ -13,4 +14,11 @@ const nextConfig: NextConfig = {
   output: 'standalone',
 }
 
-export default nextConfig
+// Sentry build wrapper. Server-side only (see src/instrumentation.ts — no
+// browser SDK). No org/project/authToken, so it never attempts a source-map
+// upload; it just injects the release + wires onRequestError. Fully inert at
+// runtime when SENTRY_DSN is unset.
+export default withSentryConfig(nextConfig, {
+  silent: !process.env.CI,
+  widenClientFileUpload: false,
+})

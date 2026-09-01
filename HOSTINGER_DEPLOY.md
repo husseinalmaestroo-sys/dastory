@@ -182,6 +182,13 @@ cd /opt/dostoori                  && git pull && bash deploy/deploy.sh
 - **صور Docker**: `next.config.ts` يستخدم `output: 'standalone'`، و`prisma/schema.prisma`
   يضيف `debian-openssl-3.0.x` لهدف Prisma، و`canvas` انتقلت إلى `devDependencies`
   (اختبارات فقط) — كلّها لتصغير صورة الإنتاج وتفادي بناء أصلي لا لزوم له.
+- **تتبّع الأخطاء (Sentry)**: التطبيقان مربوطان بـ `@sentry/nextjs` (جهة الخادم فقط).
+  بدون `SENTRY_DSN` الـ SDK خامل تماماً. عند ضبطه، الأخطاء غير المُعالَجة تُرسَل بعد
+  تنقية البريد/الرموز/أجسام الطلبات (`src/lib/sentry-scrub.ts`). اضبط نفس المتغير
+  في `.env` الخاص بكل تطبيق.
+- **مراقبة التوفّر**: أضِف مراقباً خارجياً (BetterStack / UptimeRobot) على
+  `https://app.<domain>/api/health` و`https://legal.<domain>/`، بفاصل دقيقتين وتنبيه
+  SMS/Telegram. `/api/health` يرجع 503 إذا سقطت قاعدة البيانات أو التخزين.
 
 ---
 
@@ -198,4 +205,5 @@ cd /opt/dostoori                  && git pull && bash deploy/deploy.sh
 | `PLATFORM_ADMIN_EMAILS` | اختياري | افتراضياً `admin@dostoori.jo` |
 | `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` / `SMTP_FROM` | اختياري | بدونها إرسال البريد يرجع 503 |
 | `APP_URL` أو `NEXT_PUBLIC_APP_URL` | اختياري | لبناء روابط كاملة؛ بدونه يُستنتج من ترويسات الطلب |
+| `SENTRY_DSN` / `SENTRY_ENVIRONMENT` | اختياري | تتبّع الأخطاء؛ بدونه الـ SDK خامل. اضبط نفس القيمة في `ailegal_hussein/.env` أيضاً |
 | `BACKUP_ENCRYPTION_PASSPHRASE` / `BACKUP_RCLONE_REMOTE` | اختياري | لسكربتات النسخ الاحتياطي فقط، راجع BACKUP.md |

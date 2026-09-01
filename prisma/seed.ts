@@ -120,15 +120,27 @@ const COURTS = [
 
 async function main() {
   console.log('🧹 Cleaning existing data...')
+  // Order matters — children before parents. Tables added after this seed
+  // was first written (e-signature, time tracking, billing, verification)
+  // are cleared here too, or their FKs block the deletes below.
+  await prisma.idempotencyKey.deleteMany()
+  await prisma.emailVerificationToken.deleteMany()
+  await prisma.aiUsageLog.deleteMany()
   await prisma.calendarEvent.deleteMany()
   await prisma.notification.deleteMany()
+  await prisma.auditLog.deleteMany()
+  await prisma.timeEntry.deleteMany()
+  await prisma.documentSignature.deleteMany()
   await prisma.document.deleteMany()
   await prisma.session.deleteMany()
   await prisma.invoice.deleteMany()
   await prisma.case.deleteMany()
+  await prisma.subscription.deleteMany()
+  // Break the citizen -> Client link, then Client (its ownerId FKs User),
+  // then User, then Office.
   await prisma.user.updateMany({ data: { clientId: null } })
-  await prisma.user.deleteMany()
   await prisma.client.deleteMany()
+  await prisma.user.deleteMany()
   await prisma.office.deleteMany()
   console.log('✅ Clean\n')
 

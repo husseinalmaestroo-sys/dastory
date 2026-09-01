@@ -1,5 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
+import { withSentryConfig } from "@sentry/nextjs/config";
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -22,4 +23,10 @@ const nextConfig = {
   },
 };
 
-export default nextConfig;
+// Sentry build wrapper. Server-side only (src/instrumentation.ts — no
+// browser SDK). No org/project/authToken, so no source-map upload attempt.
+// Inert at runtime when SENTRY_DSN is unset.
+export default withSentryConfig(nextConfig, {
+  silent: !process.env.CI,
+  widenClientFileUpload: false,
+});

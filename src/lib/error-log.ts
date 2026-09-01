@@ -1,4 +1,5 @@
 import "server-only";
+import * as Sentry from "@sentry/nextjs";
 import { query } from "./db";
 
 /**
@@ -14,6 +15,11 @@ import { query } from "./db";
  */
 export function logError(context: string, detail: unknown): void {
   console.error(context, detail);
+
+  // No-op when SENTRY_DSN is unset; scrubbed by beforeSend when it isn't.
+  Sentry.captureException(detail instanceof Error ? detail : new Error(`${context}: ${String(detail)}`), {
+    tags: { context },
+  });
 
   const err = detail instanceof Error ? detail : undefined;
   const message = err ? err.message : String(detail);

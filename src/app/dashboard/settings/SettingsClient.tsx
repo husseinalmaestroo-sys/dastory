@@ -343,6 +343,23 @@ export default function SettingsClient({
         </div>
       )}
 
+      {isAdmin && (
+        <div className="card" style={{ marginTop: 14 }}>
+          <div className="ct">📦 تصدير بيانات المكتب</div>
+          <div style={{ fontSize: '.8rem', color: '#94A3B8', lineHeight: 1.8, marginBottom: 12 }}>
+            نسخة كاملة من بيانات المكتب (العملاء، القضايا، الجلسات، الفواتير، والمستندات بملفاتها) بصيغة ملف مضغوط.
+            نسخة للحظتها فقط — لا تُحذف أي بيانات ولا يمكن إعادة استيرادها.
+          </div>
+          <a
+            href="/api/office/export"
+            className="dbtn dbtn-p"
+            style={{ display: 'inline-block', textDecoration: 'none' }}
+          >
+            ⬇ تنزيل نسخة البيانات
+          </a>
+        </div>
+      )}
+
       {isAdmin && <PermissionsMatrix />}
     </div>
   )

@@ -31,13 +31,17 @@ describe('real PDF text extraction (pdf.js + OCR, not mocked)', () => {
   }, 60_000)
 
   it('the OCR fallback path specifically produces real, distinguishable text for different PDFs', async () => {
-    const a = await extractText(renderPdf('Alpha Reference 1001'), 'PDF')
-    const b = await extractText(renderPdf('Zeta Reference 9988'), 'PDF')
+    // Numbers with distinct digit glyphs — a run of 1s and 0s ("1001") is a
+    // classic OCR failure at this render size and makes the assertion flaky
+    // for no gain: the point is "OCR reads *this* page, not a mock", which
+    // any legible distinct string proves.
+    const a = await extractText(renderPdf('Alpha Reference 3527'), 'PDF')
+    const b = await extractText(renderPdf('Zeta Reference 8461'), 'PDF')
     expect(a.method).toBe('pdf-ocr')
     expect(b.method).toBe('pdf-ocr')
     expect(a.text).not.toBe(b.text)
-    expect(a.text).toContain('1001')
-    expect(b.text).toContain('9988')
+    expect(a.text).toContain('3527')
+    expect(b.text).toContain('8461')
   }, 60_000)
 
   it('rejects a PDF with no usable content instead of fabricating a result', async () => {

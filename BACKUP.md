@@ -43,11 +43,17 @@ Without this step, `backup-db.sh` / `backup-files.sh` still run and still produc
 Add to the production host's crontab (`crontab -e`), with the required env vars available to cron (either exported in the crontab itself, or sourced from a file cron reads — cron does not inherit your shell's environment):
 
 ```cron
-0 3  * * * cd /path/to/app && DATABASE_URL="..." BACKUP_ENCRYPTION_PASSPHRASE="..." BACKUP_RCLONE_REMOTE="..." ./scripts/backup-db.sh    >> backups/db/backup.log 2>&1
-30 3 * * * cd /path/to/app && BACKUP_ENCRYPTION_PASSPHRASE="..." BACKUP_RCLONE_REMOTE="..." ./scripts/backup-files.sh >> backups/files/backup.log 2>&1
+# nightly — DB then files, 30-day local retention
+0 3  * * * cd /path/to/app && BACKUP_RETENTION_DAYS=30 DATABASE_URL="..." BACKUP_ENCRYPTION_PASSPHRASE="..." BACKUP_RCLONE_REMOTE="..." ./scripts/backup-db.sh    >> backups/db/backup.log 2>&1
+30 3 * * * cd /path/to/app && BACKUP_RETENTION_DAYS=30 BACKUP_ENCRYPTION_PASSPHRASE="..." BACKUP_RCLONE_REMOTE="..." ./scripts/backup-files.sh >> backups/files/backup.log 2>&1
+
+# monthly — prove the newest DB backup actually restores (see below).
+# The `|| curl ...` turns a failed drill into a page; point it at whatever
+# you alert with (a webhook, an email-to-SMS gateway, Betterstack, …).
+30 4 1 * * cd /path/to/app && BACKUP_ENCRYPTION_PASSPHRASE="..." DRILL_DATABASE_URL="mysql://root:ROOT_PW@127.0.0.1:3306/mysql" ./scripts/restore-drill.sh >> backups/drill.log 2>&1 || curl -fsS -m 20 "$DRILL_ALERT_WEBHOOK" -d 'dostoori restore drill FAILED'
 ```
 
-Adjust the schedule to your actual write volume — daily is a reasonable starting point for a system this size.
+Adjust the schedule to your actual write volume — nightly is a reasonable starting point for a system this size. `restore-drill.sh` also warns (on stderr, in the log) if the newest backup is more than 26h old, so a silently-stopped nightly job surfaces at the next drill.
 
 ## Restoration procedure
 
@@ -75,7 +81,24 @@ openssl enc -d -aes-256-cbc -pbkdf2 -pass env:BACKUP_ENCRYPTION_PASSPHRASE \
 
 ## Restoration verification
 
-The restore script's row-count output is a baseline sanity check, not a full integrity guarantee. For a real disaster-recovery drill (recommended at least once before you need it for real):
+### Automated: `scripts/restore-drill.sh`
+
+Run it (or let cron run it, above) to prove the newest DB backup restores cleanly:
+
+```bash
+export BACKUP_ENCRYPTION_PASSPHRASE="..."
+# connection host/port/user/pass; the db name is ignored (a scratch name is generated).
+# The user needs CREATE/DROP DATABASE. On the VPS: root against the published 127.0.0.1:3306.
+export DRILL_DATABASE_URL="mysql://root:ROOT_PW@127.0.0.1:3306/mysql"
+./scripts/restore-drill.sh            # newest backup in backups/db/
+./scripts/restore-drill.sh <file>     # or a specific one
+```
+
+It restores into a throwaway scratch database, runs `prisma migrate status` against it (the backup's schema must match `prisma/migrations`), checks Prisma can connect, asserts the core tables aren't empty, compares row counts to the last passing run (`backups/drill-baseline.txt`), then drops the scratch database. **Exit 0 = clean; any non-zero exit is a real signal — wire it to alerting.** It prints the measured RTO (restore wall-clock) and RPO (age of the newest backup).
+
+### Manual: full end-to-end
+
+The drill above does not exercise the app itself. For a complete disaster-recovery rehearsal (recommended at least once before you need it for real):
 
 1. Restore both backups into a scratch environment (scratch DB name + a separate `STORAGE_DIR`).
 2. Point a local `.env` at the scratch database and `npm run dev` against it.
@@ -85,5 +108,5 @@ The restore script's row-count output is a baseline sanity check, not a full int
 ## What this does not cover
 
 - **Point-in-time recovery.** These are periodic full dumps, not continuous binlog-based replication — you can restore to the last backup, not to an arbitrary second. If that matters for your recovery objectives, look at MySQL binlog-based PITR in addition to this.
-- **Automated restore testing.** Nothing currently runs the restoration-verification steps above on a schedule; treat that as a periodic manual exercise (e.g. quarterly).
+- **App-level restore testing.** `scripts/restore-drill.sh` (run monthly by cron) proves the DB backup restores into a schema-valid, Prisma-connectable database — but it does not boot the app, download a document, or exercise 2FA. Do the manual end-to-end rehearsal above periodically (e.g. quarterly) as well.
 - **Provisioning the off-host remote itself.** As above, that's a manual, one-time step on infrastructure this repo doesn't have access to.

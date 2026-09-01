@@ -40,8 +40,12 @@ DB_PASS="${DB_PARTS[3]}"
 TARGET_DB="${2:-${DB_PARTS[4]}}"
 
 echo "About to restore '$FILE' into database '$TARGET_DB' on $DB_HOST:$DB_PORT."
-echo "This OVERWRITES matching tables in that database. Ctrl+C now to cancel (5s)..."
-sleep 5
+if [ "${RESTORE_DB_NO_PROMPT:-}" = "1" ]; then
+  echo "RESTORE_DB_NO_PROMPT=1 — skipping the confirmation pause (used by restore-drill.sh)."
+else
+  echo "This OVERWRITES matching tables in that database. Ctrl+C now to cancel (5s)..."
+  sleep 5
+fi
 
 # Verified by actually running this script against a database that did not
 # exist yet: without this, the restore below fails outright with "Unknown

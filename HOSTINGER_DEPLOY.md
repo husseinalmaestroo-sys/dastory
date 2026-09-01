@@ -154,6 +154,12 @@ docker compose exec -T db mysqldump -u root -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DAT
 المضيف. الجزء الذي يحتاج إعداداً يدوياً: التخزين خارج الخادم (rclone) وجدولة cron —
 موثّقان في BACKUP.md. **خذ نسخة قبل كل `migrate deploy`.**
 
+**اختبار الاسترجاع الدوري:** `scripts/restore-drill.sh` يأخذ أحدث نسخة مشفّرة، يسترجعها
+في قاعدة بيانات مؤقتة، يتحقق أن مخططها يطابق `prisma/migrations` وأن Prisma يتصل بها،
+ثم يحذفها. أضِفه لـ cron شهرياً مع تنبيه عند الفشل — راجع كتلة cron في BACKUP.md.
+على الـ VPS: `DRILL_DATABASE_URL="mysql://root:ROOT_PW@127.0.0.1:3306/mysql"` (المنفذ
+منشور من حاوية `db`).
+
 ---
 
 ## 9. تحديث الشيفرة لاحقاً

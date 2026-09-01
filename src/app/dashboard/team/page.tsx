@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { Badge, SectionHeader, StatCard } from '@/components/dashboard/ui'
 import { useDashboard } from '@/components/dashboard/DashboardContext'
+import { PermissionsMatrix } from '@/components/dashboard/PermissionsMatrix'
 
 interface TeamMember {
   id: string
@@ -178,7 +179,7 @@ function TeamPageContent() {
         </div>
       </div>
 
-      <PermissionsCard />
+      <PermissionsMatrix />
 
       {showAdd && (
         <div className="mo" onClick={e => e.target === e.currentTarget && setShowAdd(false)}>
@@ -250,31 +251,3 @@ function TeamPageContent() {
   )
 }
 
-function PermissionsCard() {
-  return (
-    <div className="card">
-      <div className="ct">🔐 الصلاحيات</div>
-      <table className="pt">
-        <tbody>
-          <tr><th>الصلاحية</th><th>مدير</th><th>محامي</th><th>سكرتير</th><th>محاسب</th></tr>
-          {[
-            ['إدارة القضايا', true, true, false, false],
-            ['إضافة عملاء', true, true, true, false],
-            ['الفواتير والمالية', true, false, false, true],
-            ['مراجعة العقود AI', true, true, false, false],
-            ['إدارة الفريق', true, false, false, false],
-            ['النسخ الاحتياطي', true, false, false, false],
-            ['التقارير الكاملة', true, false, false, true],
-          ].map(([name, admin, lawyer, secretary, accountant]) => (
-            <tr key={String(name)}>
-              <td>{name}</td>
-              {[admin, lawyer, secretary, accountant].map((allowed, index) => (
-                <td key={index}><span className={allowed ? 'pck' : 'pxm'}>{allowed ? '✓' : '—'}</span></td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  )
-}

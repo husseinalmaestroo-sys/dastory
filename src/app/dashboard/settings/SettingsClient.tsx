@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { Badge, Field, SectionHeader, SettingRow } from '@/components/dashboard/ui'
+import { PermissionsMatrix } from '@/components/dashboard/PermissionsMatrix'
 import { useDashboard } from '@/components/dashboard/DashboardContext'
 
 type AuditLogItem = {
@@ -360,41 +361,12 @@ export default function SettingsClient({
         </div>
       )}
 
-      {isAdmin && <PermissionsMatrix />}
-    </div>
-  )
-}
-
-function PermissionsMatrix() {
-  return (
-    <div style={{ marginTop: 14 }}>
-      <SectionHeader title="صلاحيات المستخدمين" subtitle="الأدوار الفعلية الموجودة بالنظام — مُطبَّقة على مستوى الخادم لا الواجهة فقط" />
-      <div className="card">
-        <div className="ct">🔐 مصفوفة الصلاحيات</div>
-        <table className="pt">
-          <tbody>
-            <tr><th>الوحدة</th><th>مدير المكتب</th><th>محامٍ</th><th>الموكّل (بوابة العميل)</th></tr>
-            {[
-              ['لوحة التحكم', '✓ كل بيانات المكتب', '✓ بياناته فقط', '✓ بوابة منفصلة'],
-              ['إدارة العملاء', '✓ الكل', '✓ عملاؤه + من له قضية معهم', '—'],
-              ['إدارة القضايا', '✓ الكل', '✓ قضاياه فقط', 'عرض قضاياه فقط'],
-              ['الجلسات والفواتير', '✓ الكل', '✓ المرتبطة بقضاياه فقط', 'عرض فقط'],
-              ['الملفات والمستندات', '✓ الكل', '✓ ملفاته وملفات قضاياه فقط', '—'],
-              ['إدارة الفريق', '✓', '—', '—'],
-              ['التقارير الكاملة وسجل التدقيق', '✓', '—', '—'],
-              ['النسخ الاحتياطي', 'الواجهة جاهزة، التفعيل يحتاج ربط مزود تخزين', '—', '—'],
-            ].map(([name, ...cells]) => (
-              <tr key={name}>
-                <td>{name}</td>
-                {cells.map((cell, index) => <td key={index}><span className={cell.startsWith('✓') ? 'pck' : 'pxm'}>{cell}</span></td>)}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <div style={{ marginTop: 10, fontSize: '.76rem', color: '#64748B', lineHeight: 1.8 }}>
-          لا توجد أدوار "سكرتير" أو "محاسب" أو "متدرب" بالنظام حالياً — الأدوار المتاحة فعلياً هي مدير المكتب والمحامي والموكّل فقط.
+      {isAdmin && (
+        <div style={{ marginTop: 14 }}>
+          <SectionHeader title="صلاحيات المستخدمين" subtitle="الأدوار الفعلية الموجودة بالنظام — مُطبَّقة على مستوى الخادم لا الواجهة فقط" />
+          <PermissionsMatrix />
         </div>
-      </div>
+      )}
     </div>
   )
 }

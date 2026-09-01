@@ -71,5 +71,22 @@ else
   exit 1
 fi
 
+# Full-workflow smoke through the real URL — signup, the CRUD loop, an
+# upload + e-signature, and (unless SMOKE_REQUIRE_AI is unset and the AI
+# service isn't configured) a contract review + a 2-turn assistant chat.
+# A failure here means the deploy is broken even though the container is
+# up; it exits non-zero and takes the deploy with it.
+SMOKE_URL="${SMOKE_URL:-http://127.0.0.1:3000}"
+if command -v node >/dev/null 2>&1; then
+  say "Smoke test ($SMOKE_URL)"
+  "$(dirname "$0")/../scripts/smoke.sh" "$SMOKE_URL" || {
+    echo "  smoke test failed — see output above." >&2
+    docker compose logs --tail=40 app >&2
+    exit 1
+  }
+else
+  echo "  (node not on PATH — skipping scripts/smoke.sh; run it by hand against the public URL)" >&2
+fi
+
 say "Deployed"
 docker compose ps

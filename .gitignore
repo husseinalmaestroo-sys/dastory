@@ -20,14 +20,15 @@ node_modules
 
 # Env files — never commit real secrets
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
 
 # Logs
 *.log
 
 # Uploaded documents (user data — never belongs in version control)
 /storage
+/storage-staging
 
 # Local encrypted DB/file backups produced by scripts/backup-*.sh
 /backups

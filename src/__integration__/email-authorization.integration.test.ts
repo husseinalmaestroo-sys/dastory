@@ -77,4 +77,23 @@ describe('email relay authorization — route level (real DB lookups)', () => {
     const res = await sendEmail(testRequest('/api/email/send', { method: 'POST', user: lawyer, body: { ...validBody, to: 'not-an-email' } }))
     expect(res.status).toBe(400)
   })
+
+  // Launch plan item 03: with no SMTP configured the route must 503 with an
+  // error — never a fabricated success — and record the honest failure.
+  it('503s with an error (not a fake "sent") and audit-logs smtp_not_configured when SMTP is unset', async () => {
+    const manager = await trackedUser(Role.OFFICE_MANAGER) // manager override — reaches the SMTP check for any recipient
+    const res = await sendEmail(testRequest('/api/email/send', { method: 'POST', user: manager, body: { ...validBody, to: 'someone@external.example' } }))
+
+    expect(res.status).toBe(503)
+    const json = await res.json()
+    expect(json).toHaveProperty('error')
+    expect(json).not.toHaveProperty('ok')
+
+    const log = await prisma.auditLog.findFirst({
+      where: { actorId: manager.id, action: 'email.send_failed' },
+      orderBy: { createdAt: 'desc' },
+    })
+    expect(log).not.toBeNull()
+    expect((log?.metadata as Record<string, unknown>)?.reason).toBe('smtp_not_configured')
+  })
 })

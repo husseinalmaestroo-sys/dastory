@@ -103,8 +103,42 @@ cd /opt/dostoori                  && bash deploy/deploy.sh   # يبني، prisma
 bash deploy/setup-nginx.sh <domain>                          # nginx: ملف واحد، السجلّان، ثم certbot لكليهما
 ```
 
-`dostoori/deploy/deploy.sh` يتحقّق من `GET /api/health` = 200 (قاعدة البيانات + التخزين
-هما الفحصان الحاملان؛ البريد/الذكاء الاصطناعي غير المُعدّين حالة موثّقة غير "متدهورة").
+`dostoori/deploy/deploy.sh` يتحقّق من `GET /api/health` = 200، ثم يشغّل
+**`scripts/smoke.sh`** على `127.0.0.1:3000`: تسجيل مكتب مؤقت → عميل/قضية/جلسة/فاتورة →
+رفع مستند + توقيعه → (إن كان الذكاء الاصطناعي مُعدّاً) مراجعة عقد + محادثة بدورين.
+أي فشل هنا يُفشل النشر. لتشغيله على الرابط العام مباشرة:
+
+```bash
+SMOKE_URL="https://app.<domain>" SMOKE_REQUIRE_AI=1 bash scripts/smoke.sh https://app.<domain>
+```
+
+**اختبار حِمل مسار الذكاء الاصطناعي** (يكلّف مالاً — نداءات OpenAI حقيقية):
+
+```bash
+k6 run -e BASE=https://app.<domain> -e VUS=3 -e DURATION=5m scripts/load-ai.js
+```
+
+يُنجح إذا لم يظهر أي 502/504 وبقي p95 تحت 120 ثانية.
+
+> `smoke.sh` و`load-ai.js` ينشئان مكاتب مؤقتة ببريد على نطاق `smoke.invalid` —
+> تتراكم؛ احذفها دورياً بذلك النطاق.
+
+---
+
+## 5.1 بيئة staging (اختياري، موصى به)
+
+`docker-compose.staging.yml` يشغّل نسخة موازية على نفس الـ VPS (أسماء ومنافذ وحجوم
+منفصلة)، تخدمها nginx على `staging.<domain>`:
+
+```bash
+cp .env .env.staging   # عدّل MYSQL_* لأسرار خاصة بـ staging
+docker compose -f docker-compose.staging.yml --env-file .env.staging up -d --build
+docker compose -f docker-compose.staging.yml --env-file .env.staging \
+  run --rm app node node_modules/prisma/build/index.js migrate deploy
+bash scripts/smoke.sh https://staging.<domain>
+```
+
+انشُر إلى staging أولاً، شغّل `smoke.sh` عليها، وإن نجحت انشُر إلى الإنتاج.
 
 ---
 

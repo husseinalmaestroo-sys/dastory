@@ -1,0 +1,59 @@
+# Staging stack — runs ALONGSIDE prod on the same VPS (distinct container
+# names, ports, volume, and .env). nginx serves it at staging.<domain>.
+#
+#   docker compose -f docker-compose.staging.yml --env-file .env.staging up -d --build
+#
+# .env.staging is a copy of .env with its own MYSQL_* secrets and, if you
+# want to exercise the AI path here too, AI_LEGAL_SERVICE_URL=http://legal_app:3000
+# + the shared AI_LEGAL_SERVICE_KEY (staging then reuses the PROD ailegal —
+# RAG queries don't mutate anything but a usage-log row). Leave it unset to
+# test everything except AI (the smoke test warns, doesn't fail, on 503).
+services:
+  db:
+    image: mysql:8
+    container_name: dostoori_db_staging
+    restart: unless-stopped
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-dostoori}
+      MYSQL_USER: ${MYSQL_USER:-dostoori}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?set MYSQL_PASSWORD in .env.staging}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD in .env.staging}
+    ports:
+      - "127.0.0.1:3307:3306"
+    volumes:
+      - dbdata_staging:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    container_name: dostoori_app_staging
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env.staging
+    environment:
+      DATABASE_URL: mysql://${MYSQL_USER:-dostoori}:${MYSQL_PASSWORD}@db:3306/${MYSQL_DATABASE:-dostoori}
+      NODE_ENV: production
+    ports:
+      - "127.0.0.1:3100:3000"
+    volumes:
+      - ./storage-staging:/app/storage
+    mem_limit: 1200m
+    networks:
+      - default
+      - dostoori_net
+
+volumes:
+  dbdata_staging:
+
+networks:
+  dostoori_net:
+    external: true

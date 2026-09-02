@@ -13,7 +13,43 @@ type TrialRequest = {
   officePhone: string
   mobile: string
   city: string
-  status: 'NEW'
+  email: string
+  status: string
+}
+type SubStatus = 'NONE' | 'TRIALING' | 'ACTIVE' | 'PAST_DUE' | 'CANCELED'
+type Subscriber = {
+  officeId: string
+  officeName: string
+  officeActive: boolean
+  managerName: string | null
+  managerEmail: string | null
+  plan: string | null
+  status: SubStatus
+  renewsAt: string | null
+  createdAt: string
+}
+type AdminStats = {
+  subscribedOffices: number
+  activeOffices: number
+  trialingOffices: number
+  pastDueOffices: number
+  canceledOffices: number
+  totalOffices: number
+  newTrialRequests: number
+}
+
+const SUB_STATUS_BADGE: Record<SubStatus, { type: 'g' | 'r' | 'y' | 'b'; label: string }> = {
+  ACTIVE:   { type: 'g', label: '● نشط' },
+  TRIALING: { type: 'y', label: '● تجربة' },
+  PAST_DUE: { type: 'r', label: '● متأخر' },
+  CANCELED: { type: 'r', label: '● ملغى' },
+  NONE:     { type: 'b', label: '— بلا اشتراك' },
+}
+
+function fmtDate(iso: string | null) {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-GB')
 }
 
 const DEFAULT_TICKER = [
@@ -72,6 +108,10 @@ export default function AdminPage() {
   const [ctWa, setCtWa]             = useState('9627900000001')
   const [ctEmail, setCtEmail]       = useState('info@dostoori.jo')
   const [trialRequests, setTrialRequests] = useState<TrialRequest[]>([])
+  const [subscribers, setSubscribers] = useState<Subscriber[]>([])
+  const [stats, setStats] = useState<AdminStats | null>(null)
+  const [subSearch, setSubSearch] = useState('')
+  const [subStatusFilter, setSubStatusFilter] = useState<'ALL' | SubStatus>('ALL')
 
   useEffect(() => {
     fetch('/api/auth/me')
@@ -91,6 +131,14 @@ export default function AdminPage() {
     fetch('/api/trial-requests')
       .then((res) => res.ok ? res.json() : [])
       .then((data) => { if (Array.isArray(data)) setTrialRequests(data) })
+      .catch(() => {})
+    fetch('/api/admin/overview')
+      .then((res) => res.ok ? res.json() : null)
+      .then((data) => {
+        if (!data) return
+        if (data.stats) setStats(data.stats)
+        if (Array.isArray(data.subscribers)) setSubscribers(data.subscribers)
+      })
       .catch(() => {})
   }, [loggedIn])
 
@@ -203,9 +251,9 @@ export default function AdminPage() {
     card: { background: '#111827', border: '1px solid rgba(255,255,255,.06)', borderRadius: 14, padding: 20 } as React.CSSProperties,
     inp: { width: '100%', background: '#1F2937', border: '1px solid rgba(255,255,255,.08)', borderRadius: 9, padding: '10px 14px', color: '#E2E8F0', fontFamily: "'Cairo',sans-serif", fontSize: '.88rem', outline: 'none' } as React.CSSProperties,
     label: { fontSize: '.78rem', color: '#94A3B8', display: 'block', marginBottom: 5 } as React.CSSProperties,
+    sec: { fontSize: '.78rem', fontWeight: 800, color: '#64748B', letterSpacing: '.5px', textTransform: 'uppercase', marginBottom: 14 } as React.CSSProperties,
     btnRed: { background: 'linear-gradient(135deg,#EF4444,#DC2626)', color: '#fff', padding: '8px 16px', borderRadius: 9, fontFamily: "'Cairo',sans-serif", fontSize: '.82rem', fontWeight: 700, cursor: 'pointer', border: 'none' } as React.CSSProperties,
     btnGold: { background: 'linear-gradient(135deg,#D4AF37,#C5A059)', color: '#0A0F1A', padding: '8px 16px', borderRadius: 9, fontFamily: "'Cairo',sans-serif", fontSize: '.82rem', fontWeight: 700, cursor: 'pointer', border: 'none' } as React.CSSProperties,
-    btnGhost: { background: 'rgba(255,255,255,.06)', color: '#94A3B8', border: '1px solid rgba(255,255,255,.08)', padding: '8px 16px', borderRadius: 9, fontFamily: "'Cairo',sans-serif", fontSize: '.82rem', fontWeight: 700, cursor: 'pointer' } as React.CSSProperties,
   }
 
   /* ─── Login Screen ──────────────────── */
@@ -239,7 +287,7 @@ export default function AdminPage() {
     { id: 'overview', icon: '📊', label: 'لوحة التحكم', group: 'الرئيسية' },
     { id: 'ticker',   icon: '📢', label: 'شريط الإعلانات', group: 'المحتوى' },
     { id: 'homepage', icon: '🎬', label: 'الصفحة الرئيسية', group: '' },
-    { id: 'subs',     icon: '👥', label: 'المشتركون', group: 'العملاء', badge: '23' },
+    { id: 'subs',     icon: '👥', label: 'المشتركون', group: 'العملاء', badge: subscribers.length ? String(subscribers.length) : undefined },
     { id: 'trials',   icon: '🕐', label: 'التجارب المجانية', group: '', badge: trialRequests.length ? String(trialRequests.length) : undefined },
     { id: 'settings', icon: '⚙️', label: 'الإعدادات', group: 'النظام' },
   ]
@@ -292,44 +340,54 @@ export default function AdminPage() {
           {page === 'overview' && (
             <div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
-                <div><h1 style={{ fontSize: '1.25rem', fontWeight: 900, color: '#F1F5F9' }}>📊 لوحة التحكم</h1><p style={{ fontSize: '.8rem', color: '#64748B', marginTop: 3 }}>آخر تحديث: اليوم 10:42 ص</p></div>
+                <div><h1 style={{ fontSize: '1.25rem', fontWeight: 900, color: '#F1F5F9' }}>📊 لوحة التحكم</h1><p style={{ fontSize: '.8rem', color: '#64748B', marginTop: 3 }}>نظرة عامة على اشتراكات المكاتب وطلبات التجربة</p></div>
                 <button onClick={() => location.reload()} style={S.btnGold}>↻ تحديث</button>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14, marginBottom: 22 }}>
-                {[{ n: '23', l: 'مكتب مشترك', c: '#10B981' }, { n: '7', l: 'تجربة مجانية نشطة', c: '#D4AF37' }, { n: '1,840', l: 'دينار / هذا الشهر', c: '#60A5FA' }, { n: '2', l: 'اشتراك متأخر', c: '#EF4444' }].map((s) => (
+                {[
+                  { n: stats?.subscribedOffices, l: 'مكتب مشترك (نشط + تجربة)', c: '#10B981' },
+                  { n: stats?.trialingOffices, l: 'تجربة نشطة', c: '#D4AF37' },
+                  { n: stats?.newTrialRequests, l: 'طلب تجربة جديد', c: '#60A5FA' },
+                  { n: stats?.pastDueOffices, l: 'اشتراك متأخر', c: '#EF4444' },
+                ].map((s) => (
                   <div key={s.l} style={{ ...S.card, textAlign: 'center' }}>
-                    <div style={{ fontSize: '1.8rem', fontWeight: 900, marginBottom: 4, color: s.c }}>{s.n}</div>
+                    <div style={{ fontSize: '1.8rem', fontWeight: 900, marginBottom: 4, color: s.c }}>{s.n ?? '…'}</div>
                     <div style={{ fontSize: '.75rem', color: '#64748B' }}>{s.l}</div>
                   </div>
                 ))}
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
                 <div style={S.card}>
-                  <div style={{ fontSize: '.78rem', fontWeight: 800, color: '#64748B', letterSpacing: '.5px', textTransform: 'uppercase', marginBottom: 14 }}>📈 نمو الاشتراكات</div>
-                  {[{ m: 'يناير', w: '35%', n: '8', c: '#D4AF37' }, { m: 'فبراير', w: '52%', n: '12', c: '#D4AF37' }, { m: 'مارس', w: '65%', n: '15', c: '#D4AF37' }, { m: 'أبريل', w: '78%', n: '18', c: '#10B981' }, { m: 'يوليو', w: '100%', n: '23', c: '#10B981' }].map((row) => (
-                    <div key={row.m} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '.8rem', marginBottom: 8 }}>
-                      <span style={{ color: row.c, fontWeight: 700 }}>{row.n}</span>
-                      <div style={{ flex: 1, margin: '0 12px', background: '#1F2937', borderRadius: 3, height: 8, overflow: 'hidden' }}>
-                        <div style={{ width: row.w, height: '100%', background: `linear-gradient(90deg,${row.c},${row.c})`, borderRadius: 3 }} />
+                  <div style={S.sec}>📊 توزيع حالات الاشتراك</div>
+                  {stats ? (() => {
+                    const rows = [
+                      { label: 'نشط', n: stats.activeOffices, c: '#10B981' },
+                      { label: 'تجربة', n: stats.trialingOffices, c: '#D4AF37' },
+                      { label: 'متأخر', n: stats.pastDueOffices, c: '#EF4444' },
+                      { label: 'ملغى', n: stats.canceledOffices, c: '#64748B' },
+                    ]
+                    const max = Math.max(1, ...rows.map((r) => r.n))
+                    return rows.map((row) => (
+                      <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '.8rem', marginBottom: 8 }}>
+                        <span style={{ color: row.c, fontWeight: 700, minWidth: 24 }}>{row.n}</span>
+                        <div style={{ flex: 1, margin: '0 12px', background: '#1F2937', borderRadius: 3, height: 8, overflow: 'hidden' }}>
+                          <div style={{ width: `${(row.n / max) * 100}%`, height: '100%', background: row.c, borderRadius: 3 }} />
+                        </div>
+                        <span>{row.label}</span>
                       </div>
-                      <span>{row.m}</span>
-                    </div>
-                  ))}
+                    ))
+                  })() : <div style={{ color: '#64748B', fontSize: '.8rem' }}>جارٍ التحميل…</div>}
                 </div>
                 <div style={S.card}>
-                  <div style={{ fontSize: '.78rem', fontWeight: 800, color: '#64748B', letterSpacing: '.5px', textTransform: 'uppercase', marginBottom: 14 }}>🔔 آخر الأنشطة</div>
-                  {[
-                    { type: '#10B981', label: '✓ اشتراك جديد', sub: 'مكتب عمر النابلسي — احترافي', time: 'منذ ساعتين' },
-                    { type: '#F59E0B', label: '⚠ تجديد متأخر', sub: 'مكتب القرعان للمحاماة', time: 'منذ 3 أيام' },
-                    { type: '#60A5FA', label: '📝 طلب تجربة مجانية', sub: 'مكتب أبو الهيجاء — عمّان', time: 'منذ 5 ساعات' },
-                    { type: '#EF4444', label: '✕ إلغاء اشتراك', sub: 'مكتب شيخ — أربد', time: 'أمس' },
-                  ].map((a, i) => (
-                    <div key={i} style={{ fontSize: '.8rem', padding: 8, borderRadius: 7, borderRight: `3px solid ${a.type}`, background: `${a.type}0d`, marginBottom: 9 }}>
-                      <span style={{ color: a.type, fontWeight: 700 }}>{a.label}</span><br />
-                      <span style={{ color: '#94A3B8' }}>{a.sub}</span><br />
-                      <span style={{ color: '#374151', fontSize: '.71rem' }}>{a.time}</span>
+                  <div style={S.sec}>🆕 أحدث المكاتب المسجّلة</div>
+                  {subscribers.slice(0, 6).map((office) => (
+                    <div key={office.officeId} style={{ fontSize: '.8rem', padding: 8, borderRadius: 7, borderRight: '3px solid #60A5FA', background: '#60A5FA0d', marginBottom: 9 }}>
+                      <span style={{ color: '#E2E8F0', fontWeight: 700 }}>{office.officeName}</span><br />
+                      <span style={{ color: '#94A3B8' }}>{(office.managerName ?? '—') + ' · ' + SUB_STATUS_BADGE[office.status].label}</span><br />
+                      <span style={{ color: '#374151', fontSize: '.71rem' }}>{fmtDate(office.createdAt)}</span>
                     </div>
                   ))}
+                  {subscribers.length === 0 && <div style={{ color: '#64748B', fontSize: '.8rem' }}>لا توجد مكاتب مسجّلة بعد</div>}
                 </div>
               </div>
             </div>
@@ -446,78 +504,98 @@ export default function AdminPage() {
           )}
 
           {/* Subscribers */}
-          {page === 'subs' && (
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
-                <div><h1 style={{ fontSize: '1.25rem', fontWeight: 900, color: '#F1F5F9' }}>👥 المشتركون</h1><p style={{ fontSize: '.8rem', color: '#64748B', marginTop: 3 }}>23 مكتب نشط</p></div>
-                <button style={S.btnGold}>+ إضافة</button>
-              </div>
-              <div style={S.card}>
-                <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
-                  <input placeholder="🔍 بحث..." style={{ ...S.inp, flex: 1, maxWidth: 320 }} />
-                  <select style={{ ...S.inp, maxWidth: 160 }}><option>كل الباقات</option><option>أساسي</option><option>احترافي</option><option>مؤسسي</option></select>
-                  <select style={{ ...S.inp, maxWidth: 160 }}><option>كل الحالات</option><option>نشط</option><option>متأخر</option></select>
+          {page === 'subs' && (() => {
+            const q = subSearch.trim().toLowerCase()
+            const filtered = subscribers.filter((row) => {
+              if (subStatusFilter !== 'ALL' && row.status !== subStatusFilter) return false
+              if (q && !`${row.officeName} ${row.managerName ?? ''} ${row.managerEmail ?? ''}`.toLowerCase().includes(q)) return false
+              return true
+            })
+            return (
+              <div>
+                <div style={{ marginBottom: 24 }}>
+                  <h1 style={{ fontSize: '1.25rem', fontWeight: 900, color: '#F1F5F9' }}>👥 المشتركون</h1>
+                  <p style={{ fontSize: '.8rem', color: '#64748B', marginTop: 3 }}>
+                    {stats ? `${stats.totalOffices} مكتب مسجّل — ${stats.subscribedOffices} باشتراك نشط أو تجربة` : 'جارٍ التحميل…'}
+                  </p>
                 </div>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.82rem' }}>
-                  <thead>
-                    <tr>
-                      {['#','المكتب','المحامي المسؤول','المدينة','الباقة','الاشتراك','التجديد','الحالة',''].map((h) => (
-                        <th key={h} style={{ textAlign: 'right', padding: '9px 12px', color: '#64748B', fontWeight: 700, fontSize: '.75rem', borderBottom: '1px solid rgba(255,255,255,.06)' }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {[
-                      { id: 1, firm: 'مكتب الشوبكي للمحاماة', lawyer: 'خالد الشوبكي', city: 'عمّان', pkg: <Bx type="g" label="مؤسسي" />, fee: '80 د.أ', renew: '01/09/2026', status: <Bx type="g" label="● نشط" /> },
-                      { id: 2, firm: 'مكتب النابلسي القانوني', lawyer: 'عمر النابلسي', city: 'عمّان', pkg: <Bx type="b" label="احترافي" />, fee: '50 د.أ', renew: '25/08/2026', status: <Bx type="g" label="● نشط" /> },
-                      { id: 3, firm: 'القرعان للمحاماة', lawyer: 'فيصل القرعان', city: 'إربد', pkg: <Bx type="b" label="احترافي" />, fee: '50 د.أ', renew: '15/07/2026', status: <Bx type="r" label="● متأخر" /> },
-                      { id: 4, firm: 'مكتب الزيود القانوني', lawyer: 'أحمد الزيود', city: 'الزرقاء', pkg: <Bx type="g" label="أساسي" />, fee: '25 د.أ', renew: '10/08/2026', status: <Bx type="g" label="● نشط" /> },
-                    ].map((row) => (
-                      <tr key={row.id} style={{ borderBottom: '1px solid rgba(255,255,255,.04)' }}>
-                        <td style={{ padding: '10px 12px', color: '#CBD5E1' }}>{row.id}</td>
-                        <td style={{ padding: '10px 12px', color: '#E2E8F0', fontWeight: 700 }}>{row.firm}</td>
-                        <td style={{ padding: '10px 12px', color: '#CBD5E1' }}>{row.lawyer}</td>
-                        <td style={{ padding: '10px 12px', color: '#CBD5E1' }}>{row.city}</td>
-                        <td style={{ padding: '10px 12px' }}>{row.pkg}</td>
-                        <td style={{ padding: '10px 12px', color: '#CBD5E1' }}>{row.fee}</td>
-                        <td style={{ padding: '10px 12px', color: '#CBD5E1' }}>{row.renew}</td>
-                        <td style={{ padding: '10px 12px' }}>{row.status}</td>
-                        <td style={{ padding: '10px 12px' }}><button style={S.btnGhost}>تفاصيل</button></td>
+                <div style={S.card}>
+                  <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
+                    <input value={subSearch} onChange={(e) => setSubSearch(e.target.value)} placeholder="🔍 بحث بالاسم أو البريد..." style={{ ...S.inp, flex: 1, maxWidth: 320 }} />
+                    <select value={subStatusFilter} onChange={(e) => setSubStatusFilter(e.target.value as 'ALL' | SubStatus)} style={{ ...S.inp, maxWidth: 180 }}>
+                      <option value="ALL">كل الحالات</option>
+                      <option value="ACTIVE">نشط</option>
+                      <option value="TRIALING">تجربة</option>
+                      <option value="PAST_DUE">متأخر</option>
+                      <option value="CANCELED">ملغى</option>
+                      <option value="NONE">بلا اشتراك</option>
+                    </select>
+                  </div>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.82rem' }}>
+                    <thead>
+                      <tr>
+                        {['#','المكتب','المدير المسؤول','الباقة','الحالة','التجديد / انتهاء التجربة','أُنشئ'].map((h) => (
+                          <th key={h} style={{ textAlign: 'right', padding: '9px 12px', color: '#64748B', fontWeight: 700, fontSize: '.75rem', borderBottom: '1px solid rgba(255,255,255,.06)' }}>{h}</th>
+                        ))}
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {filtered.map((row, i) => {
+                        const badge = SUB_STATUS_BADGE[row.status] ?? SUB_STATUS_BADGE.NONE
+                        return (
+                          <tr key={row.officeId} style={{ borderBottom: '1px solid rgba(255,255,255,.04)' }}>
+                            <td style={{ padding: '10px 12px', color: '#CBD5E1' }}>{i + 1}</td>
+                            <td style={{ padding: '10px 12px', color: '#E2E8F0', fontWeight: 700 }}>
+                              {row.officeName}
+                              {!row.officeActive && <span style={{ color: '#EF4444', fontSize: '.7rem', marginRight: 6 }}>(معطّل)</span>}
+                            </td>
+                            <td style={{ padding: '10px 12px', color: '#CBD5E1' }}>{row.managerName ?? '—'}</td>
+                            <td style={{ padding: '10px 12px', color: '#CBD5E1' }}>{row.plan ?? '—'}</td>
+                            <td style={{ padding: '10px 12px' }}><Bx type={badge.type} label={badge.label} /></td>
+                            <td style={{ padding: '10px 12px', color: '#CBD5E1' }}>{fmtDate(row.renewsAt)}</td>
+                            <td style={{ padding: '10px 12px', color: '#CBD5E1' }}>{fmtDate(row.createdAt)}</td>
+                          </tr>
+                        )
+                      })}
+                      {filtered.length === 0 && (
+                        <tr><td colSpan={7} style={{ padding: '20px 12px', textAlign: 'center', color: '#64748B' }}>
+                          {subscribers.length === 0 ? 'لا توجد مكاتب مسجّلة بعد' : 'لا نتائج مطابقة'}
+                        </td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </div>
-          )}
+            )
+          })()}
 
           {/* Trials */}
           {page === 'trials' && (
             <div>
-              <div style={{ marginBottom: 24 }}><h1 style={{ fontSize: '1.25rem', fontWeight: 900, color: '#F1F5F9' }}>🕐 التجارب المجانية</h1><p style={{ fontSize: '.8rem', color: '#64748B', marginTop: 3 }}>7 طلبات نشطة</p></div>
+              <div style={{ marginBottom: 24 }}><h1 style={{ fontSize: '1.25rem', fontWeight: 900, color: '#F1F5F9' }}>🕐 طلبات التجربة المجانية</h1><p style={{ fontSize: '.8rem', color: '#64748B', marginTop: 3 }}>{trialRequests.length} طلب</p></div>
               <div style={S.card}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.82rem' }}>
                   <thead>
                     <tr>
-                      {['المكتب','المحامي','الهاتف','المدينة','تاريخ الطلب','ينتهي','الحالة',''].map((h) => (
+                      {['المكتب','المحامي','رقم الجوال','المدينة','تاريخ الطلب','الحالة'].map((h) => (
                         <th key={h} style={{ textAlign: 'right', padding: '9px 12px', color: '#64748B', fontWeight: 700, fontSize: '.75rem', borderBottom: '1px solid rgba(255,255,255,.06)' }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {[
-                      { firm: 'مكتب أبو الهيجاء', lawyer: 'نضال أبو الهيجاء', phone: '0791234567', city: 'عمّان', from: '23/07/2026', to: '22/08/2026', status: <Bx type="y" label="جديد" /> },
-                      { firm: 'مكتب الرواشدة', lawyer: 'عيسى الرواشدة', phone: '0799876543', city: 'إربد', from: '20/07/2026', to: '19/08/2026', status: <Bx type="b" label="نشط" /> },
-                      { firm: 'مكتب عبيدات القانوني', lawyer: 'مازن عبيدات', phone: '0795551234', city: 'السلط', from: '18/07/2026', to: '17/08/2026', status: <Bx type="b" label="نشط" /> },
-                    ].map((row, i) => (
-                      <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,.04)' }}>
-                        {[row.firm, row.lawyer, row.phone, row.city, row.from, row.to].map((cell, j) => (
-                          <td key={j} style={{ padding: '10px 12px', color: j === 0 ? '#E2E8F0' : '#CBD5E1', fontWeight: j === 0 ? 700 : 400 }}>{cell}</td>
-                        ))}
-                        <td style={{ padding: '10px 12px' }}>{row.status}</td>
-                        <td style={{ padding: '10px 12px' }}><button style={S.btnGhost}>تفاصيل</button></td>
+                    {trialRequests.map((row) => (
+                      <tr key={row.id} style={{ borderBottom: '1px solid rgba(255,255,255,.04)' }}>
+                        <td style={{ padding: '10px 12px', color: '#E2E8F0', fontWeight: 700 }}>{row.officeName}</td>
+                        <td style={{ padding: '10px 12px', color: '#CBD5E1' }}>{row.lawyerName}</td>
+                        <td style={{ padding: '10px 12px', color: '#CBD5E1', direction: 'ltr', textAlign: 'right' }}>{row.mobile}</td>
+                        <td style={{ padding: '10px 12px', color: '#CBD5E1' }}>{row.city}</td>
+                        <td style={{ padding: '10px 12px', color: '#CBD5E1' }}>{fmtDate(row.createdAt)}</td>
+                        <td style={{ padding: '10px 12px' }}><Bx type={row.status === 'NEW' ? 'y' : 'b'} label={row.status === 'NEW' ? 'جديد' : row.status} /></td>
                       </tr>
                     ))}
+                    {trialRequests.length === 0 && (
+                      <tr><td colSpan={6} style={{ padding: '20px 12px', textAlign: 'center', color: '#64748B' }}>لا توجد طلبات تجربة بعد</td></tr>
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -562,18 +640,13 @@ export default function AdminPage() {
                     </div>
                   </div>
                   <div style={S.card}>
-                    <div style={{ fontSize: '.78rem', fontWeight: 800, color: '#64748B', letterSpacing: '.5px', textTransform: 'uppercase', marginBottom: 14 }}>👤 بيانات حساب الادمن</div>
-                    {[
-                      { label: 'الاسم', val: 'Admin — Dostoori', type: 'text' },
-                      { label: 'البريد الإلكتروني', val: 'admin@dostoori.jo', type: 'email' },
-                      { label: 'كلمة مرور جديدة', val: '', type: 'password', placeholder: 'اتركه فارغاً للإبقاء على الحالية' },
-                    ].map((f) => (
-                      <div key={f.label} style={{ marginBottom: 12 }}>
-                        <label style={S.label}>{f.label}</label>
-                        <input type={f.type} defaultValue={f.val} placeholder={f.placeholder} style={S.inp} />
-                      </div>
-                    ))}
-                    <button style={S.btnRed} onClick={() => setToast('✓ تم حفظ بيانات الحساب')}>💾 حفظ</button>
+                    <div style={{ fontSize: '.78rem', fontWeight: 800, color: '#64748B', letterSpacing: '.5px', textTransform: 'uppercase', marginBottom: 14 }}>👤 حساب مدير المنصة</div>
+                    <div style={{ fontSize: '.83rem', lineHeight: 2, color: '#94A3B8' }}>
+                      <div>الحساب الحالي: <span style={{ color: '#E2E8F0', fontFamily: 'monospace' }}>{authEmail || '—'}</span></div>
+                    </div>
+                    <div style={{ marginTop: 12, padding: 12, background: 'rgba(96,165,250,.06)', border: '1px solid rgba(96,165,250,.15)', borderRadius: 9, fontSize: '.78rem', color: '#94A3B8', lineHeight: 1.9 }}>
+                      صلاحية مدير المنصة تُمنَح لأي مدير مكتب بريده مُدرَج في متغيّر البيئة <span style={{ color: '#60A5FA', fontFamily: 'monospace' }}>PLATFORM_ADMIN_EMAILS</span> على الخادم. لتغيير كلمة المرور استخدم «نسيت كلمة المرور» في صفحة الدخول.
+                    </div>
                   </div>
                 </div>
 

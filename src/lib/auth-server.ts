@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { verifyToken, JWTPayload } from './jwt'
 import { prisma } from '@/lib/prisma'
 import { rejectCrossSite } from '@/lib/api-security'
+import { getSubscriptionEnforcement } from '@/lib/billing'
 
 export function getUser(req: NextRequest): JWTPayload | null {
   return getTokenPayload(req.cookies.get('ds_token')?.value)
@@ -40,6 +41,32 @@ function unauthorized() {
 
 function forbidden() {
   return NextResponse.json({ error: 'لا تملك صلاحية الوصول' }, { status: 403 })
+}
+
+function subscriptionExpired() {
+  return NextResponse.json(
+    { error: 'انتهت صلاحية اشتراك المكتب — يرجى التواصل مع الدعم لإعادة التفعيل', code: 'subscription_expired' },
+    { status: 402 }
+  )
+}
+
+type OfficeAccessOptions = {
+  /**
+   * Skip subscription enforcement for this call. For the small set of
+   * routes an office needs even while blocked: checking its own billing
+   * status (how would it otherwise know why it's locked out?) and
+   * exporting its data before it's shut out entirely.
+   */
+  skipSubscriptionCheck?: boolean
+}
+
+/** Null = allowed. A read during 'grace' is allowed; everything else in 'grace'/'blocked' is not — see getSubscriptionEnforcement in billing.ts for the tier rules. */
+async function subscriptionGate(officeId: string, method: string): Promise<NextResponse | null> {
+  const { tier } = await getSubscriptionEnforcement(officeId)
+  if (tier === 'active') return null
+  const isRead = method === 'GET' || method === 'HEAD'
+  if (tier === 'grace' && isRead) return null
+  return subscriptionExpired()
 }
 
 /**
@@ -95,16 +122,26 @@ export async function requireActiveUser(req: NextRequest): Promise<AuthResult<Ac
   return { ok: true, user }
 }
 
-export async function requireOfficeUser(req: NextRequest): Promise<AuthResult<OfficeUser>> {
+export async function requireOfficeUser(req: NextRequest, opts: OfficeAccessOptions = {}): Promise<AuthResult<OfficeUser>> {
   const auth = await requireActiveUser(req)
   if (!auth.ok) return auth
   const user = auth.user
   if (!user.officeId || user.role === 'CITIZEN') return { ok: false, response: forbidden() }
-  return { ok: true, user: { ...user, officeId: user.officeId } }
+  const officeUser: OfficeUser = { ...user, officeId: user.officeId }
+
+  // Platform admins are exempt from their own office's subscription state —
+  // they're the ones who manage everyone else's, and must never be locked
+  // out of /admin by the very thing they're there to fix.
+  if (!opts.skipSubscriptionCheck && !isPlatformAdminEmail(user.email)) {
+    const blocked = await subscriptionGate(officeUser.officeId, req.method)
+    if (blocked) return { ok: false, response: blocked }
+  }
+
+  return { ok: true, user: officeUser }
 }
 
-export async function requireOfficeManager(req: NextRequest): Promise<AuthResult<OfficeManager>> {
-  const auth = await requireOfficeUser(req)
+export async function requireOfficeManager(req: NextRequest, opts: OfficeAccessOptions = {}): Promise<AuthResult<OfficeManager>> {
+  const auth = await requireOfficeUser(req, opts)
   if (!auth.ok) return { ok: false, response: auth.response }
   if (auth.user.role !== 'OFFICE_MANAGER') return { ok: false, response: forbidden() }
   return { ok: true, user: auth.user as OfficeManager }

@@ -47,6 +47,9 @@ function auditActionLabel(action: string) {
     'citizen.account_created': 'إنشاء حساب موكل',
     'email.sent': 'إرسال بريد',
     'email.send_failed': 'فشل إرسال بريد',
+    'admin.office_activated': 'تفعيل الاشتراك (مدير المنصة)',
+    'admin.office_suspended': 'تعليق الاشتراك (مدير المنصة)',
+    'admin.trial_extended': 'تمديد التجربة (مدير المنصة)',
   }
   return labels[action] ?? action
 }

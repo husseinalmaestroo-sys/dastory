@@ -82,6 +82,100 @@ export async function getOfficeBillingStatus(officeId: string): Promise<BillingS
   }
 }
 
+// ── Enforcement ──────────────────────────────────────────────────────────
+// The consequence side of billing status: three tiers, escalating.
+//   active  — nothing restricted.
+//   grace   — trial/period just lapsed: reads still work, writes 402. Gives
+//             an office a window to notice and pay before losing access to
+//             its own data, not just before losing the ability to add more.
+//   blocked — grace window used up, or CANCELED/suspended outright: every
+//             non-auth request 402s (see requireOfficeUser in auth-server.ts,
+//             which calls getSubscriptionEnforcement and is what every
+//             office-scoped route already runs through).
+// No Subscription row at all is treated as 'active' — enforcement must
+// never punish a state it can't explain to an office, and every real
+// signup gets a TRIALING row via startTrialSubscription above; a missing
+// row only happens for hand-seeded or legacy data.
+export const GRACE_PERIOD_DAYS = 7
+
+export type SubscriptionTier = 'active' | 'grace' | 'blocked'
+
+export interface SubscriptionEnforcement {
+  tier: SubscriptionTier
+  /** End of the current grace window — set for 'grace', and for 'blocked' reached by a grace window running out. Null for 'active' and for an outright CANCELED/suspended office, which never had a grace window. */
+  graceEndsAt: Date | null
+}
+
+function graceOrBlocked(anchor: Date): SubscriptionEnforcement {
+  const graceEndsAt = new Date(anchor.getTime() + GRACE_PERIOD_DAYS * 24 * 60 * 60_000)
+  return { tier: Date.now() <= graceEndsAt.getTime() ? 'grace' : 'blocked', graceEndsAt }
+}
+
+export async function getSubscriptionEnforcement(officeId: string): Promise<SubscriptionEnforcement> {
+  const subscription = await prisma.subscription.findUnique({ where: { officeId } })
+  if (!subscription) return { tier: 'active', graceEndsAt: null }
+
+  switch (subscription.status) {
+    case 'ACTIVE':
+      return { tier: 'active', graceEndsAt: null }
+    case 'CANCELED':
+      // An admin "suspend" is recorded as CANCELED too (adminSuspendSubscription
+      // below) — no grace either way: it's a stop, not a lapse.
+      return { tier: 'blocked', graceEndsAt: null }
+    case 'TRIALING':
+      if (!subscription.trialEndsAt || subscription.trialEndsAt.getTime() > Date.now()) {
+        return { tier: 'active', graceEndsAt: null }
+      }
+      return graceOrBlocked(subscription.trialEndsAt)
+    case 'PAST_DUE':
+      return graceOrBlocked(subscription.currentPeriodEnd ?? subscription.updatedAt)
+    default:
+      return { tier: 'active', graceEndsAt: null }
+  }
+}
+
+async function resolvePlanId(officeId: string): Promise<string> {
+  const existing = await prisma.subscription.findUnique({ where: { officeId }, select: { planId: true } })
+  if (existing) return existing.planId
+  await ensurePlansSeeded()
+  const basicPlan = await prisma.plan.findUniqueOrThrow({ where: { key: 'basic' } })
+  return basicPlan.id
+}
+
+const ACTIVE_PERIOD_DAYS = 30
+
+/** Admin action: grants (or restores) a full paid period and clears any suspension. */
+export async function adminActivateSubscription(officeId: string): Promise<void> {
+  const planId = await resolvePlanId(officeId)
+  const currentPeriodEnd = new Date(Date.now() + ACTIVE_PERIOD_DAYS * 24 * 60 * 60_000)
+  await prisma.subscription.upsert({
+    where: { officeId },
+    create: { officeId, planId, status: 'ACTIVE', currentPeriodEnd },
+    update: { status: 'ACTIVE', currentPeriodEnd, canceledAt: null },
+  })
+}
+
+/** Admin action: the "CANCELED/suspended -> full 402 wall" state — the same status a real Stripe cancellation webhook would set (see the header comment above), just set by hand instead. */
+export async function adminSuspendSubscription(officeId: string): Promise<void> {
+  const planId = await resolvePlanId(officeId)
+  await prisma.subscription.upsert({
+    where: { officeId },
+    create: { officeId, planId, status: 'CANCELED', canceledAt: new Date() },
+    update: { status: 'CANCELED', canceledAt: new Date() },
+  })
+}
+
+/** Admin action: a fresh TRIAL_DAYS-day trial from now — the escape hatch for "the trial ran out but let them keep evaluating." */
+export async function adminExtendTrialSubscription(officeId: string): Promise<void> {
+  const planId = await resolvePlanId(officeId)
+  const trialEndsAt = new Date(Date.now() + TRIAL_DAYS * 24 * 60 * 60_000)
+  await prisma.subscription.upsert({
+    where: { officeId },
+    create: { officeId, planId, status: 'TRIALING', trialEndsAt },
+    update: { status: 'TRIALING', trialEndsAt, canceledAt: null },
+  })
+}
+
 // ── Stripe webhook signature verification ───────────────────────────────
 // Real implementation of Stripe's documented scheme (a Stripe-Signature
 // header of the form "t=<timestamp>,v1=<hmac>", verified as

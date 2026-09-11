@@ -1,6 +1,8 @@
 import { redirect } from 'next/navigation'
 import { getFullAuthUser, getSessionUser } from '@/lib/session'
+import { getSubscriptionEnforcement } from '@/lib/billing'
 import { DashboardShellProvider } from '@/components/dashboard/DashboardContext'
+import { SubscriptionGate } from '@/components/dashboard/SubscriptionGate'
 import Sidebar from '@/components/dashboard/Sidebar'
 import TopBar from '@/components/dashboard/TopBar'
 import '@/styles/dashboard-app.css'
@@ -14,6 +16,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
   if (!authUser) redirect('/login')
 
   const isAdmin = authUser.role === 'OFFICE_MANAGER'
+  // Platform admins are exempt — see the matching bypass in requireOfficeUser.
+  const { tier } = authUser.isPlatformAdmin
+    ? { tier: 'active' as const }
+    : await getSubscriptionEnforcement(authUser.officeId)
 
   return (
     <div id="dboard-body">
@@ -22,7 +28,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
           <Sidebar authUser={authUser} isAdmin={isAdmin} />
           <main id="main">
             <TopBar />
-            {children}
+            <SubscriptionGate tier={tier} isAdmin={isAdmin}>
+              {children}
+            </SubscriptionGate>
           </main>
         </div>
       </DashboardShellProvider>

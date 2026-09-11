@@ -53,6 +53,9 @@ import { GET as officeExport } from '@/app/api/office/export/route'
 import { PATCH as siteSettingsPatch } from '@/app/api/site-settings/route'
 import { GET as trialRequestsGet } from '@/app/api/trial-requests/route'
 import { GET as adminOverview } from '@/app/api/admin/overview/route'
+import { POST as adminActivate } from '@/app/api/admin/offices/[officeId]/activate/route'
+import { POST as adminSuspend } from '@/app/api/admin/offices/[officeId]/suspend/route'
+import { POST as adminExtendTrial } from '@/app/api/admin/offices/[officeId]/extend-trial/route'
 import { GET as citizenCases } from '@/app/api/citizen/cases/route'
 import { GET as citizenInvoices } from '@/app/api/citizen/invoices/route'
 import { GET as citizenSessions } from '@/app/api/citizen/sessions/route'
@@ -71,6 +74,7 @@ interface Row {
 }
 
 const P = testParams({ id: 'does-not-exist' })
+const OfficeP = testParams({ officeId: 'does-not-exist' })
 const req = (path: string, method: string, user: TestUser | null, body?: unknown) =>
   testRequest(path, { method, user: user ?? undefined, body: body ?? (method === 'GET' ? undefined : {}) })
 
@@ -131,6 +135,9 @@ const ROWS: Row[] = [
   { label: 'PATCH /site-settings', access: 'platformAdmin', run: (u) => siteSettingsPatch(req('/api/site-settings', 'PATCH', u)) },
   { label: 'GET /trial-requests', access: 'platformAdmin', run: (u) => trialRequestsGet(req('/api/trial-requests', 'GET', u)) },
   { label: 'GET /admin/overview', access: 'platformAdmin', run: (u) => adminOverview(req('/api/admin/overview', 'GET', u)) },
+  { label: 'POST /admin/offices/:id/activate', access: 'platformAdmin', run: (u) => adminActivate(req('/api/admin/offices/x/activate', 'POST', u), OfficeP) },
+  { label: 'POST /admin/offices/:id/suspend', access: 'platformAdmin', run: (u) => adminSuspend(req('/api/admin/offices/x/suspend', 'POST', u), OfficeP) },
+  { label: 'POST /admin/offices/:id/extend-trial', access: 'platformAdmin', run: (u) => adminExtendTrial(req('/api/admin/offices/x/extend-trial', 'POST', u), OfficeP) },
 
   // ---- CITIZEN only (office staff must NOT reach these) ----
   { label: 'GET /citizen/cases', access: 'citizen', run: (u) => citizenCases(req('/api/citizen/cases', 'GET', u)) },

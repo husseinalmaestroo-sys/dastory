@@ -4,7 +4,9 @@ import { withErrorHandling } from '@/lib/api-handler'
 import { getOfficeBillingStatus } from '@/lib/billing'
 
 export const GET = withErrorHandling(async (req: NextRequest) => {
-  const auth = await requireOfficeUser(req)
+  // Must work even for a blocked office — this is how the dashboard shell
+  // (and a manager checking Settings) finds out it's blocked and why.
+  const auth = await requireOfficeUser(req, { skipSubscriptionCheck: true })
   if (!auth.ok) return auth.response
 
   const status = await getOfficeBillingStatus(auth.user.officeId)

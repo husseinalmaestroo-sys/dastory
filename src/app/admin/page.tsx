@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 
 /* ─── Types ──────────────────────────────── */
 type Page = 'overview' | 'ticker' | 'homepage' | 'subs' | 'trials' | 'settings'
@@ -112,6 +112,19 @@ export default function AdminPage() {
   const [stats, setStats] = useState<AdminStats | null>(null)
   const [subSearch, setSubSearch] = useState('')
   const [subStatusFilter, setSubStatusFilter] = useState<'ALL' | SubStatus>('ALL')
+  const [actionBusy, setActionBusy] = useState<string | null>(null)
+
+  const loadOverview = useCallback(async () => {
+    try {
+      const res = await fetch('/api/admin/overview')
+      if (!res.ok) return
+      const data = await res.json()
+      if (data.stats) setStats(data.stats)
+      if (Array.isArray(data.subscribers)) setSubscribers(data.subscribers)
+    } catch {
+      // best-effort refresh — the panel just keeps its last-known state
+    }
+  }, [])
 
   useEffect(() => {
     fetch('/api/auth/me')
@@ -141,6 +154,21 @@ export default function AdminPage() {
       })
       .catch(() => {})
   }, [loggedIn])
+
+  async function runOfficeAction(officeId: string, action: 'activate' | 'suspend' | 'extend-trial', successMsg: string) {
+    setActionBusy(officeId + action)
+    try {
+      const res = await fetch(`/api/admin/offices/${officeId}/${action}`, { method: 'POST' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { setToast(`⚠ ${data.error || 'تعذر تنفيذ الإجراء'}`); return }
+      setToast(successMsg)
+      await loadOverview()
+    } catch {
+      setToast('⚠ تعذر الاتصال بالخادم')
+    } finally {
+      setActionBusy(null)
+    }
+  }
 
   /* Load the real, DB-backed site settings once logged in as platform admin */
   useEffect(() => {
@@ -252,6 +280,7 @@ export default function AdminPage() {
     inp: { width: '100%', background: '#1F2937', border: '1px solid rgba(255,255,255,.08)', borderRadius: 9, padding: '10px 14px', color: '#E2E8F0', fontFamily: "'Cairo',sans-serif", fontSize: '.88rem', outline: 'none' } as React.CSSProperties,
     label: { fontSize: '.78rem', color: '#94A3B8', display: 'block', marginBottom: 5 } as React.CSSProperties,
     sec: { fontSize: '.78rem', fontWeight: 800, color: '#64748B', letterSpacing: '.5px', textTransform: 'uppercase', marginBottom: 14 } as React.CSSProperties,
+    tinyBtn: { background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.1)', borderRadius: 6, padding: '4px 9px', fontFamily: "'Cairo',sans-serif", fontSize: '.7rem', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' } as React.CSSProperties,
     btnRed: { background: 'linear-gradient(135deg,#EF4444,#DC2626)', color: '#fff', padding: '8px 16px', borderRadius: 9, fontFamily: "'Cairo',sans-serif", fontSize: '.82rem', fontWeight: 700, cursor: 'pointer', border: 'none' } as React.CSSProperties,
     btnGold: { background: 'linear-gradient(135deg,#D4AF37,#C5A059)', color: '#0A0F1A', padding: '8px 16px', borderRadius: 9, fontFamily: "'Cairo',sans-serif", fontSize: '.82rem', fontWeight: 700, cursor: 'pointer', border: 'none' } as React.CSSProperties,
   }
@@ -534,7 +563,7 @@ export default function AdminPage() {
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.82rem' }}>
                     <thead>
                       <tr>
-                        {['#','المكتب','المدير المسؤول','الباقة','الحالة','التجديد / انتهاء التجربة','أُنشئ'].map((h) => (
+                        {['#','المكتب','المدير المسؤول','الباقة','الحالة','التجديد / انتهاء التجربة','أُنشئ',''].map((h) => (
                           <th key={h} style={{ textAlign: 'right', padding: '9px 12px', color: '#64748B', fontWeight: 700, fontSize: '.75rem', borderBottom: '1px solid rgba(255,255,255,.06)' }}>{h}</th>
                         ))}
                       </tr>
@@ -542,6 +571,7 @@ export default function AdminPage() {
                     <tbody>
                       {filtered.map((row, i) => {
                         const badge = SUB_STATUS_BADGE[row.status] ?? SUB_STATUS_BADGE.NONE
+                        const busy = actionBusy?.startsWith(row.officeId) ?? false
                         return (
                           <tr key={row.officeId} style={{ borderBottom: '1px solid rgba(255,255,255,.04)' }}>
                             <td style={{ padding: '10px 12px', color: '#CBD5E1' }}>{i + 1}</td>
@@ -554,11 +584,28 @@ export default function AdminPage() {
                             <td style={{ padding: '10px 12px' }}><Bx type={badge.type} label={badge.label} /></td>
                             <td style={{ padding: '10px 12px', color: '#CBD5E1' }}>{fmtDate(row.renewsAt)}</td>
                             <td style={{ padding: '10px 12px', color: '#CBD5E1' }}>{fmtDate(row.createdAt)}</td>
+                            <td style={{ padding: '10px 12px', display: 'flex', gap: 6 }}>
+                              <button
+                                disabled={busy}
+                                onClick={() => runOfficeAction(row.officeId, 'activate', `✓ تم تفعيل اشتراك ${row.officeName}`)}
+                                style={{ ...S.tinyBtn, color: '#10B981', borderColor: 'rgba(16,185,129,.3)', opacity: busy ? 0.5 : 1 }}
+                              >تفعيل</button>
+                              <button
+                                disabled={busy}
+                                onClick={() => runOfficeAction(row.officeId, 'extend-trial', `✓ تم تمديد تجربة ${row.officeName}`)}
+                                style={{ ...S.tinyBtn, color: '#60A5FA', borderColor: 'rgba(96,165,250,.3)', opacity: busy ? 0.5 : 1 }}
+                              >تمديد</button>
+                              <button
+                                disabled={busy}
+                                onClick={() => { if (confirm(`تعليق اشتراك ${row.officeName}؟ سيفقد المكتب الوصول فوراً.`)) runOfficeAction(row.officeId, 'suspend', `✓ تم تعليق اشتراك ${row.officeName}`) }}
+                                style={{ ...S.tinyBtn, color: '#EF4444', borderColor: 'rgba(239,68,68,.3)', opacity: busy ? 0.5 : 1 }}
+                              >تعليق</button>
+                            </td>
                           </tr>
                         )
                       })}
                       {filtered.length === 0 && (
-                        <tr><td colSpan={7} style={{ padding: '20px 12px', textAlign: 'center', color: '#64748B' }}>
+                        <tr><td colSpan={8} style={{ padding: '20px 12px', textAlign: 'center', color: '#64748B' }}>
                           {subscribers.length === 0 ? 'لا توجد مكاتب مسجّلة بعد' : 'لا نتائج مطابقة'}
                         </td></tr>
                       )}

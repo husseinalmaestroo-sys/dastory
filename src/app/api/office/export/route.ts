@@ -10,7 +10,10 @@ import { buildOfficeExport } from '@/lib/office-export'
 // caller's, so requireOfficeManager, not requireOfficeUser. Rate-limited on
 // the office, not the user: it's an expensive full-table read + zip.
 export const GET = withErrorHandling(async (req: NextRequest) => {
-  const auth = await requireOfficeManager(req)
+  // Exempt from subscription enforcement on purpose: an office headed for
+  // suspension must still be able to get its own data out (PDPL right of
+  // access doesn't lapse with a missed payment).
+  const auth = await requireOfficeManager(req, { skipSubscriptionCheck: true })
   if (!auth.ok) return auth.response
 
   const limited = rateLimit(req, `office:export:${auth.user.officeId}`, { limit: 3, windowMs: 60 * 60_000 })

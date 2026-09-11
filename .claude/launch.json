@@ -14,6 +14,13 @@
       "runtimeArgs": ["start"],
       "port": 3000,
       "autoPort": true
+    },
+    {
+      "name": "ailegal-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--", "-p", "4000"],
+      "port": 4000,
+      "cwd": "ailegal_hussein"
     }
   ]
 }

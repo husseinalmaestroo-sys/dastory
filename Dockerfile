@@ -20,6 +20,10 @@ RUN npm ci --ignore-scripts
 # ---------- build ----------
 FROM node:22-slim AS build
 WORKDIR /app
+# openssl: Prisma detects the platform's OpenSSL to pick its engine binaries;
+# without it, it guesses 1.1 and fetches a schema engine the runtime can't run.
+RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
@@ -33,9 +37,15 @@ ENV APP_URL="https://build.invalid"
 ENV PLATFORM_ADMIN_EMAILS="build@build.invalid"
 ENV NEXT_TELEMETRY_DISABLED=1
 
+# assemble-standalone.mjs completes .next/standalone with everything output
+# tracing can't see (static assets, Prisma CLI + migrations, tesseract.js's
+# worker/WASM and their dependencies, OCR models, the platform-admin CLI).
+# The HTTP-level test suite (npm run test:http) runs this same script, so the
+# layout tested is the layout shipped.
 RUN npx prisma generate \
  && node scripts/prepare-ocr-models.mjs \
- && npm run build
+ && npm run build \
+ && node scripts/assemble-standalone.mjs
 
 # ---------- runtime ----------
 FROM node:22-slim AS runner
@@ -59,33 +69,12 @@ ENV HOSTNAME=0.0.0.0
 RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# The standalone bundle: a pruned node_modules + server.js. `next build` does
-# not copy static assets or public/ into it — those are separate COPYs.
+# Application files stay root-owned (the app can't modify its own code);
+# only what it must write to belongs to `node`: uploaded case documents
+# (bind-mounted from the host in docker-compose.yml) and Next's cache dir.
 COPY --from=build /app/.next/standalone ./
-COPY --from=build /app/.next/static ./.next/static
-COPY --from=build /app/public ./public
-
-# Prisma: the generated client + its query engine aren't reliably traced into
-# the standalone node_modules, and `migrate deploy` needs the CLI package +
-# schema + migration files, none of which app code imports. Bring them in
-# explicitly. deploy/deploy.sh runs the CLI via its build/index.js entry
-# (the standalone prune drops node_modules/.bin, so `npx` can't be relied on).
-COPY --from=build /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=build /app/node_modules/@prisma ./node_modules/@prisma
-COPY --from=build /app/node_modules/prisma ./node_modules/prisma
-COPY --from=build /app/prisma ./prisma
-
-# OCR: the Tesseract language models are bundled (never fetched from a CDN at
-# request time), and tesseract.js spawns its worker script / loads its WASM
-# core by file path, which output tracing does not follow — copy both
-# packages whole.
-COPY --from=build /app/ocr-models ./ocr-models
-COPY --from=build /app/node_modules/tesseract.js ./node_modules/tesseract.js
-COPY --from=build /app/node_modules/tesseract.js-core ./node_modules/tesseract.js-core
-
-# Uploaded case documents live here and are bind-mounted from the host in
-# docker-compose.yml — created now so the dir is owned by `node`, not root.
-RUN mkdir -p storage/case-documents && chown -R node:node /app
+RUN mkdir -p storage/case-documents .next/cache \
+    && chown -R node:node storage .next/cache
 USER node
 
 EXPOSE 3000

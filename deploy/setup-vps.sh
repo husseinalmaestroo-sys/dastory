@@ -87,17 +87,22 @@ if [[ ! -f .env ]]; then
   TFA=$(openssl rand -base64 48 | tr -d '\n')
   MYSQL_PW=$(openssl rand -hex 24)
   MYSQL_ROOT_PW=$(openssl rand -hex 24)
+  BACKUP_PW=$(openssl rand -base64 48 | tr -d '\n')
 
   # `|` delimiter: base64 secrets contain `/` and `+`.
   sed -i "s|^JWT_SECRET=.*|JWT_SECRET=\"${JWT}\"|" .env
   sed -i "s|^TWO_FACTOR_ENCRYPTION_KEY=.*|TWO_FACTOR_ENCRYPTION_KEY=\"${TFA}\"|" .env
   sed -i "s|^MYSQL_PASSWORD=.*|MYSQL_PASSWORD=\"${MYSQL_PW}\"|" .env
   sed -i "s|^MYSQL_ROOT_PASSWORD=.*|MYSQL_ROOT_PASSWORD=\"${MYSQL_ROOT_PW}\"|" .env
+  sed -i "s|^# BACKUP_ENCRYPTION_PASSPHRASE=.*|BACKUP_ENCRYPTION_PASSPHRASE=\"${BACKUP_PW}\"|" .env
   # In Docker the app builds DATABASE_URL from MYSQL_* — leave the example
   # line out of the way so it is not mistaken for the effective value.
   sed -i "s|^DATABASE_URL=.*|# DATABASE_URL is assembled by docker-compose.yml from MYSQL_* above|" .env
 
-  echo "  Generated JWT_SECRET, TWO_FACTOR_ENCRYPTION_KEY, MYSQL_PASSWORD, MYSQL_ROOT_PASSWORD."
+  chmod 600 .env
+  echo "  Generated JWT_SECRET, TWO_FACTOR_ENCRYPTION_KEY, MYSQL_PASSWORD, MYSQL_ROOT_PASSWORD,"
+  echo "  BACKUP_ENCRYPTION_PASSPHRASE. Copy the passphrase (and TWO_FACTOR_ENCRYPTION_KEY)"
+  echo "  to your password manager: without them the backups / 2FA secrets are unreadable."
 else
   echo "  .env already exists — left untouched."
 fi
@@ -108,14 +113,19 @@ cat <<'EOF'
     - AI_LEGAL_SERVICE_URL="http://legal_app:3000"
     - AI_LEGAL_SERVICE_KEY=...   (must EQUAL ailegal_hussein/.env's INTERNAL_SERVICE_KEY)
     - SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS / SMTP_FROM   (optional)
-    - APP_URL="https://app.YOURDOMAIN.com"
-    - PLATFORM_ADMIN_EMAILS=...
+    - APP_URL="https://app.YOURDOMAIN.com"            (required)
+    - PLATFORM_ADMIN_EMAILS="you@YOURDOMAIN.com"       (required; see ARCHITECTURE.md)
+    - BACKUP_RCLONE_REMOTE / BACKUP_ALERT_WEBHOOK       (see BACKUP.md)
 
   And in ailegal_hussein/.env: DATABASE_URL (Neon), OPENAI_API_KEY,
   INTERNAL_SERVICE_KEY, ADMIN_PASSWORD, IP_HASH_SALT, LAWYER_SESSION_SECRET.
 
   Then:
-    1. (cd ../ailegal_hussein && bash deploy/deploy.sh)
+    1. (cd ../ailegal_hussein && bash deploy/deploy.sh)     (only if AI is in use)
     2. bash deploy/deploy.sh
     3. bash deploy/setup-nginx.sh YOURDOMAIN.com
+    4. bash deploy/setup-backups.sh     (first backup + restore drill + cron)
+    5. sign up your own account at https://app.YOURDOMAIN.com, verify the
+       email, enable 2FA, then grant platform admin on the server:
+         docker compose exec app node scripts/platform-admin.mjs grant you@YOURDOMAIN.com
 EOF

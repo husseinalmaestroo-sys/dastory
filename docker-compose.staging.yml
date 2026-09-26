@@ -10,7 +10,7 @@
 # test everything except AI (the smoke test warns, doesn't fail, on 503).
 services:
   db:
-    image: mysql:8
+    image: mysql:8.4
     container_name: dostoori_db_staging
     restart: unless-stopped
     command:
@@ -32,7 +32,13 @@ services:
       retries: 10
 
   app:
-    build: .
+    # Same locally-built, commit-tagged images as prod (see docker-compose.yml).
+    image: dostoori-app:${APP_VERSION:-latest}
+    pull_policy: never
+    build:
+      context: .
+      args:
+        APP_VERSION: ${APP_VERSION:-dev}
     container_name: dostoori_app_staging
     restart: unless-stopped
     depends_on:
@@ -42,11 +48,14 @@ services:
     environment:
       DATABASE_URL: mysql://${MYSQL_USER:-dostoori}:${MYSQL_PASSWORD}@db:3306/${MYSQL_DATABASE:-dostoori}
       NODE_ENV: production
+      TRUST_PROXY: "1"
     ports:
       - "127.0.0.1:3100:3000"
     volumes:
       - ./storage-staging:/app/storage
     mem_limit: 1200m
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
     networks:
       - default
       - dostoori_net

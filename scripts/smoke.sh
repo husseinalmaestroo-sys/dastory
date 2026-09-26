@@ -16,6 +16,12 @@
 #   SMOKE_AI_MAX_S=90    fail an AI call slower than this (nginx
 #                        proxy_read_timeout is 300s; this is the "is it
 #                        actually answering" bound).
+#   SMOKE_EMAIL / SMOKE_PASSWORD
+#                        log in as this existing account instead of signing
+#                        up a throwaway office. AI endpoints require a
+#                        VERIFIED email, which a fresh signup never has — so
+#                        to smoke-test AI, create one smoke account once,
+#                        verify its email, and pass it here.
 set -uo pipefail
 
 BASE="${1:-}"
@@ -64,11 +70,18 @@ else
   echo; echo "aborting — the app itself is not healthy."; exit 1
 fi
 
-# ---- 2. signup (fresh throwaway office) --------------------------------------------
-EMAIL="smoke+$(date -u +%Y%m%d%H%M%S)-$RANDOM@smoke.invalid"
-req POST /api/auth/signup -H 'Content-Type: application/json' \
-  -d "{\"name\":\"Smoke Test\",\"officeName\":\"Smoke Office\",\"email\":\"$EMAIL\",\"password\":\"SmokeTest1234\"}"
-[ "$HTTP" = "201" ] && ok "signup 201 ($EMAIL)" || { bad "signup: HTTP $HTTP — $BODY"; exit 1; }
+# ---- 2. account: log in to the smoke account, or sign up a throwaway office -------
+if [ -n "${SMOKE_EMAIL:-}" ]; then
+  EMAIL="$SMOKE_EMAIL"
+  req POST /api/auth/login -H 'Content-Type: application/json' \
+    -d "$(node -e 'process.stdout.write(JSON.stringify({email:process.argv[1],password:process.argv[2]}))' "$SMOKE_EMAIL" "${SMOKE_PASSWORD:-}")"
+  [ "$HTTP" = "200" ] && ok "login 200 ($EMAIL)" || { bad "login: HTTP $HTTP — $BODY"; exit 1; }
+else
+  EMAIL="smoke+$(date -u +%Y%m%d%H%M%S)-$RANDOM@smoke.invalid"
+  req POST /api/auth/signup -H 'Content-Type: application/json' \
+    -d "{\"name\":\"Smoke Test\",\"officeName\":\"Smoke Office\",\"email\":\"$EMAIL\",\"password\":\"SmokeTest1234\"}"
+  [ "$HTTP" = "201" ] && ok "signup 201 ($EMAIL)" || { bad "signup: HTTP $HTTP — $BODY"; exit 1; }
+fi
 
 # ---- 3. client -> case -> session -> invoice -------------------------------------
 req POST /api/clients -H 'Content-Type: application/json' -d '{"name":"Smoke Client","phone":"+962790000000"}'
@@ -106,6 +119,7 @@ ai_result() { # name http seconds
     200) if [ "${secs%.*}" -gt "$AI_MAX_S" ]; then bad "$name: 200 but ${secs}s (> ${AI_MAX_S}s)"; else ok "$name: 200 in ${secs}s"; fi ;;
     502|504) bad "$name: HTTP $http after ${secs}s — nginx/upstream timeout or error" ;;
     503) if [ "$REQUIRE_AI" = "1" ]; then bad "$name: 503 (AI not configured; SMOKE_REQUIRE_AI=1)"; else warn "$name: 503 — AI not configured on this deploy, skipped"; fi ;;
+    403) if [ "$REQUIRE_AI" = "1" ]; then bad "$name: 403 — AI needs a verified email; set SMOKE_EMAIL to a verified smoke account"; else warn "$name: 403 — AI needs a verified email (throwaway smoke account), skipped"; fi ;;
     *)   bad "$name: unexpected HTTP $http after ${secs}s" ;;
   esac
 }

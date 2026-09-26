@@ -1,6 +1,9 @@
 services:
   db:
-    image: mysql:8
+    # Pinned: `mysql:8` floats to whatever 8.x is newest, and MySQL data
+    # directories can't be downgraded — an unplanned upgrade on a routine
+    # pull is not reversible. Bump deliberately, after a backup.
+    image: mysql:8.4
     container_name: dostoori_db
     restart: unless-stopped
     command:
@@ -24,7 +27,16 @@ services:
       retries: 10
 
   app:
-    build: .
+    # Every deploy builds an image tagged with the git commit (deploy/deploy.sh
+    # sets APP_VERSION), and rollback re-points this at an earlier tag —
+    # see deploy/rollback.sh. `pull_policy: never`: these images only ever
+    # come from a local build, never from a registry.
+    image: dostoori-app:${APP_VERSION:-latest}
+    pull_policy: never
+    build:
+      context: .
+      args:
+        APP_VERSION: ${APP_VERSION:-dev}
     container_name: dostoori_app
     restart: unless-stopped
     depends_on:
@@ -40,12 +52,21 @@ services:
       # on the box; never goes out through nginx/TLS.
       AI_LEGAL_SERVICE_URL: http://legal_app:3000
       NODE_ENV: production
+      # nginx (deploy/setup-nginx.sh) is the only way in and sets X-Real-IP;
+      # rate limits and audit logs key on it. See getClientIp in
+      # src/lib/api-security.ts.
+      TRUST_PROXY: "1"
     ports:
       - "127.0.0.1:3000:3000"
     volumes:
       # Uploaded case documents must outlive the container.
       - ./storage:/app/storage
     mem_limit: 1500m
+    # The app needs no Linux capabilities and never escalates privileges.
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    # Health comes from the image's HEALTHCHECK (GET /api/health: database,
+    # storage mount, OCR models); deploy.sh waits on it.
     networks:
       - default
       - dostoori_net

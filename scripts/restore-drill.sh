@@ -10,28 +10,28 @@
 #
 # Required:
 #   BACKUP_ENCRYPTION_PASSPHRASE   same as backup-db.sh
-#   DATABASE_URL  (or DRILL_DATABASE_URL to override)  — connection
-#     host/port/user/pass; the database NAME is ignored (a scratch name is
-#     generated). The user must be able to CREATE/DROP DATABASE.
-#     On the VPS: point DRILL_DATABASE_URL at 127.0.0.1:3306 with the root
-#     credentials (the db container publishes that port).
+#   BACKUP_DB_SERVICE (docker mode — what deploy/backup.sh uses; runs as the
+#     db container's root) or DATABASE_URL / DRILL_DATABASE_URL (direct mode:
+#     connection host/port/user/pass; the database NAME is ignored — a
+#     scratch name is generated; the user must be able to CREATE/DROP DATABASE).
 #
 # Optional:
 #   BACKUP_DIR                     default: <repo>/backups/db
 #   DRILL_BASELINE_FILE            default: <repo>/backups/drill-baseline.txt
+#   BACKUP_ALERT_WEBHOOK           POSTed to on any failure
 #
 # Usage:
 #   ./scripts/restore-drill.sh [backup-file.sql.gz.enc]
 #     no argument -> the newest backup in BACKUP_DIR
 #
-# Cron (monthly, first of the month, 04:30 UTC):
-#   30 4 1 * * cd /path/to/app && DRILL_DATABASE_URL='mysql://root:PW@127.0.0.1:3306/mysql' \
-#     ./scripts/restore-drill.sh >> backups/drill.log 2>&1 || \
-#     curl -fsS -m 20 "$DRILL_ALERT_WEBHOOK" -d 'restore drill FAILED'
+# Production: `deploy/backup.sh drill` (monthly cron, see deploy/setup-backups.sh).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+# shellcheck source-path=SCRIPTDIR source=lib-backup.sh
+. "$SCRIPT_DIR/lib-backup.sh"
+backup_alert_on_failure "restore drill"
 BACKUP_DIR="${BACKUP_DIR:-$REPO_DIR/backups/db}"
 BASELINE_FILE="${DRILL_BASELINE_FILE:-$REPO_DIR/backups/drill-baseline.txt}"
 START_TS="$(date +%s)"
@@ -39,10 +39,10 @@ START_TS="$(date +%s)"
 fail() { echo "DRILL FAILED: $*" >&2; exit 1; }
 
 [ -n "${BACKUP_ENCRYPTION_PASSPHRASE:-}" ] || fail "BACKUP_ENCRYPTION_PASSPHRASE is not set."
-export DATABASE_URL="${DRILL_DATABASE_URL:-${DATABASE_URL:-}}"
-[ -n "$DATABASE_URL" ] || fail "Neither DRILL_DATABASE_URL nor DATABASE_URL is set."
-command -v mysql >/dev/null 2>&1 || fail "mysql client is not on PATH."
-command -v npx   >/dev/null 2>&1 || fail "npx is not on PATH."
+if [ -z "${BACKUP_DB_SERVICE:-}" ]; then
+  export DATABASE_URL="${DRILL_DATABASE_URL:-${DATABASE_URL:-}}"
+  [ -n "$DATABASE_URL" ] || fail "Set BACKUP_DB_SERVICE (docker mode) or DRILL_DATABASE_URL / DATABASE_URL."
+fi
 
 # --- pick the backup file ---------------------------------------------------
 FILE="${1:-}"
@@ -59,14 +59,14 @@ FILE_AGE_H=$(( ( $(date +%s) - $(date -r "$FILE" +%s) ) / 3600 ))
 echo "    backup age: ${FILE_AGE_H}h"
 [ "$FILE_AGE_H" -le 26 ] || echo "WARNING: newest backup is ${FILE_AGE_H}h old (> 26h) — the nightly job may not be running." >&2
 
-# --- connection parts + scratch db ---------------------------------------------
-mapfile -t P < <(node "$SCRIPT_DIR/lib-db-url.mjs")
-DB_HOST="${P[0]}"; DB_PORT="${P[1]}"; DB_USER="${P[2]}"; DB_PASS="${P[3]}"
+# --- scratch db ------------------------------------------------------------
+backup_db_init || fail "cannot reach the database server."
 SCRATCH="dostoori_drill_$(date -u +%Y%m%d%H%M%S)_$$"
-myq() { MYSQL_PWD="$DB_PASS" mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -N -B "$@"; }
+myq() { db_exec mysql -N -B "$@"; }
 
 cleanup() { myq -e "DROP DATABASE IF EXISTS \`$SCRATCH\`;" >/dev/null 2>&1 || true; }
-trap cleanup EXIT
+# shellcheck disable=SC2154  # rc is assigned inside the trap string
+trap 'rc=$?; cleanup; if [ $rc -ne 0 ]; then backup_send_alert "restore drill" "$rc"; fi' EXIT
 
 echo "==> Restoring into scratch database: $SCRATCH"
 RESTORE_DB_NO_PROMPT=1 "$SCRIPT_DIR/restore-db.sh" "$FILE" "$SCRATCH" \
@@ -74,19 +74,14 @@ RESTORE_DB_NO_PROMPT=1 "$SCRIPT_DIR/restore-db.sh" "$FILE" "$SCRATCH" \
 
 # --- schema matches the committed migrations ------------------------------------
 echo "==> Checking schema against prisma/migrations"
-SCRATCH_URL="mysql://${DB_USER}:${DB_PASS}@${DB_HOST}:${DB_PORT}/${SCRATCH}"
-if ! DATABASE_URL="$SCRATCH_URL" npx --yes prisma migrate status >/tmp/drill-migrate-$$.txt 2>&1; then
-  cat /tmp/drill-migrate-$$.txt >&2; rm -f /tmp/drill-migrate-$$.txt
+if ! db_migrate_status "$SCRATCH" >"/tmp/drill-migrate-$$.txt" 2>&1; then
+  cat "/tmp/drill-migrate-$$.txt" >&2; rm -f "/tmp/drill-migrate-$$.txt"
   fail "prisma migrate status non-zero — the backup's schema does not match prisma/migrations."
 fi
-rm -f /tmp/drill-migrate-$$.txt
-echo "    schema OK"
-
-# --- Prisma can actually bind to the restored data ---------------------------
-echo "==> Prisma connectivity check"
-echo 'SELECT 1;' | DATABASE_URL="$SCRATCH_URL" npx --yes prisma db execute --stdin >/dev/null 2>&1 \
-  || fail "prisma db execute could not run against the restored database."
-echo "    connectivity OK"
+grep -q "Database schema is up to date" "/tmp/drill-migrate-$$.txt" \
+  || { cat "/tmp/drill-migrate-$$.txt" >&2; rm -f "/tmp/drill-migrate-$$.txt"; fail "restored schema is not up to date with prisma/migrations."; }
+rm -f "/tmp/drill-migrate-$$.txt"
+echo "    schema OK (all committed migrations applied; Prisma connected to the restored data)"
 
 # --- row counts: non-empty + drift vs the recorded baseline -------------------
 echo "==> Row counts"

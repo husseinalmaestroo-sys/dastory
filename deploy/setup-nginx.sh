@@ -40,7 +40,18 @@ common_proxy() {
 EOF
 }
 
+# client_max_body_size: a little above the app's own limit (20 MB file +
+# multipart overhead, src/lib/upload-limits.ts) so the app — not nginx —
+# answers oversized uploads with its JSON 413.
 cat >"/etc/nginx/sites-available/${DOMAIN}" <<EOF
+# Requests for any other Host (bare IP scans, spoofed Host headers) are
+# dropped instead of reaching the app.
+server {
+    listen 80 default_server;
+    server_name _;
+    return 444;
+}
+
 server {
     listen 80;
     server_name ${APP_HOST};

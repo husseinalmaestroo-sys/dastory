@@ -26,3 +26,16 @@ vitest.integration.setup.mts
 npm-debug.log*
 coverage
 .DS_Store
+
+# Generated locally; the image builds its own copies
+ocr-models
+test-results
+playwright-report
+backups
+storage-staging
+
+# Test harnesses (HTTP-level + browser E2E) never run in the image
+src/__http__
+e2e
+vitest.http.config.mts
+playwright.config.ts

@@ -326,6 +326,26 @@ export function validateDraft(
   let draft = normalizeDigits(rawDraft.slice(start).trim());
   if (draft.length > 30000) return { ok: false, reason: "schema", detail: "draft exceeds 30000 chars" };
 
+  const inputNorm = normalizeDigits(inputs).replace(/\s+/g, "");
+  const unverifiedFacts: DraftValidationReport["unverifiedFacts"] = [];
+  const supplied = (m: string) =>
+    inputNorm.includes(m.replace(/\s+/g, "")) ||
+    // A figure inside a cited source's own text (e.g. a statutory amount) is not a client fact.
+    chunks.some((c) => normalizeDigits(c.chunk_text).replace(/\s+/g, "").includes(m.replace(/\s+/g, "")));
+
+  // Dates first, set aside behind placeholders: "15/03/2099" otherwise reads
+  // to the citation guard as decision number "03/2099".
+  const dates: string[] = [];
+  draft = draft.replace(DATE_RE, (m) => {
+    if (supplied(m)) {
+      dates.push(m);
+    } else {
+      unverifiedFacts.push({ kind: "date", value: m });
+      dates.push("[يُستكمل: التاريخ]");
+    }
+    return `\u2063D${dates.length - 1}\u2063`;
+  });
+
   const stripped = stripInvalidCitations(draft, chunks.length);
   draft = stripped.text;
   const checked = verifyCitedNumbers(draft, chunks);
@@ -344,20 +364,16 @@ export function validateDraft(
     })
     .join("\n");
 
-  const inputNorm = normalizeDigits(inputs).replace(/\s+/g, "");
-  const unverifiedFacts: DraftValidationReport["unverifiedFacts"] = [];
-  const replaceUnsupplied = (re: RegExp, kind: "date" | "amount" | "number", label: string) => {
+  const replaceUnsupplied = (re: RegExp, kind: "amount" | "number", label: string) => {
     draft = draft.replace(re, (m) => {
-      if (inputNorm.includes(m.replace(/\s+/g, ""))) return m;
-      // A figure inside a cited source's own text (e.g. a statutory amount) is not a client fact.
-      if (chunks.some((c) => normalizeDigits(c.chunk_text).replace(/\s+/g, "").includes(m.replace(/\s+/g, "")))) return m;
+      if (supplied(m)) return m;
       unverifiedFacts.push({ kind, value: m });
       return `[يُستكمل: ${label}]`;
     });
   };
-  replaceUnsupplied(DATE_RE, "date", "التاريخ");
   replaceUnsupplied(AMOUNT_RE, "amount", "المبلغ");
   replaceUnsupplied(LONG_NUMBER_RE, "number", "الرقم");
+  draft = draft.replace(/\u2063D(\d+)\u2063/g, (_, i) => dates[Number(i)] ?? "");
 
   const verified = checked.verifiedCount;
   const cites = (draft.match(/\[\d{1,2}\]/g) ?? []).length;

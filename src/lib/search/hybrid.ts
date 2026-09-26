@@ -6,7 +6,7 @@ import { env } from "../env";
 import { foldForSearch } from "../ingest/clean";
 import { normalizeQuery } from "./normalize";
 import { getCachedEmbedding, setCachedEmbedding } from "./embedding-cache";
-import { stemArabicText } from "./arabic-stem";
+import { stemArabicText, stemArabicWord } from "./arabic-stem";
 import { localRerank } from "./local-rerank";
 import { parseIntent, resolveVersionScope } from "./intent";
 import { extractLawReference, resolveLawSourceIds } from "./law-reference";
@@ -394,19 +394,21 @@ export async function hybridSearch(
     }];
   });
 
-  // An article number with no named law: when several laws have that article
-  // and none of those rows was also found by a ranked arm (nothing else in
-  // the question pointed at one of them), the question is ambiguous — the
-  // old code boosted up to 30 arbitrary laws' copies to the top. Boost only
-  // an exact row something else also supports, or the only law with that
-  // article; report the ambiguity otherwise.
+  // An article number with no named law. When several laws have that
+  // article, an exact row is boosted only if the rest of the question
+  // (its words beyond "المادة N") actually occur in that row; if none does,
+  // the question is ambiguous — the old code boosted up to 30 arbitrary
+  // laws' copies to the top. (Arm membership cannot decide this: on a small
+  // corpus the vector arm returns every row for any query.)
   const exactRows = rows.filter((r) => r.exact_hit);
   const exactLaws = new Set(exactRows.map((r) => r.source_id));
-  const isRanked = (r: Row) => r.vector_rank !== null || r.keyword_rank !== null || r.stem_rank !== null;
   const lawScoped = !!(lawSourceIds && lawSourceIds.length > 0);
-  const boostExact = (r: Row) => r.exact_hit && (lawScoped || exactLaws.size <= 1 || isRanked(r));
+  const context = articleContextStems(question);
+  const supported = (r: Row) =>
+    context.length > 0 && context.some((w) => rowStems(`${r.source_title} ${r.law_name ?? ""} ${r.chunk_text}`).has(w));
+  const boostExact = (r: Row) => r.exact_hit && (lawScoped || exactLaws.size <= 1 || supported(r));
   const articleAmbiguity =
-    !lawScoped && intent.articleNumbers.length > 0 && exactLaws.size >= 2 && !exactRows.some(isRanked)
+    !lawScoped && intent.articleNumbers.length > 0 && exactLaws.size >= 2 && !exactRows.some(supported)
       ? {
           article: intent.articleNumbers[0],
           laws: [...new Map(exactRows.map((r) => [r.source_id, r.source_title])).values()].slice(0, 12),
@@ -872,4 +874,36 @@ export function mergeArticlePartsFrom(chunks: RetrievedChunk[], parts: PartRow[]
     out.push({ ...c, chunk_text: text, merged_parts: hi - lo + 1 });
   }
   return out;
+}
+
+// ---------------------------------------------------------------- article-lookup context
+
+// Words that carry no identifying content in an article lookup.
+const LOOKUP_STOP = new Set(
+  ["ما", "هو", "هي", "نص", "تنص", "ينص", "عليه", "الذي", "التي", "حكم", "اشرح", "شرح", "معني", "مضمون", "ماده", "الماده",
+   "المواد", "في", "من", "علي", "عن", "بشان", "حول", "هل", "قانون", "القانون", "نظام", "النظام", "رقم", "لسنه", "و", "او", "اريد", "اعطني"].map((w) =>
+    foldForSearch(w)
+  )
+);
+
+/** Stemmed content words of a question outside its article reference. */
+export function articleContextStems(question: string): string[] {
+  const rest = foldForSearch(question).replace(/(?:ال)?ماد[ةه]\s*[({[]?\s*\d+[)}\]]?/g, " ");
+  return [
+    ...new Set(
+      rest
+        .split(/[^\p{L}\p{N}]+/u)
+        .filter((w) => w.length > 1 && !/^\d+$/.test(w) && !LOOKUP_STOP.has(w))
+        .map((w) => stemArabicWord(w) || w)
+    ),
+  ];
+}
+
+function rowStems(text: string): Set<string> {
+  return new Set(
+    foldForSearch(text)
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter((w) => w.length > 1)
+      .map((w) => stemArabicWord(w) || w)
+  );
 }

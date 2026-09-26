@@ -35,8 +35,10 @@ import { normalizeDigits } from "../ingest/clean";
 const ARTICLE_RE = /(?:ال)?ماد[ةه]\s*[({[]?\s*\d+[)}\]]?|(?<![؀-ۿ])م\s*\.\s*\d+/g;
 
 /** "1234/2020" / "قرار رقم 55 لسنة 2019" — a decision reference. */
+// The bare "N/YYYY" form must not be the tail of a date ("15/03/2099" is not
+// decision 03/2099) — hence the lookbehind.
 const DECISION_RE =
-  /(?:قرار|حكم|طعن|تمييز)\s*(?:رقم\s*)?[({[]?\s*\d{1,6}\s*[/\-]\s*\d{4}|(?:رقم\s*)?\d{1,6}\s*\/\s*(?:19|20)\d{2}/g;
+  /(?:قرار|حكم|طعن|تمييز)\s*(?:رقم\s*)?[({[]?\s*\d{1,6}\s*[/\-]\s*\d{4}|(?<!\d)(?<!\d\s*[/\-.]\s*)(?:رقم\s*)?\d{1,6}\s*\/\s*(?:19|20)\d{2}/g;
 
 /**
  * "قانون رقم 8 لسنة 1996" — a law identified by number, and the far more common
@@ -167,7 +169,7 @@ function mentionedInChunkText(chunk: CitableChunk, kind: "article" | "decision",
 // one's DB-backed checker instead.
 const CITED_ARTICLE_RE = /(?:ال)?ماد[ةه]\s*[({[]?\s*(\d+)[)}\]]?|(?<![؀-ۿ])م\s*\.\s*(\d+)/g;
 const CITED_DECISION_RE =
-  /(?:قرار|حكم|طعن|تمييز)\s*(?:رقم\s*)?[({[]?\s*(\d{1,6})\s*[/\-]\s*\d{4}|(?:رقم\s*)?(\d{1,6})\s*\/\s*(?:19|20)\d{2}/g;
+  /(?:قرار|حكم|طعن|تمييز)\s*(?:رقم\s*)?[({[]?\s*(\d{1,6})\s*[/\-]\s*\d{4}|(?<!\d)(?<!\d\s*[/\-.]\s*)(?:رقم\s*)?(\d{1,6})\s*\/\s*(?:19|20)\d{2}/g;
 const REF_RE = /\[(\d{1,2})\]/g;
 
 // Empirically wider than citation-verify.ts's WINDOW=200: a real grounded

@@ -32,8 +32,9 @@ services:
       retries: 10
 
   app:
-    # Same locally-built, commit-tagged images as prod (see docker-compose.yml).
-    image: dostoori-app:${APP_VERSION:-current}
+    # Its own image name: a staging build must never move prod's
+    # dostoori-app:current tag (see docker-compose.yml).
+    image: dostoori-app-staging:${APP_VERSION:-current}
     pull_policy: never
     build:
       context: .

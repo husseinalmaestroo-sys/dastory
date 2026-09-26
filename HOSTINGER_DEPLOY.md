@@ -83,9 +83,11 @@ bash deploy/setup-vps.sh
 |---|---|
 | `AI_LEGAL_SERVICE_URL` | `http://legal_app:3000` |
 | `AI_LEGAL_SERVICE_KEY` | نفس `INTERNAL_SERVICE_KEY` أعلاه |
-| `APP_URL` | `https://app.<domain>` |
-| `PLATFORM_ADMIN_EMAILS` | بريد مدير المنصة |
-| `SMTP_*` | اختياري — بدونها إرسال البريد يرجع 503 بدل تعطّل صامت |
+| `APP_URL` | `https://app.<domain>` — **مطلوب**؛ كل رابط يُرسَل بالبريد يُبنى منه وحده |
+| `PLATFORM_ADMIN_EMAILS` | بريدك أنت — **مطلوب**، بلا قيمة افتراضية. الإدراج هنا لا يكفي وحده (القسم 6) |
+| `BACKUP_ENCRYPTION_PASSPHRASE` | يولّده `setup-vps.sh` — **مطلوب** للنشر؛ انسخه خارج الخادم |
+| `BACKUP_RCLONE_REMOTE` / `BACKUP_ALERT_WEBHOOK` | النسخ خارج الخادم وتنبيه الفشل — BACKUP.md |
+| `SMTP_*` | اختياري — بدونها إرسال البريد يرجع 503 بدل تعطّل صامت، ولا يمكن تأكيد البريد |
 
 > `DATABASE_URL` في Dostoori لا يُضبَط يدوياً — `docker-compose.yml` يبنيه من `MYSQL_*`
 > ويوجّهه إلى حاوية `db`.
@@ -103,10 +105,15 @@ cd /opt/dostoori                  && bash deploy/deploy.sh   # يبني، prisma
 bash deploy/setup-nginx.sh <domain>                          # nginx: ملف واحد، السجلّان، ثم certbot لكليهما
 ```
 
-`dostoori/deploy/deploy.sh` يتحقّق من `GET /api/health` = 200، ثم يشغّل
-**`scripts/smoke.sh`** على `127.0.0.1:3000`: تسجيل مكتب مؤقت → عميل/قضية/جلسة/فاتورة →
+`dostoori/deploy/deploy.sh` بالترتيب: فحص الإعدادات المطلوبة → بناء صورة موسومة بـ
+commit (`dostoori-app:<sha>`) → **نسخة احتياطية مشفّرة قبل الترحيل (لا نسخة = لا نشر)** →
+`prisma migrate deploy` من الصورة الجديدة والنسخة القديمة ما زالت تخدم → التبديل → انتظار
+`healthy` من Docker **و** رقم الإصدار الجديد في `/api/health` → **رجوع تلقائي** للإصدار
+السابق إن لم تصحّ → ثم **`scripts/smoke.sh`** على `127.0.0.1:3000`: تسجيل مكتب مؤقت → عميل/قضية/جلسة/فاتورة →
 رفع مستند + توقيعه → (إن كان الذكاء الاصطناعي مُعدّاً) مراجعة عقد + محادثة بدورين.
-أي فشل هنا يُفشل النشر. لتشغيله على الرابط العام مباشرة:
+أي فشل هنا يُفشل النشر (ارجع بـ `bash deploy/rollback.sh`). ميزات الذكاء الاصطناعي تتطلب
+بريداً مؤكَّداً، والمكتب المؤقت غير مؤكَّد — لاختبارها أنشئ حساب smoke مرّة، أكّد بريده، ومرّره
+بـ `SMOKE_EMAIL` / `SMOKE_PASSWORD`. لتشغيله على الرابط العام مباشرة:
 
 ```bash
 SMOKE_URL="https://app.<domain>" SMOKE_REQUIRE_AI=1 bash scripts/smoke.sh https://app.<domain>
@@ -131,10 +138,13 @@ k6 run -e BASE=https://app.<domain> -e VUS=3 -e DURATION=5m scripts/load-ai.js
 منفصلة)، تخدمها nginx على `staging.<domain>`:
 
 ```bash
-cp .env .env.staging   # عدّل MYSQL_* لأسرار خاصة بـ staging
-docker compose -f docker-compose.staging.yml --env-file .env.staging up -d --build
+cp .env .env.staging   # عدّل MYSQL_* لأسرار خاصة بـ staging، و APP_URL=https://staging.<domain>
+export APP_VERSION=$(git rev-parse --short=12 HEAD)   # صورة dostoori-app-staging:<sha>، منفصلة عن الإنتاج
+docker compose -f docker-compose.staging.yml --env-file .env.staging build app
+docker compose -f docker-compose.staging.yml --env-file .env.staging up -d db
 docker compose -f docker-compose.staging.yml --env-file .env.staging \
-  run --rm app node node_modules/prisma/build/index.js migrate deploy
+  run --rm app node node_modules/prisma/build/index.js migrate deploy --schema prisma/schema.prisma
+docker compose -f docker-compose.staging.yml --env-file .env.staging up -d app
 bash scripts/smoke.sh https://staging.<domain>
 ```
 
@@ -142,13 +152,26 @@ bash scripts/smoke.sh https://staging.<domain>
 
 ---
 
-## 6. أول حساب حقيقي
+## 6. أول حساب حقيقي، ومدير المنصة
 
 لا بيانات دخول افتراضية. أنشئ أول مكتب/مدير عبر صفحة التسجيل الذاتي:
 
 ```
 POST /api/auth/signup   (أو زر "إنشاء حساب" في الواجهة)
 ```
+
+**مدير المنصة** (`/admin`) لا يُكتسَب بالتسجيل — حتى لو كان البريد في `PLATFORM_ADMIN_EMAILS`.
+بعد التسجيل: أكّد البريد، فعّل المصادقة الثنائية من الإعدادات، ثم على الخادم:
+
+```bash
+cd /opt/dostoori
+docker compose exec app node scripts/platform-admin.mjs grant you@<domain>
+docker compose exec app node scripts/platform-admin.mjs list      # يبيّن ما ينقص إن وُجد
+docker compose exec app node scripts/platform-admin.mjs revoke you@<domain>
+```
+
+الصلاحية تعمل فقط إذا اجتمعت كلها: المنح من الخادم + البريد في القائمة + بريد مؤكَّد + 2FA
+مفعّلة ومُجتازة في الجلسة + دور مدير مكتب.
 
 **لا تُشغّل `prisma/seed.ts` على الإنتاج** — يمسح البيانات وينشئ حسابات بكلمات مرور
 معروفة، ومرفوض تلقائياً عند `NODE_ENV=production` ما لم يُضبَط `ALLOW_DEV_SEED=true`.
@@ -162,12 +185,26 @@ POST /api/auth/signup   (أو زر "إنشاء حساب" في الواجهة)
 npx prisma migrate dev --name وصف_قصير
 # راجع ملف SQL الناتج، أضِفه لِـ git.
 
-# على الإنتاج (يطبّق فقط ما لم يُطبَّق، بالترتيب، بلا تأكيد تفاعلي):
-cd /opt/dostoori && docker compose run --rm app npx prisma migrate deploy
+# على الإنتاج: deploy.sh يطبّقها تلقائياً بعد نسخة احتياطية. يدوياً (نادراً):
+cd /opt/dostoori && bash deploy/backup.sh db && \
+  docker compose run --rm --no-deps app node node_modules/prisma/build/index.js migrate deploy --schema prisma/schema.prisma
 ```
 
-**خذ نسخة احتياطية قبل أي ترحيل** (القسم 8). لا تُشغّل `migrate dev` ولا `db push` على
-الإنتاج أبداً.
+لا تُشغّل `migrate dev` ولا `db push` على الإنتاج أبداً. الترحيلات للأمام فقط؛ اكتبها
+**متوافقة مع الإصدار السابق** (إضافة أعمدة/جداول، لا حذف أو إعادة تسمية في نفس الإصدار)
+كي يبقى الرجوع بـ `rollback.sh` آمناً.
+
+**ترحيل فشل في منتصفه**: MySQL لا يلفّ DDL في معاملة، فقد يبقى جزء مطبّقاً. `deploy.sh`
+يتوقف والإصدار القديم ما زال يخدم، ويطبع "restore point". الاسترجاع الدقيق:
+
+```bash
+docker compose stop app
+set -a; . ./.env; set +a
+BACKUP_DB_SERVICE=db RESTORE_DB_DROP_FIRST=1 bash scripts/restore-db.sh "$(cat .deploy/last_backup)"
+docker compose start app
+```
+
+ثم أصلِح الترحيل وانشُر من جديد.
 
 `ailegal_hussein` يستخدم `db/schema.sql` عبر `npm run db:migrate` (idempotent)، ويُنفَّذ
 تلقائياً ضمن `deploy/deploy.sh`.
@@ -176,23 +213,20 @@ cd /opt/dostoori && docker compose run --rm app npx prisma migrate deploy
 
 ## 8. النسخ الاحتياطي
 
-راجع [BACKUP.md](BACKUP.md). التغيير الوحيد في نمط الحاويات: MySQL صار داخل حاوية، فنسخ
-قاعدة البيانات:
+راجع [BACKUP.md](BACKUP.md). بعد أول نشر ناجح، مرّة واحدة:
 
 ```bash
-cd /opt/dostoori
-docker compose exec -T db mysqldump -u root -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE" > backup.sql
+apt-get install -y rclone && rclone config     # وجهة خارج الخادم (B2 / S3 / SFTP ...)
+# في .env: BACKUP_RCLONE_REMOTE="<remote>:<bucket>/dostoori"  BACKUP_REQUIRE_OFFHOST="1"
+#          BACKUP_ALERT_WEBHOOK="https://..."   (Slack/Discord/ntfy/healthchecks)
+bash deploy/setup-backups.sh
 ```
 
-`scripts/backup-files.sh` (لمجلد `storage/`) يعمل كما هو — المجلد مربوط bind mount من
-المضيف. الجزء الذي يحتاج إعداداً يدوياً: التخزين خارج الخادم (rclone) وجدولة cron —
-موثّقان في BACKUP.md. **خذ نسخة قبل كل `migrate deploy`.**
-
-**اختبار الاسترجاع الدوري:** `scripts/restore-drill.sh` يأخذ أحدث نسخة مشفّرة، يسترجعها
-في قاعدة بيانات مؤقتة، يتحقق أن مخططها يطابق `prisma/migrations` وأن Prisma يتصل بها،
-ثم يحذفها. أضِفه لـ cron شهرياً مع تنبيه عند الفشل — راجع كتلة cron في BACKUP.md.
-على الـ VPS: `DRILL_DATABASE_URL="mysql://root:ROOT_PW@127.0.0.1:3306/mysql"` (المنفذ
-منشور من حاوية `db`).
+يأخذ نسخة حقيقية (قاعدة البيانات + الملفات، مشفّرة، وتُنسَخ خارج الخادم ويُتحقَّق من
+وصولها)، **ثم يسترجعها في قاعدة مؤقتة ويتحقق منها — ولا يثبّت cron إلا إن نجح ذلك**.
+الجدولة: يومياً 03:17 UTC، واختبار استرجاع شهري. أي فشل يرسل تنبيهاً إلى
+`BACKUP_ALERT_WEBHOOK`. كل شيء يعمل داخل حاوية `db` — لا يلزم عميل MySQL ولا Node على
+المضيف.
 
 ---
 
@@ -200,11 +234,19 @@ docker compose exec -T db mysqldump -u root -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DAT
 
 ```bash
 cd /opt/dostoori/ailegal_hussein && git pull && bash deploy/deploy.sh
-cd /opt/dostoori                  && git pull && bash deploy/deploy.sh
+cd /opt/dostoori                  && bash deploy/deploy.sh      # يسحب الشيفرة بنفسه (git pull --ff-only)
 ```
 
-كلا السكربتين يعيدان البناء والتشغيل بأقل توقّف. `restart: unless-stopped` في الـ compose
-يعيد رفع الحاويات بعد إعادة تشغيل الخادم.
+**الرجوع لإصدار سابق** (الشيفرة فقط؛ الترحيلات لا تُعكَس):
+
+```bash
+bash deploy/rollback.sh                 # الإصدار الذي قبل الحالي
+docker images dostoori-app              # آخر 5 إصدارات محفوظة
+bash deploy/rollback.sh <sha>           # أي إصدار محفوظ
+cat .deploy/history                     # سجلّ النشر والرجوع
+```
+
+`restart: unless-stopped` في الـ compose يعيد رفع الحاويات بعد إعادة تشغيل الخادم.
 
 ---
 
@@ -226,9 +268,15 @@ cd /opt/dostoori                  && git pull && bash deploy/deploy.sh
   بدون `SENTRY_DSN` الـ SDK خامل تماماً. عند ضبطه، الأخطاء غير المُعالَجة تُرسَل بعد
   تنقية البريد/الرموز/أجسام الطلبات (`src/lib/sentry-scrub.ts`). اضبط نفس المتغير
   في `.env` الخاص بكل تطبيق.
-- **مراقبة التوفّر**: أضِف مراقباً خارجياً (BetterStack / UptimeRobot) على
-  `https://app.<domain>/api/health` و`https://legal.<domain>/`، بفاصل دقيقتين وتنبيه
-  SMS/Telegram. `/api/health` يرجع 503 إذا سقطت قاعدة البيانات أو التخزين.
+- **مراقبة التوفّر** (إعداد يدوي مطلوب): أضِف مراقباً خارجياً (BetterStack / UptimeRobot)
+  على `https://app.<domain>/api/health` و`https://legal.<domain>/`، بفاصل دقيقتين وتنبيه
+  SMS/Telegram. `/api/health` يرجع 503 إذا سقطت قاعدة البيانات أو التخزين أو غابت نماذج
+  OCR، ويذكر رقم الإصدار. حاوية التطبيق لها `HEALTHCHECK` (`docker ps` يبيّن healthy).
+- **ما يُراقَب وأين**: أخطاء التطبيق → Sentry (`SENTRY_DSN`)؛ التوفّر → المراقب الخارجي؛
+  النسخ الاحتياطي واختبار الاسترجاع → `BACKUP_ALERT_WEBHOOK`؛ السجلات →
+  `docker compose logs app`.
+- **nginx** يرفض أي طلب بترويسة Host غير معروفة (444) ويضع `X-Real-IP` بنفسه؛ التطبيق يثق
+  بها فقط لأن `TRUST_PROXY=1` في الـ compose.
 
 ---
 
@@ -242,8 +290,10 @@ cd /opt/dostoori                  && git pull && bash deploy/deploy.sh
 | `TWO_FACTOR_ENCRYPTION_KEY` | مطلوب | نفس الشروط — لتشفير أسرار 2FA |
 | `AI_LEGAL_SERVICE_URL` | مطلوب للذكاء الاصطناعي | رابط ailegal_hussein؛ `http://legal_app:3000` في Docker. بدونه كل `/dashboard/ai/*` و`/dashboard/search/legal` ترجع 503 |
 | `AI_LEGAL_SERVICE_KEY` | مطلوب للذكاء الاصطناعي | **يجب أن يساوي** `INTERNAL_SERVICE_KEY` في ailegal_hussein |
-| `PLATFORM_ADMIN_EMAILS` | اختياري | افتراضياً `admin@dostoori.jo` |
-| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` / `SMTP_FROM` | اختياري | بدونها إرسال البريد يرجع 503 |
-| `APP_URL` أو `NEXT_PUBLIC_APP_URL` | اختياري | لبناء روابط كاملة؛ بدونه يُستنتج من ترويسات الطلب |
+| `APP_URL` | **مطلوب** | الأصل العام `https://app.<domain>`؛ التطبيق لا يقلع بدونه و`deploy.sh` يشترط https. كل روابط البريد منه — لا من ترويسة Host |
+| `PLATFORM_ADMIN_EMAILS` | **مطلوب** | قائمة مسموحة بلا قيمة افتراضية؛ الصلاحية تحتاج أيضاً منحاً من الخادم (القسم 6) |
+| `TRUST_PROXY` | في الـ compose | `1` خلف nginx — عناوين العملاء الحقيقية لحدود المعدّل وسجل التدقيق |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` / `SMTP_FROM` | اختياري | بدونها إرسال البريد يرجع 503 ولا يمكن تأكيد البريد |
 | `SENTRY_DSN` / `SENTRY_ENVIRONMENT` | اختياري | تتبّع الأخطاء؛ بدونه الـ SDK خامل. اضبط نفس القيمة في `ailegal_hussein/.env` أيضاً |
-| `BACKUP_ENCRYPTION_PASSPHRASE` / `BACKUP_RCLONE_REMOTE` | اختياري | لسكربتات النسخ الاحتياطي فقط، راجع BACKUP.md |
+| `BACKUP_ENCRYPTION_PASSPHRASE` | **مطلوب للنشر** | `deploy.sh` يأخذ نسخة مشفّرة قبل كل ترحيل ويرفض النشر بدونها |
+| `BACKUP_RCLONE_REMOTE` / `BACKUP_REQUIRE_OFFHOST` / `BACKUP_ALERT_WEBHOOK` / `BACKUP_RETENTION_DAYS` / `BACKUP_REMOTE_RETENTION_DAYS` | موصى به | النسخ خارج الخادم، التنبيه، الاحتفاظ — BACKUP.md |

@@ -1,0 +1,113 @@
+# Phase 1 release gates, on every push and pull request. Same commands a
+# contributor runs locally (see TEST_RESULTS in PHASE1_REPORT.md).
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    services:
+      mysql:
+        # Linux MySQL (case-sensitive table names) — the migrations must run
+        # here exactly as they will on the production host.
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=5s --health-timeout=5s --health-retries=30
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      TEST_DATABASE_URL: mysql://root:root@127.0.0.1:3306/dostoori_test
+      HTTP_TEST_DATABASE_URL: mysql://root:root@127.0.0.1:3306/dostoori_http_test
+      E2E_DATABASE_URL: mysql://root:root@127.0.0.1:3306/dostoori_e2e_test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install (lockfile must be in sync)
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Migrations from an empty database (Linux MySQL)
+        run: |
+          mysql -h 127.0.0.1 -uroot -proot -e "CREATE DATABASE dostoori_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+          DATABASE_URL="$TEST_DATABASE_URL" npx prisma migrate deploy
+          # The committed migrations must produce exactly schema.prisma.
+          DATABASE_URL="$TEST_DATABASE_URL" npx prisma migrate diff \
+            --from-url "$TEST_DATABASE_URL" --to-schema-datamodel prisma/schema.prisma --exit-code
+
+      - name: Integration tests (real MySQL)
+        run: npm run test:integration
+
+      - name: Production build (no database reachable)
+        env:
+          JWT_SECRET: build-only-placeholder-not-a-real-secret-000000
+          TWO_FACTOR_ENCRYPTION_KEY: build-only-placeholder-not-a-real-secret-000000
+          DATABASE_URL: mysql://build:build@127.0.0.1:1/build
+          APP_URL: https://build.invalid
+          PLATFORM_ADMIN_EMAILS: build@build.invalid
+        run: npm run build
+
+      - name: HTTP-level tests (production server through proxy.ts)
+        run: npm run test:http
+
+      - name: Browser E2E smoke test
+        run: |
+          npx playwright install --with-deps chromium
+          npm run test:e2e
+
+      - name: Upload E2E report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report
+            test-results
+          retention-days: 7
+
+  docker:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the production image
+        run: docker build --build-arg APP_VERSION=${GITHUB_SHA::12} -t dostoori-app:ci .
+
+      - name: Container starts, migrates a fresh database, and reports healthy
+        run: |
+          docker network create ci
+          docker run -d --name db --network ci -e MYSQL_ROOT_PASSWORD=root -e MYSQL_DATABASE=dostoori mysql:8.4
+          for i in $(seq 1 60); do docker exec db mysqladmin ping -uroot -proot --silent && break; sleep 2; done
+          ENV="-e DATABASE_URL=mysql://root:root@db:3306/dostoori -e JWT_SECRET=ci-$(openssl rand -hex 24) -e TWO_FACTOR_ENCRYPTION_KEY=ci-$(openssl rand -hex 24) -e APP_URL=https://ci.invalid -e PLATFORM_ADMIN_EMAILS=ops@ci.invalid"
+          docker run --rm --network ci $ENV dostoori-app:ci node node_modules/prisma/build/index.js migrate deploy --schema prisma/schema.prisma
+          docker run -d --name app --network ci -p 127.0.0.1:3000:3000 $ENV dostoori-app:ci
+          for i in $(seq 1 40); do
+            [ "$(docker inspect app --format '{{.State.Health.Status}}')" = healthy ] && break; sleep 3
+          done
+          docker inspect app --format '{{.State.Health.Status}}' | grep -qx healthy || { docker logs app; exit 1; }
+          curl -fsS http://127.0.0.1:3000/api/health
+          docker exec app id -u | grep -qx 1000

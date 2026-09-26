@@ -1,5 +1,7 @@
 # Dastoori (دُسْتُورِي) — Full Production Readiness, Security, Multi-Tenant, AI/RAG & QA Audit
 
+> **Status update:** this is the pre-fix baseline (commit `dc6226b`). Phase 1 fixes, regression tests and validation results are in [PHASE1_REPORT.md](PHASE1_REPORT.md).
+
 **Audit date:** 2026-09-26 · **Commit audited:** `dc6226b` · Payment gateway out of scope.
 
 ## Contents

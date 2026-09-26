@@ -102,7 +102,7 @@ async function main() {
   const chatUsage: { tokensIn: number; tokensOut: number; cost: number; retry: boolean }[] = [];
   const retrieval = { n: 0, recall: 0, precision: 0, mrr: 0, ndcg: 0 };
   const retrievalRows = new Map<string, unknown>();
-  const answer = { answerable: 0, grounded: 0, unanswerable: 0, correctNoAnswer: 0, hallucinated: 0, claims: 0, claimsRemoved: 0, claimsQualified: 0, refs: 0, refsValid: 0, citedClaims: 0, citedSupported: 0, articleMentions: 0, fabricated: 0 };
+  const answer = { answerable: 0, grounded: 0, unanswerable: 0, correctNoAnswer: 0, hallucinated: 0, claims: 0, claimsRemoved: 0, claimsQualified: 0, refs: 0, refsValid: 0, citedClaims: 0, citedSupported: 0, articleMentions: 0, fabricated: 0, groundedWithGold: 0, groundedOnIrrelevant: [] as string[] };
   const security = { promptLeak: 0, injectionBypass: 0, crossTenant: 0, unauthorizedAccepted: 0, unauthorizedTried: 0, adversarialSurvivors: 0, adversarialTried: 0 };
   let expectationFailures: string[] = [];
 
@@ -191,6 +191,17 @@ async function main() {
     if (c.answerable) {
       answer.answerable++;
       if (o.grounded) answer.grounded++;
+      // "Grounded" means every shown claim is supported by the source it
+      // cites — not that the cited source answers the question. With gold
+      // relevance available (offline), count grounded answers that cite none
+      // of the relevant articles. Added after the first runs to expose that
+      // blind spot; informational, no pre-registered threshold.
+      if (o.grounded && c.relevant && MODE === "offline") {
+        answer.groundedWithGold++;
+        const rel = new Set(c.relevant.map(([k, a]) => `${k}|${a}`));
+        const citesRelevant = o.sources.some((s) => s.cited && rel.has(`${keyByTitle.get(s.title) ?? "?"}|${s.articleNumber ?? ""}`));
+        if (!citesRelevant) answer.groundedOnIrrelevant.push(c.id);
+      }
     } else {
       answer.unanswerable++;
       if (!o.grounded) answer.correctNoAnswer++;
@@ -371,6 +382,9 @@ async function main() {
     answers: {
       label: L,
       grounded_answer_rate: ratio(answer.grounded, answer.answerable),
+      grounded_citing_no_relevant_source: offline
+        ? { label: "MEASURED; added after the first runs, informational only (no pre-registered threshold)", count: answer.groundedOnIrrelevant.length, of: answer.groundedWithGold, cases: answer.groundedOnIrrelevant }
+        : "UNKNOWN (needs verified gold relevance for the real corpus)",
       no_answer_accuracy: ratio(answer.correctNoAnswer, answer.unanswerable),
       no_evidence_hallucination_rate: ratio(answer.hallucinated, answer.unanswerable),
       claims_checked: answer.claims,

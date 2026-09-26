@@ -1,6 +1,6 @@
 {
   "mode": "offline",
-  "ranAt": "2026-09-26T15:15:26.273Z",
+  "ranAt": "2026-09-26T19:48:51.917Z",
   "gold": "SYNTHETIC (offline) — see eval/dataset.json _gold; real-corpus legal gold: GOLD UNVERIFIED",
   "metrics": {
     "retrieval": {
@@ -14,6 +14,16 @@
     "answers": {
       "label": "MEASURED (offline: synthetic corpus, deterministic test providers — mechanics, not real-model quality)",
       "grounded_answer_rate": 0.8889,
+      "grounded_citing_no_relevant_source": {
+        "label": "MEASURED; added after the first runs, informational only (no pre-registered threshold)",
+        "count": 3,
+        "of": 16,
+        "cases": [
+          "ret-typo-1",
+          "ret-lawname-1",
+          "leg-multisource-1"
+        ]
+      },
       "no_answer_accuracy": 1,
       "no_evidence_hallucination_rate": 0,
       "claims_checked": 32,
@@ -38,14 +48,14 @@
     "performance": {
       "label": "NOT REPRESENTATIVE (pipeline overhead with an instant test model; real latency is dominated by the LLM — UNKNOWN until the live run)",
       "p50_ms": {
-        "chat": 8,
-        "contract_review": 7,
-        "case_analysis": 10
+        "chat": 10,
+        "contract_review": 9,
+        "case_analysis": 12
       },
       "p95_ms": {
-        "chat": 27,
+        "chat": 29,
         "contract_review": 70,
-        "case_analysis": 10
+        "case_analysis": 12
       },
       "timeout_rate": 0
     },

@@ -101,7 +101,9 @@ jobs:
         run: |
           docker network create ci
           docker run -d --name db --network ci -e MYSQL_ROOT_PASSWORD=root -e MYSQL_DATABASE=dostoori mysql:8.4
-          for i in $(seq 1 60); do docker exec db mysqladmin ping -uroot -proot --silent && break; sleep 2; done
+          # Ping over TCP: during first-start initialization the image runs a
+          # temporary socket-only server, so a socket ping succeeds too early.
+          for i in $(seq 1 90); do docker exec db mysqladmin ping -h 127.0.0.1 -uroot -proot --silent 2>/dev/null && break; sleep 2; done
           ENV="-e DATABASE_URL=mysql://root:root@db:3306/dostoori -e JWT_SECRET=ci-$(openssl rand -hex 24) -e TWO_FACTOR_ENCRYPTION_KEY=ci-$(openssl rand -hex 24) -e APP_URL=https://ci.invalid -e PLATFORM_ADMIN_EMAILS=ops@ci.invalid"
           docker run --rm --network ci $ENV dostoori-app:ci node node_modules/prisma/build/index.js migrate deploy --schema prisma/schema.prisma
           docker run -d --name app --network ci -p 127.0.0.1:3000:3000 $ENV dostoori-app:ci

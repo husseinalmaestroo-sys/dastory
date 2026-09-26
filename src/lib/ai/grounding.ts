@@ -54,7 +54,8 @@ export type GroundingIssue =
   | "unsupported_number"
   | "law_mismatch"
   | "weak_support"
-  | "historical_unlabelled";
+  | "historical_unlabelled"
+  | "fabricated_url";
 
 export type ClaimKind = "quote" | "source_fact" | "inference" | "limitation";
 export type ClaimStatus = "supported" | "qualified" | "removed";
@@ -92,7 +93,7 @@ export type GroundingReport = {
 export const SUPPORT_MIN = 0.35;
 
 export const NUMBER_REDACTION = "[رقم غير مُتحقَّق منه]";
-export const INFERENCE_LABEL = " (استنتاج وليس نصاً صريحاً في المصدر)";
+export const INFERENCE_LABEL = " (استنتاج — لم يُتحقَّق من وروده نصاً في المصادر)";
 export const HISTORICAL_LABEL = " (نص سابق غير نافذ حالياً)";
 
 // Sentences that state a limitation of the sources rather than a legal rule.
@@ -111,6 +112,7 @@ const HIGH_RISK_RE = /يعاقب|عقوب|حبس|سجن|اشغال|غرام|اع
 const HISTORICAL_CUE_RE = /سابق|ملغ|قبل التعديل|لم يعد|غير نافذ|كان ينص|النسخه|المعدل|الملغي|previous|repealed|former/i;
 
 const REF_RE = /\[(\d{1,2})\]/g;
+const URL_RE = /\bhttps?:\/\/[^\s)\]»"]+|\bwww\.[^\s)\]»"]+/gi;
 const QUOTE_RE = /"([^"\n]{2,1500})"|«([^»\n]{2,1500})»|“([^”\n]{2,1500})”/g;
 
 const STOP = new Set(
@@ -162,7 +164,13 @@ export function splitSentences(paragraph: string): string[] {
       continue;
     }
     if (".؟!؛?".includes(ch)) {
-      if (ch === "." && /\d/.test(paragraph[i - 1] ?? "") && /\d/.test(paragraph[i + 1] ?? "")) continue;
+      if (ch === ".") {
+        const next = paragraph[i + 1] ?? "";
+        // Not a sentence end: a decimal, a dot inside a URL or token ("laws.example"),
+        // or the article abbreviation "م." before its number.
+        if (next && !/[\s["«“»”]/.test(next)) continue;
+        if (/(?:^|[\s(])م$/.test(buf.slice(0, -1))) continue;
+      }
       const trailing = paragraph.slice(i + 1).match(/^(\s*\[\d{1,2}\])+[.؟!؛]?/);
       if (trailing) {
         buf += trailing[0];
@@ -257,6 +265,14 @@ export function groundAnswer(answer: string, chunks: RetrievedChunk[], opts: Opt
         strippedCitations++;
         return "";
       });
+      // A URL is a citation too: only a cited source's own recorded URL may appear.
+      const allowedUrls = new Set(chunks.map((c) => c.source_url).filter((u): u is string => !!u));
+      let urlRemoved = false;
+      sentence = sentence.replace(URL_RE, (u) => {
+        if (allowedUrls.has(u)) return u;
+        urlRemoved = true;
+        return "";
+      });
       const ownRefs = [...new Set([...sentence.matchAll(REF_RE)].map((m) => Number(m[1])))];
       const labelMatch = sentence.match(LABEL_RE);
       const body = sentence.replace(LABEL_RE, "").replace(REF_RE, "").trim();
@@ -279,7 +295,8 @@ export function groundAnswer(answer: string, chunks: RetrievedChunk[], opts: Opt
       }
 
       const issues: GroundingIssue[] = [];
-      if (raw !== sentence) issues.push("invalid_citation");
+      if (strippedHere(raw, sentence)) issues.push("invalid_citation");
+      if (urlRemoved) issues.push("fabricated_url");
 
       // A claim without its own marker inherits the previous cited sentence's
       // sources in the same paragraph ("…[1]. وبالتالي يستحق العامل…").
@@ -355,7 +372,11 @@ export function groundAnswer(answer: string, chunks: RetrievedChunk[], opts: Opt
           claims.push({ text: sentence, refs, kind: "inference", status: "removed", issues, support: Number(support.toFixed(3)), evidence: null });
           continue;
         }
-        if (!labelledInference) text = appendLabel(text, INFERENCE_LABEL);
+        // Citation rule 7: a citation that does not support its claim is
+        // wrong even if the source exists — so the [n] markers come off and
+        // the sentence is labelled as an unverified inference.
+        text = text.replace(/\s*\[\d{1,2}\]/g, "");
+        text = appendLabel(text, INFERENCE_LABEL);
         kind = "inference";
       }
 
@@ -365,7 +386,9 @@ export function groundAnswer(answer: string, chunks: RetrievedChunk[], opts: Opt
         text = appendLabel(text, HISTORICAL_LABEL);
       }
 
-      const status: ClaimStatus = issues.some((i) => i === "unsupported_number" || i === "weak_support" || i === "historical_unlabelled")
+      const status: ClaimStatus = issues.some(
+        (i) => i === "unsupported_number" || i === "weak_support" || i === "historical_unlabelled" || i === "fabricated_url"
+      )
         ? "qualified"
         : "supported";
       claims.push({ text, refs, kind, status, issues, support: Number(support.toFixed(3)), evidence: bestEvidence(body, refs, chunks) });
@@ -391,6 +414,11 @@ export function groundAnswer(answer: string, chunks: RetrievedChunk[], opts: Opt
     claims,
     counts: { claims: counted.length, supported, qualified, removed, redactedNumbers, strippedCitations },
   };
+}
+
+/** True when stripping out-of-range markers changed the sentence. */
+function strippedHere(raw: string, sentence: string): boolean {
+  return (raw.match(REF_RE) ?? []).length > (sentence.match(REF_RE) ?? []).length;
 }
 
 /** Matches the figure `n` as a whole number, never inside a "[n]" citation marker. */

@@ -71,6 +71,8 @@ export type ChatMode =
   | "sources_only"
   | "no_evidence"
   | "law_not_in_corpus"
+  | "article_not_in_corpus"
+  | "decision_not_in_corpus"
   | "clarification"
   | "out_of_jurisdiction"
   | "general"
@@ -378,24 +380,37 @@ export async function runChatPipeline(input: ChatInput, caller: Caller, emit: Em
   if (analysis) emit("analysis", analysis);
 
   // 4. Deterministic short-circuits — no model call, nothing to hallucinate.
+  //    The messages never echo the lawyer's wording back (a mis-parsed name or
+  //    an injected phrase must not come back looking like our statement).
+  const shortCircuit = (answer: string, mode: ChatMode) =>
+    finish({ answer, mode, groundingLevel: "none", grounded: false, sources: [], claims: [], confidence: null, verification: null, gapTopics: [], analysis }, 0);
   if (search?.requestedLawMissing) {
-    const law = search.requestedLawMissing.slice(0, 80);
-    return finish(
-      {
-        answer: english
-          ? `The law named in the question ("${law}") is not in the available legal database, so the question cannot be answered from a verified source. Please consult the official text of that law.`
-          : `القانون المذكور في السؤال ("${law}") غير موجود في قاعدة البيانات القانونية المتاحة، لذلك لا أستطيع الإجابة عنه من مصدر موثّق، ولن أستعيض عنه بنص من تشريع آخر. راجع النص الرسمي لذلك القانون.`,
-        mode: "law_not_in_corpus",
-        groundingLevel: "none",
-        grounded: false,
-        sources: [],
-        claims: [],
-        confidence: null,
-        verification: null,
-        gapTopics: [],
-        analysis,
-      },
-      0
+    return shortCircuit(
+      english
+        ? "The law this question refers to is not in the available legal database, so the article cannot be quoted from a verified source, and no other law's article is substituted for it. Please consult the official text of that law."
+        : "القانون الذي يشير إليه السؤال غير موجود في قاعدة البيانات القانونية المتاحة، لذلك لا يمكن تقديم نص المادة المطلوبة من مصدر موثّق، ولن تُستبدل بها مادة من تشريع آخر. راجع النص الرسمي لذلك القانون.",
+      "law_not_in_corpus"
+    );
+  }
+  if (search?.requestedArticleMissing) {
+    return shortCircuit(
+      english
+        ? "The requested article number does not appear in the text of that law as held in the database. No other article is offered in its place; please check the article number."
+        : "رقم المادة المطلوب غير موجود في نص هذا القانون كما هو محفوظ في قاعدة البيانات، ولن تُعرض مادة أخرى على أنها هي. تحقّق من رقم المادة.",
+      "article_not_in_corpus"
+    );
+  }
+  if (search?.requestedDecisionMissing) {
+    return shortCircuit(
+      english
+        ? "The court decision referred to is not in the available database, so its content cannot be reported. No other decision is offered in its place."
+        : "القرار القضائي المشار إليه غير موجود في قاعدة البيانات المتاحة، لذلك لا يمكن بيان ما قضى به، ولن يُعرض قرار آخر على أنه هو.",
+      "decision_not_in_corpus"
+    );
+  }
+  if (search?.lawNotFound) {
+    notices.push(
+      "تنبيه: لم يُعثر في قاعدة البيانات على التشريع الذي يذكره السؤال بالاسم؛ المصادر المعروضة أدناه من تشريعات أخرى وقد لا تنطبق عليه."
     );
   }
   if (search?.articleAmbiguity) {

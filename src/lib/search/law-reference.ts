@@ -26,8 +26,11 @@ import { query } from "../db";
 export type LawReference = {
   /** Folded "kind + name" used for matching, e.g. "قانون العمل". */
   key: string;
-  /** As the lawyer wrote it (unfolded), for messages. */
+  /** As the lawyer wrote it (unfolded). Never echoed into an answer. */
   display: string;
+  /** Folded name words after the kind word, in order (for prefix matching). */
+  nameWords?: string[];
+  kind?: string;
 };
 
 const KIND_RE = /^(?:[وبلف])?(قانون|نظام|تعليمات)$/;
@@ -84,6 +87,10 @@ export function extractAllLawReferences(text: string): LawReference[] {
 
     const kind = t.match(KIND_RE);
     if (!kind) continue;
+    // "تعليمات نظام …" / "نظام قانون …" are not law names (the first is how an
+    // injection says "system instructions").
+    if (i + 1 < toks.length && KIND_RE.test(toks[i + 1].folded)) continue;
+    if (i > 0 && KIND_RE.test(toks[i - 1].folded)) continue;
     const name: { folded: string; raw: string }[] = [];
     for (let j = i + 1; j < toks.length && name.length < MAX_NAME_WORDS; j++) {
       const w = toks[j];
@@ -94,9 +101,31 @@ export function extractAllLawReferences(text: string): LawReference[] {
     push({
       key: `${kind[1]} ${name.map((w) => w.folded).join(" ")}`,
       display: `${kind[1]} ${name.map((w) => w.raw).join(" ")}`,
+      nameWords: name.map((w) => w.folded),
+      kind: kind[1],
     });
   }
   return found;
+}
+
+/**
+ * Resolves a reference against corpus titles, tolerating trailing words the
+ * extractor could not tell apart from the name ("قانون العمل التجريبي قبل
+ * التعديل", "قانون العقوبات تعاقب بالإعدام"): the longest prefix of the name
+ * that matches a title wins. A prefix never drops below two name words when
+ * the name has two or more — "قانون حماية المستهلك" must not fall back to
+ * "قانون حماية" and match "قانون حماية البيئة".
+ */
+export function resolveAgainstTitles(ref: LawReference, titles: SourceTitle[]): { ref: LawReference; sourceIds: number[] } {
+  const words = ref.nameWords;
+  if (!words || !ref.kind) return { ref, sourceIds: matchLawTitles(ref, titles) };
+  const min = Math.min(2, words.length);
+  for (let n = words.length; n >= min; n--) {
+    const candidate: LawReference = { ...ref, key: `${ref.kind} ${words.slice(0, n).join(" ")}`, nameWords: words.slice(0, n) };
+    const ids = matchLawTitles(candidate, titles);
+    if (ids.length > 0) return { ref: candidate, sourceIds: ids };
+  }
+  return { ref: { ...ref, key: `${ref.kind} ${words.slice(0, min).join(" ")}`, nameWords: words.slice(0, min) }, sourceIds: [] };
 }
 
 /**
@@ -167,5 +196,9 @@ function escapeRe(s: string): string {
 }
 
 export async function resolveLawSourceIds(ref: LawReference): Promise<number[]> {
-  return matchLawTitles(ref, await sourceTitles());
+  return resolveAgainstTitles(ref, await sourceTitles()).sourceIds;
+}
+
+export async function resolveLawReference(ref: LawReference): Promise<{ ref: LawReference; sourceIds: number[] }> {
+  return resolveAgainstTitles(ref, await sourceTitles());
 }

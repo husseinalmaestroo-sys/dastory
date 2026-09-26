@@ -18,7 +18,13 @@
     "verify": "tsx --tsconfig scripts/tsconfig.verify.json scripts/verify-pipeline.ts",
     "benchmark": "tsx --tsconfig scripts/tsconfig.verify.json scripts/benchmark.ts",
     "mine-failed-queries": "tsx --tsconfig scripts/tsconfig.verify.json scripts/mine-failed-queries.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:unit": "tsx --tsconfig scripts/tsconfig.verify.json --test tests/unit/*.test.ts",
+    "test:integration": "tsx --tsconfig scripts/tsconfig.verify.json --test --test-concurrency=1 tests/integration/*.test.ts",
+    "test:http": "tsx --tsconfig scripts/tsconfig.verify.json --test --test-concurrency=1 tests/http/*.test.ts",
+    "eval:offline": "tsx --tsconfig scripts/tsconfig.verify.json scripts/eval.ts --mode offline",
+    "eval:live": "tsx --tsconfig scripts/tsconfig.verify.json scripts/eval.ts --mode live",
+    "purge": "tsx --tsconfig scripts/tsconfig.verify.json scripts/purge-content.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.112.1",

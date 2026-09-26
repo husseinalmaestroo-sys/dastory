@@ -88,11 +88,20 @@ test("an out-of-range citation is stripped; with no valid source left the claim 
   assert.ok(r.claims[0].issues.includes("invalid_citation"));
 });
 
-test("a claim with little overlap with its source is labelled as inference, not shown as source fact", () => {
+test("a claim with little overlap with its source loses its citation and is labelled as inference (rule 7)", () => {
   const r = groundAnswer("ويحق للمستأجر المطالبة بتعويض عن الأضرار المعنوية والنفسية الناجمة عن التأخير [1].", [chunk()]);
   assert.equal(r.claims[0].kind, "inference");
   assert.ok(r.text.includes(INFERENCE_LABEL.trim()), r.text);
+  assert.ok(!r.text.includes("[1]"), "a citation that does not support the claim is removed");
   assert.equal(r.level, "partial");
+});
+
+test("an invented URL is removed; a cited source's recorded URL is kept", () => {
+  const r = groundAnswer("يلتزم المؤجر بتسليم المأجور في الموعد المتفق عليه كما في https://laws.example/fake/123 [1].", [chunk({ source_url: "https://moj.example/lease" })]);
+  assert.ok(!r.text.includes("laws.example"));
+  assert.ok(r.claims[0].issues.includes("fabricated_url"));
+  const ok = groundAnswer("يلتزم المؤجر بتسليم المأجور في الموعد المتفق عليه https://moj.example/lease [1].", [chunk({ source_url: "https://moj.example/lease" })]);
+  assert.ok(ok.text.includes("https://moj.example/lease"));
 });
 
 test("citing a superseded version without saying so gets the historical label", () => {

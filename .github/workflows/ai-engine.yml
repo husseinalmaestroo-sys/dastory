@@ -1,0 +1,60 @@
+name: ai-engine
+
+# Phase 2 CI for ailegal_hussein. Offline by design: deterministic test
+# providers + the synthetic fixture corpus, so it needs no API keys and no
+# network beyond package installs. The offline evaluation enforces the
+# pre-registered hard gates in eval/gates.json (exit 1 on any breach).
+on:
+  push:
+    branches: [ailegal-hussein, "claude/ailegal-hussein-*"]
+  pull_request:
+    branches: [ailegal-hussein]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ailegal_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -h 127.0.0.1"
+          --health-interval 5s --health-timeout 5s --health-retries 30
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/ailegal_test
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Typecheck
+        run: npx tsc --noEmit
+      - name: Pipeline checks (legacy harness)
+        run: npm run verify
+      - name: Unit tests
+        run: npm run test:unit
+      - name: Migrate
+        run: npx tsx scripts/migrate.ts
+      - name: Integration tests (Postgres + pgvector)
+        run: npm run test:integration
+      - name: Offline evaluation — hard gates
+        run: npm run eval:offline
+      - name: Build
+        run: npx next build
+      - name: HTTP boundary tests (next start)
+        run: npm run test:http
+      - name: Evaluation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-results
+          path: eval/results/
+          if-no-files-found: ignore

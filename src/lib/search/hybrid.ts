@@ -3,13 +3,13 @@ import { query, toVector } from "../db";
 import { logError } from "../error-log";
 import { getEmbeddingProvider } from "../ai";
 import { env } from "../env";
-import { foldForSearch } from "../ingest/clean";
+import { foldForSearch, normalizeDigits } from "../ingest/clean";
 import { normalizeQuery } from "./normalize";
 import { getCachedEmbedding, setCachedEmbedding } from "./embedding-cache";
 import { stemArabicText, stemArabicWord } from "./arabic-stem";
 import { localRerank } from "./local-rerank";
 import { parseIntent, resolveVersionScope } from "./intent";
-import { extractLawReference, resolveLawSourceIds } from "./law-reference";
+import { extractLawReference, resolveLawReference } from "./law-reference";
 import { getRerankProvider } from "../ai/rerank";
 import { resolveThresholds, gateChunk, computeConfidence, type ConfidenceResult } from "./confidence";
 import type { QueryType } from "./query-understanding";
@@ -156,11 +156,17 @@ export type SearchResult = {
    */
   lawReference?: { display: string; matchedSources: number } | null;
   /**
-   * Set when the question names a law that is NOT in the corpus. The chat
-   * pipeline answers "that law is not in the database" instead of letting
-   * another law's article of the same number stand in for it.
+   * Set when the question asks for an ARTICLE of a law that is NOT in the
+   * corpus. The chat pipeline answers "that law is not in the database"
+   * instead of letting another law's same-numbered article stand in for it.
    */
   requestedLawMissing?: string | null;
+  /** The question names a law no corpus title matches (conceptual question: a notice, not a refusal). */
+  lawNotFound?: boolean;
+  /** The named law is in the corpus but the requested article is not (hallucination trap). */
+  requestedArticleMissing?: string | null;
+  /** A decision asked for by number that the corpus does not hold. */
+  requestedDecisionMissing?: string | null;
   /**
    * Set when an article number was asked for without naming a law, several
    * laws in the corpus have that article, and nothing else in the question
@@ -225,9 +231,16 @@ export async function hybridSearch(
 
   // Which law, if any, the question names — scopes the exact-article arm and
   // detects a request for a law the corpus does not hold (law-reference.ts).
-  const lawRef = env.lawScopedExact ? extractLawReference(question) : null;
-  const lawSourceIds = lawRef ? await resolveLawSourceIds(lawRef) : null;
-  const requestedLawMissing = lawRef && lawSourceIds && lawSourceIds.length === 0 ? lawRef.display : null;
+  const extracted = env.lawScopedExact ? extractLawReference(question) : null;
+  const resolved = extracted ? await resolveLawReference(extracted) : null;
+  const lawRef = resolved?.ref ?? null;
+  const lawSourceIds = resolved ? resolved.sourceIds : null;
+  const lawNotFound = !!(lawRef && lawSourceIds && lawSourceIds.length === 0);
+  // Short-circuit only for a LOOKUP (an article number of a named law): then
+  // answering from another law's same-numbered article is certainly wrong.
+  // For a conceptual question the pipeline adds a notice instead — a
+  // mis-parsed name must never block an answerable question.
+  const requestedLawMissing = lawNotFound && intent.articleNumbers.length > 0 ? lawRef!.display : null;
 
   const searchText = expansion?.searchText?.trim() || question;
   const orGroup = expansion?.orGroup ?? "";
@@ -517,9 +530,32 @@ export async function hybridSearch(
   const confidenceFor = (chunks: RetrievedChunk[], reranked: boolean) =>
     computeConfidence(chunks, { queryType: expansion?.queryType, exactHit, reranked });
 
+  // The named law exists but the requested article is not in it (the "المادة
+  // 999" trap): nothing else should be offered as if it answered. Not
+  // asserted when the law has chunks whose article numbers were withheld
+  // (OCR'd text — ingest/pipeline.ts), since the article may be there unnumbered.
+  let requestedArticleMissing: string | null = null;
+  if (lawScoped && intent.articleNumbers.length > 0 && !rows.some((r) => r.exact_hit && lawSourceIds!.includes(Number(r.source_id)))) {
+    const unnumbered = await query<{ n: string }>(
+      `SELECT count(*)::text AS n FROM legal_documents WHERE source_id = ANY($1::bigint[]) AND article_number IS NULL`,
+      [lawSourceIds]
+    );
+    if (Number(unnumbered[0]?.n ?? 0) === 0) requestedArticleMissing = intent.articleNumbers[0];
+  }
+  // A court decision asked for by number ("القرار رقم 4567/2098") that the
+  // corpus does not hold. Only the explicit "قرار/حكم … N/YYYY" form counts —
+  // a bare "N/YYYY" is too often a date.
+  const explicitDecision = /(?:قرار|حكم|طعن|تمييز)\s*(?:رقم\s*)?\(?\s*\d{1,6}\s*[/\-]\s*\d{4}/.test(normalizeDigits(question));
+  const requestedDecisionMissing = explicitDecision && intent.decisionNumbers.length > 0 && !rows.some((r) => r.exact_hit && r.decision_number)
+    ? intent.decisionNumbers[0]
+    : null;
+
   const lawInfo = {
     lawReference: lawRef ? { display: lawRef.display, matchedSources: lawSourceIds?.length ?? 0 } : null,
     requestedLawMissing,
+    lawNotFound,
+    requestedArticleMissing,
+    requestedDecisionMissing,
     articleAmbiguity,
   };
   // Confidence is computed on the retrieved chunks as ranked; article parts

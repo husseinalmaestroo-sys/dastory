@@ -22,7 +22,7 @@ export default function DocGenPage() {
     const map: Record<string, string> = {
       'صحيفة دعوى': `بسم الله الرحمن الرحيم\nالمملكة الأردنية الهاشمية — محكمة ${court}\n\nصحيفة دعوى — رقم ${n}\n\nالطرف الأول (المدعي): ${p}\nالطرف الثاني (المدعى عليه): ${d}\n\nالموضوع:\n${s}\n\nيرجو المدعي التفضل بالنظر في دعواه وفق الأصول القانونية والحكم لصالحه.\n\nعمّان، ${date}\n\nتوقيع المحامي: ___________`,
       'لائحة جوابية': `بسم الله الرحمن الرحيم\nالمملكة الأردنية الهاشمية — محكمة ${court}\n\nلائحة جوابية — القضية رقم ${n}\n\nالمدعي: ${p}\nالمدعى عليه: ${d}\n\nبالإشارة إلى لائحة الدعوى، نرد عليها ونفنّدها:\n${s}\n\nنلتمس من عدالة المحكمة رد الدعوى لعدم الصحة وإلزام المدعي بالرسوم.\n\nعمّان، ${date}`,
-      'مذكرة دفاع': `بسم الله الرحمن الرحيم\nالمملكة الأردنية الهاشمية — محكمة ${court}\n\nمذكرة دفاع — القضية رقم ${n}\n\nالموكل: ${p}\nالخصم: ${d}\n\nأولاً — من حيث الوقائع:\n${s}\n\nثانياً — من حيث القانون:\nاستناداً لأحكام القانون الأردني المعمول به، يثبت للموكل حقه الكامل.\n\nالطلب: إصدار الحكم لصالح الموكل مع إلزام الخصم بالرسوم وأتعاب المحاماة.\n\nعمّان، ${date}`,
+      'مذكرة دفاع': `بسم الله الرحمن الرحيم\nالمملكة الأردنية الهاشمية — محكمة ${court}\n\nمذكرة دفاع — القضية رقم ${n}\n\nالموكل: ${p}\nالخصم: ${d}\n\nأولاً — من حيث الوقائع:\n${s}\n\nثانياً — من حيث القانون:\n[اذكر هنا الأسانيد القانونية والمواد ذات الصلة]\n\nالطلب: إصدار الحكم لصالح الموكل مع إلزام الخصم بالرسوم وأتعاب المحاماة.\n\nعمّان، ${date}`,
       'إنذار عدلي': `بسم الله الرحمن الرحيم\nإنذار عدلي\n\nأنا الموقّع أدناه، ${p}، أُنذر السيد / ${d} بما يلي:\n${s}\n\nوأُحذّره من مغبّة الإخلال بالتزاماته، مع الاحتفاظ بكامل حقوقي القانونية.\n\nعمّان، ${date}`,
       'وكالة قانونية': `بسم الله الرحمن الرحيم\nوكالة قانونية\n\nأنا الموكّل: ${p}\nأوكّل وأُفوّض المحامي / ${d}\n\nللنيابة عني في: ${s}\n\nوذلك أمام محكمة ${court} ودرجاتها المختلفة.\n\nصدر هذا التوكيل بتاريخ: ${date}\n\nتوقيع الموكّل: ___________`,
       'عقد': `بسم الله الرحمن الرحيم\nعقد\n\nمحرّر في عمّان بتاريخ: ${date}\n\nالطرف الأول: ${p}\nالطرف الثاني: ${d}\n\nالموضوع: ${s}\n\nاتفق الطرفان على البنود المذكورة، وتعهّد كل منهما بالالتزام بها وفق أحكام القانون الأردني.\n\nتوقيع الطرف الأول: ___________     توقيع الطرف الثاني: ___________`,
@@ -31,10 +31,13 @@ export default function DocGenPage() {
   }
 
   const printDoc = () => {
+    // Escaped: the template embeds whatever was typed into the form, and this
+    // is written as HTML into a same-origin popup.
     const content = getContent()
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
     const win = window.open('', '_blank', 'width=800,height=900')
     if (!win) return
-    win.document.write(`<!DOCTYPE html><html dir="rtl"><head><meta charset="utf-8"><title>${selected}</title><style>body{font-family:Arial,sans-serif;font-size:14pt;line-height:2;padding:60px 80px;color:#000;direction:rtl;white-space:pre-wrap}@page{margin:2cm}@media print{body{padding:0}}</style></head><body>${content.replace(/\n/g, '<br>')}</body></html>`)
+    win.document.write(`<!DOCTYPE html><html dir="rtl"><head><meta charset="utf-8"><title>${selected.replace(/</g, '&lt;')}</title><style>body{font-family:Arial,sans-serif;font-size:14pt;line-height:2;padding:60px 80px;color:#000;direction:rtl;white-space:pre-wrap}@page{margin:2cm}@media print{body{padding:0}}</style></head><body>${content.replace(/\n/g, '<br>')}</body></html>`)
     win.document.close()
     setTimeout(() => { win.focus(); win.print() }, 400)
   }
@@ -43,7 +46,7 @@ export default function DocGenPage() {
 
   return (
     <div className="pg">
-      <SectionHeader title="إنشاء المستندات القانونية" subtitle="توليد مستندات احترافية في ثوانٍ" />
+      <SectionHeader title="إنشاء المستندات القانونية" subtitle="قوالب نصية ثابتة تُملأ بالبيانات التي تُدخلها — ليست صياغة بالذكاء الاصطناعي ولا رأياً قانونياً. راجع المستند وأكمله قبل استخدامه." />
       <div className="g3" style={{ marginBottom: 16 }}>
         {docTypes.map(([icon, label]) => (
           <button key={label} className={`ctc${selected === label ? ' sel' : ''}`} onClick={() => { setSelected(label); setGenerated(false) }}>
@@ -68,14 +71,14 @@ export default function DocGenPage() {
               <textarea className="fi" style={{ minHeight: 100 }} value={subject} onChange={e => setSubject(e.target.value)} placeholder="اشرح موضوع المستند..." />
             </Field>
           </div>
-          <button className="dbtn dbtn-p" style={{ marginTop: 10 }} onClick={() => setGenerated(true)}>✨ توليد المستند</button>
+          <button className="dbtn dbtn-p" style={{ marginTop: 10 }} onClick={() => setGenerated(true)}>📄 إنشاء من القالب</button>
         </div>
         <div className="card">
           <div className="ct">👁️ المعاينة</div>
           <div style={{ background: '#fff', borderRadius: 8, padding: 16, minHeight: 220, color: '#1E293B', fontSize: '.8rem', lineHeight: 1.9 }}>
             {generated
               ? <pre style={{ whiteSpace: 'pre-wrap', margin: 0, fontFamily: 'inherit', fontSize: '.8rem', lineHeight: 1.9 }}>{getContent()}</pre>
-              : <div style={{ textAlign: 'center', color: '#94A3B8', marginTop: 24 }}>أدخل البيانات واضغط "توليد المستند"</div>
+              : <div style={{ textAlign: 'center', color: '#94A3B8', marginTop: 24 }}>أدخل البيانات واضغط "إنشاء من القالب"</div>
             }
           </div>
           {generated && (

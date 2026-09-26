@@ -16,11 +16,10 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { Role } from '@prisma/client'
 import { GET as adminOverview } from '@/app/api/admin/overview/route'
 import { GET as trialRequestsGet } from '@/app/api/trial-requests/route'
-import { cleanupOffice, createTestOfficeUser, readJson, testRequest, type TestUser } from './helpers'
+import { cleanupOffice, createPlatformAdmin, createTestOfficeUser, readJson, testRequest, type TestUser } from './helpers'
 import { prisma } from '@/lib/prisma'
 
 const TAG = `admin-ovw-${Date.now()}`
-const ORIGINAL_ADMIN_EMAILS = process.env.PLATFORM_ADMIN_EMAILS
 
 let admin: TestUser
 let adminOfficeId: string
@@ -65,9 +64,8 @@ async function makeOfficeWithSubscription(name: string, status: 'ACTIVE' | 'TRIA
 }
 
 beforeAll(async () => {
-  admin = await createTestOfficeUser({ role: Role.OFFICE_MANAGER })
+  admin = await createPlatformAdmin()
   adminOfficeId = admin.officeId
-  process.env.PLATFORM_ADMIN_EMAILS = admin.email
 
   const plan = await prisma.plan.upsert({
     where: { key: 'basic' },
@@ -101,8 +99,6 @@ beforeAll(async () => {
 afterAll(async () => {
   await prisma.trialRequest.deleteMany({ where: { id: trialRequestId } })
   await Promise.all([activeOfficeId, trialingOfficeId, adminOfficeId].filter(Boolean).map(cleanupOffice))
-  if (ORIGINAL_ADMIN_EMAILS === undefined) delete process.env.PLATFORM_ADMIN_EMAILS
-  else process.env.PLATFORM_ADMIN_EMAILS = ORIGINAL_ADMIN_EMAILS
 })
 
 describe('admin overview — real numbers, not hardcoded example rows', () => {

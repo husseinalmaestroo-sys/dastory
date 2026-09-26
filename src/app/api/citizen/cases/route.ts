@@ -4,6 +4,7 @@ import { requireCitizenUser } from '@/lib/auth-server'
 import { buildPage, combineWhere, cursorWhereClause, paginationHeaders, parsePagination } from '@/lib/pagination'
 import type { Prisma } from '@prisma/client'
 import { withErrorHandling } from '@/lib/api-handler'
+import { CITIZEN_CASE_SELECT } from '@/lib/citizen-fields'
 
 const DEFAULT_LIMIT = 200
 
@@ -22,16 +23,8 @@ export const GET = withErrorHandling(async (req: NextRequest) => {
 
   const rows = await prisma.case.findMany({
     where,
-    include: {
-      lawyer: { select: { name: true } },
-      sessions: {
-        where: { status: 'UPCOMING' },
-        select: { id: true, date: true, time: true, court: true, status: true },
-        orderBy: { date: 'asc' },
-        take: 3,
-      },
-      _count: { select: { sessions: true, documents: true } },
-    },
+    // Explicit allow-list — never internal notes/ownership (citizen-fields.ts).
+    select: CITIZEN_CASE_SELECT,
     orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     take: limit + 1,
   })

@@ -20,6 +20,19 @@ import bcrypt from 'bcryptjs'
 import { mkdir, writeFile } from 'fs/promises'
 import { join } from 'path'
 
+// This script WIPES offices named Firm-01..Firm-10 and creates accounts with
+// a fixed, published password — never against production. Requires an
+// explicit opt-in and refuses NODE_ENV=production outright.
+if (process.env.NODE_ENV === 'production') {
+  console.error('Refusing to run the pilot audit seed with NODE_ENV=production.')
+  process.exit(1)
+}
+if (process.env.ALLOW_PILOT_SEED !== 'true') {
+  console.error('Refusing to run: this seed wipes Firm-NN offices and creates known-password accounts. ' +
+    'Set ALLOW_PILOT_SEED=true to confirm this is a disposable test database.')
+  process.exit(1)
+}
+
 const prisma = new PrismaClient()
 const FIRM_COUNT = 10
 const PASSWORD = 'PilotAudit@2025'

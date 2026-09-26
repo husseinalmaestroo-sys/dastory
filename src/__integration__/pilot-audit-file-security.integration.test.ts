@@ -77,7 +77,7 @@ describe('file upload security — the route rejects what its claimed extension/
     const oversized = new Uint8Array(20 * 1024 * 1024 + 1)
     oversized.set(PDF_MAGIC)
     const res = await upload(user, 'huge.pdf', oversized, 'application/pdf')
-    expect(res.status).toBe(400)
+    expect(res.status).toBe(413) // Payload Too Large (was a generic 400)
     const count = await prisma.document.count({ where: { officeId: user.officeId } })
     expect(count).toBe(0)
   })

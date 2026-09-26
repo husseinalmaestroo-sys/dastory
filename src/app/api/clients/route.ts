@@ -7,8 +7,12 @@ import { auditLog } from '@/lib/audit'
 import { buildPage, combineWhere, cursorWhereClause, paginationHeaders, parsePagination } from '@/lib/pagination'
 import type { Prisma } from '@prisma/client'
 import { withErrorHandling } from '@/lib/api-handler'
+import { isValidEmail, validateFields } from '@/lib/validation'
+import { CLIENT_FIELDS, required } from '@/lib/field-specs'
 
 const DEFAULT_LIMIT = 200
+
+const CLIENT_FIELDS_CREATE = required(CLIENT_FIELDS, 'name')
 
 export const GET = withErrorHandling(async (req: NextRequest) => {
   const auth = await requireOfficeUser(req)
@@ -50,17 +54,20 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
   if (limited) return limited
 
   const body = await req.json().catch(() => null)
-  if (!body || typeof body.name !== 'string' || !body.name.trim()) {
-    return NextResponse.json({ error: 'اسم العميل مطلوب' }, { status: 400 })
+  if (!body || typeof body !== 'object') return NextResponse.json({ error: 'اسم العميل مطلوب' }, { status: 400 })
+  const v = validateFields(body, CLIENT_FIELDS_CREATE)
+  if (!v.ok) return NextResponse.json({ error: v.error }, { status: 400 })
+  if (v.values.email && !isValidEmail(v.values.email)) {
+    return NextResponse.json({ error: 'البريد الإلكتروني غير صحيح' }, { status: 400 })
   }
 
   const client = await prisma.client.create({
     data: {
-      name: body.name.trim(),
-      phone: typeof body.phone === 'string' && body.phone.trim() ? body.phone.trim() : null,
-      email: typeof body.email === 'string' && body.email.trim() ? body.email.trim().toLowerCase() : null,
-      idNumber: typeof body.idNumber === 'string' && body.idNumber.trim() ? body.idNumber.trim() : null,
-      address: typeof body.address === 'string' && body.address.trim() ? body.address.trim() : null,
+      name: v.values.name as string,
+      phone: v.values.phone ?? null,
+      email: v.values.email ? v.values.email.toLowerCase() : null,
+      idNumber: v.values.idNumber ?? null,
+      address: v.values.address ?? null,
       officeId: auth.user.officeId,
       ownerId: auth.user.id,
     },

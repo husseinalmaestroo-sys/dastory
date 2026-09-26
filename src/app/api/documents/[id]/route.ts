@@ -6,6 +6,7 @@ import { rateLimit } from '@/lib/api-security'
 import { auditLog } from '@/lib/audit'
 import { deleteDocumentFile } from '@/lib/document-storage'
 import { withErrorHandling } from '@/lib/api-handler'
+import { documentIsInSignatureTrail, signedDocumentConflict } from '@/lib/signature-guards'
 
 export const DELETE = withErrorHandling(async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const auth = await requireOfficeUser(req)
@@ -19,6 +20,12 @@ export const DELETE = withErrorHandling(async (req: NextRequest, { params }: { p
     select: { id: true, url: true, name: true, caseId: true },
   })
   if (!existing) return NextResponse.json({ error: 'غير موجود' }, { status: 404 })
+
+  // A signed document — or the signature image of one — is an audit trail.
+  if (await documentIsInSignatureTrail(existing.id)) {
+    await auditLog(req, auth.user, 'document.delete_blocked', { entityType: 'document', entityId: existing.id, metadata: { reason: 'signed_document' } })
+    return signedDocumentConflict('document')
+  }
 
   // DB row first — if this fails, nothing else has happened. Only once the
   // row is confirmed gone do we touch the file, so a failed delete never

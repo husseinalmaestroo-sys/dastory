@@ -4,16 +4,13 @@ import { prisma } from '@/lib/prisma'
 import { signToken } from '@/lib/jwt'
 import { enforceRequestSecurity, isHttpsRequest } from '@/lib/api-security'
 import { auditLog } from '@/lib/audit'
-import { isPlatformAdminEmail } from '@/lib/auth-server'
+import { isPlatformAdmin } from '@/lib/auth-server'
 import { issueAndSendVerificationEmail } from '@/lib/email-verification'
 import { startTrialSubscription } from '@/lib/billing'
+import { withErrorHandling } from '@/lib/api-handler'
+import { isValidEmail, LIMITS, textField, validatePassword } from '@/lib/validation'
 
-function isValidEmail(value: unknown) {
-  return typeof value === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())
-}
-
-export async function POST(req: NextRequest) {
-  try {
+export const POST = withErrorHandling(async (req: NextRequest) => {
     const blocked = enforceRequestSecurity(req, 'auth:signup', { limit: 5, windowMs: 10 * 60_000 })
     if (blocked) return blocked
 
@@ -23,12 +20,15 @@ export async function POST(req: NextRequest) {
     const fullName = typeof name === 'string' ? name.trim() : ''
     const cleanOfficeName = typeof officeName === 'string' ? officeName.trim() : ''
 
-    if (!fullName || fullName.length > 120 || cleanOfficeName.length > 140 || !isValidEmail(normalizedEmail) || typeof password !== 'string') {
+    if (!fullName || fullName.length > LIMITS.personName || cleanOfficeName.length > LIMITS.officeName || !isValidEmail(normalizedEmail) || typeof password !== 'string') {
       return NextResponse.json({ error: 'الاسم والبريد وكلمة المرور مطلوبة' }, { status: 400 })
     }
-    if (password.length < 8) {
-      return NextResponse.json({ error: 'كلمة المرور يجب أن تكون 8 أحرف على الأقل' }, { status: 400 })
-    }
+    const passwordError = validatePassword(password)
+    if (passwordError) return NextResponse.json({ error: passwordError }, { status: 400 })
+    const phoneField = textField(phone, { label: 'الهاتف', max: LIMITS.phone })
+    if (!phoneField.ok) return NextResponse.json({ error: phoneField.error }, { status: 400 })
+    const barField = textField(barNumber, { label: 'رقم النقابة', max: LIMITS.barNumber })
+    if (!barField.ok) return NextResponse.json({ error: barField.error }, { status: 400 })
 
     const existing = await prisma.user.findUnique({ where: { email: normalizedEmail } })
     if (existing) return NextResponse.json({ error: 'البريد الإلكتروني مستخدم مسبقاً' }, { status: 409 })
@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
       const office = await tx.office.create({
         data: {
           name: cleanOfficeName || `مكتب ${fullName}`,
-          phone: typeof phone === 'string' && phone.trim() ? phone.trim() : null,
+          phone: phoneField.value ?? null,
         },
       })
 
@@ -48,8 +48,8 @@ export async function POST(req: NextRequest) {
           email: normalizedEmail,
           password: hashed,
           role: 'OFFICE_MANAGER',
-          phone: typeof phone === 'string' && phone.trim() ? phone.trim() : null,
-          barNumber: typeof barNumber === 'string' && barNumber.trim() ? barNumber.trim() : null,
+          phone: phoneField.value ?? null,
+          barNumber: barField.value ?? null,
           officeId: office.id,
         },
         include: { office: { select: { name: true } } },
@@ -77,7 +77,7 @@ export async function POST(req: NextRequest) {
         role: created.role,
         officeId: created.officeId,
         officeName: created.office.name,
-        isPlatformAdmin: created.role === 'OFFICE_MANAGER' && isPlatformAdminEmail(created.email),
+        isPlatformAdmin: isPlatformAdmin(created),
         barNumber: created.barNumber,
         clientId: null,
         twoFactorEnabled: created.twoFactorEnabled,
@@ -102,7 +102,7 @@ export async function POST(req: NextRequest) {
     // Best-effort: a transient mail failure shouldn't fail account
     // creation. The user can always trigger a resend once logged in.
     try {
-      await issueAndSendVerificationEmail(req, created)
+      await issueAndSendVerificationEmail(created)
     } catch (err) {
       console.error('[signup] failed to send verification email', err)
     }
@@ -110,8 +110,4 @@ export async function POST(req: NextRequest) {
     await startTrialSubscription(created.officeId)
 
     return res
-  } catch (err) {
-    console.error(err)
-    return NextResponse.json({ error: 'خطأ في الخادم' }, { status: 500 })
-  }
-}
+})

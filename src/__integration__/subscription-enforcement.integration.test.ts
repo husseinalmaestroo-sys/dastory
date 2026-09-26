@@ -14,17 +14,14 @@ import { GET as officeExport } from '@/app/api/office/export/route'
 import { POST as adminActivate } from '@/app/api/admin/offices/[officeId]/activate/route'
 import { POST as adminSuspend } from '@/app/api/admin/offices/[officeId]/suspend/route'
 import { POST as adminExtendTrial } from '@/app/api/admin/offices/[officeId]/extend-trial/route'
-import { cleanupOffice, createTestOfficeUser, readJson, testParams, testRequest, type TestUser } from './helpers'
+import { cleanupOffice, createPlatformAdmin, createTestOfficeUser, readJson, testParams, testRequest, type TestUser } from './helpers'
 import { prisma } from '@/lib/prisma'
 
 const DAY = 24 * 60 * 60_000
 const createdOffices: string[] = []
-const ORIGINAL_ADMIN_EMAILS = process.env.PLATFORM_ADMIN_EMAILS
 
 afterAll(async () => {
   await Promise.all(createdOffices.splice(0).map(cleanupOffice))
-  if (ORIGINAL_ADMIN_EMAILS === undefined) delete process.env.PLATFORM_ADMIN_EMAILS
-  else process.env.PLATFORM_ADMIN_EMAILS = ORIGINAL_ADMIN_EMAILS
 })
 
 async function officeWithSubscription(
@@ -43,14 +40,9 @@ async function officeWithSubscription(
 }
 
 async function asPlatformAdmin<T>(fn: (admin: TestUser) => Promise<T>): Promise<T> {
-  const admin = await createTestOfficeUser({ role: Role.OFFICE_MANAGER })
+  const admin = await createPlatformAdmin()
   createdOffices.push(admin.officeId)
-  process.env.PLATFORM_ADMIN_EMAILS = admin.email
-  try {
-    return await fn(admin)
-  } finally {
-    delete process.env.PLATFORM_ADMIN_EMAILS
-  }
+  return fn(admin)
 }
 
 describe('subscription enforcement — grace blocks writes, the full wall blocks everything', () => {

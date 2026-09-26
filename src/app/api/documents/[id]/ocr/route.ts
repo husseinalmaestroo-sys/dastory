@@ -51,6 +51,6 @@ export const POST = withErrorHandling(async (req: NextRequest, { params }: Route
       metadata: { reason: err instanceof ExtractionError ? 'extraction_error' : 'unexpected_error' },
     })
     if (!(err instanceof ExtractionError)) console.error('[documents/ocr] unexpected failure', err)
-    return NextResponse.json({ error: message }, { status: 422 })
+    return NextResponse.json({ error: message }, { status: err instanceof ExtractionError ? err.status : 422 })
   }
 })

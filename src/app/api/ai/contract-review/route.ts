@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { requireOfficeUser } from '@/lib/auth-server'
+import { requireOfficeUser, requireVerifiedEmail } from '@/lib/auth-server'
 import { documentVisibilityWhere } from '@/lib/tenant-scope'
 import { rateLimit } from '@/lib/api-security'
 import { auditLog } from '@/lib/audit'
 import { withErrorHandling } from '@/lib/api-handler'
-import { isUnderMonthlyAiCap, logAiUsage } from '@/lib/ai/usage'
+import { completeAiCall, reserveAiCall } from '@/lib/ai/usage'
 import { extractText, ExtractionError } from '@/lib/ai/extract-text'
 import { readDocumentFile } from '@/lib/document-storage'
 import { analyzeContract, isLegalRagConfigured, LegalRagError } from '@/lib/ai/legal-rag-client'
@@ -53,6 +53,8 @@ function isValidResult(value: unknown): value is ContractReviewResult {
 export const POST = withErrorHandling(async (req: NextRequest) => {
   const auth = await requireOfficeUser(req)
   if (!auth.ok) return auth.response
+  const unverified = requireVerifiedEmail(auth.user)
+  if (unverified) return unverified
 
   const limited = rateLimit(req, `ai:contract-review:${auth.user.id}`, { limit: 10, windowMs: 60 * 60_000 })
   if (limited) return limited
@@ -67,10 +69,6 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
   if (!isLegalRagConfigured()) {
     return NextResponse.json({ error: 'خدمة مراجعة العقود بالذكاء الاصطناعي غير مُفعّلة على هذا الخادم حالياً' }, { status: 503 })
   }
-  if (!(await isUnderMonthlyAiCap(auth.user.officeId))) {
-    return NextResponse.json({ error: 'تم بلوغ الحد الشهري لاستخدام أدوات الذكاء الاصطناعي لهذا المكتب' }, { status: 429 })
-  }
-
   let bytes: Buffer
   try {
     bytes = await readDocumentFile(doc.url)
@@ -82,22 +80,27 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
   try {
     extracted = await extractText(bytes, doc.type)
   } catch (err) {
-    const message = err instanceof ExtractionError ? err.message : 'تعذّر استخراج نص العقد من هذا الملف'
-    return NextResponse.json({ error: message }, { status: 422 })
+    if (err instanceof ExtractionError) return NextResponse.json({ error: err.message }, { status: err.status })
+    console.error('[ai/contract-review] unexpected extraction failure', err)
+    return NextResponse.json({ error: 'تعذّر استخراج نص العقد من هذا الملف' }, { status: 422 })
   }
 
   const contractText = extracted.text.slice(0, MAX_CONTRACT_CHARS)
   const truncated = extracted.text.length > MAX_CONTRACT_CHARS
+
+  // Reserved only now: a document that can't even be read never counts
+  // against the office's monthly AI cap.
+  const reservation = await reserveAiCall(auth.user, 'contract_review')
+  if (!reservation) {
+    return NextResponse.json({ error: 'تم بلوغ الحد الشهري لاستخدام أدوات الذكاء الاصطناعي لهذا المكتب' }, { status: 429 })
+  }
 
   const start = Date.now()
   try {
     const result = await analyzeContract(contractText, auth.user.officeId)
 
     if (!isValidResult(result)) {
-      await logAiUsage(auth.user, 'contract_review', {
-        model: 'ailegal_hussein', inputTokens: 0, outputTokens: 0,
-        latencyMs: Date.now() - start, success: false, errorCode: 'malformed_output',
-      })
+      await completeAiCall(reservation, { success: false, latencyMs: Date.now() - start, errorCode: 'malformed_output' })
       return NextResponse.json({ error: 'تعذّر تحليل استجابة الذكاء الاصطناعي — حاول مرة أخرى' }, { status: 502 })
     }
 
@@ -118,10 +121,7 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
       entityType: 'document', entityId: doc.id,
       metadata: { extractionMethod: extracted.method, truncated, riskCount: verifiedRisks.length, sourceCount: sources.length },
     })
-    await logAiUsage(auth.user, 'contract_review', {
-      model: 'ailegal_hussein', inputTokens: 0, outputTokens: 0,
-      latencyMs: Date.now() - start, success: true,
-    })
+    await completeAiCall(reservation, { success: true, latencyMs: Date.now() - start })
 
     return NextResponse.json({
       summary: result.summary,
@@ -135,9 +135,8 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
     })
   } catch (err) {
     const ragError = err instanceof LegalRagError ? err : null
-    await logAiUsage(auth.user, 'contract_review', {
-      model: 'ailegal_hussein', inputTokens: 0, outputTokens: 0,
-      latencyMs: Date.now() - start, success: false,
+    await completeAiCall(reservation, {
+      success: false, latencyMs: Date.now() - start,
       errorCode: ragError ? String(ragError.status) : 'unknown_error',
     })
     if (ragError) return NextResponse.json({ error: ragError.message }, { status: ragError.status })

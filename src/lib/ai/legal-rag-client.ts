@@ -22,6 +22,16 @@ export function isLegalRagConfigured(): boolean {
 
 export const LEGAL_RAG_TIMEOUT_MS = 30_000
 
+/**
+ * Deadline for one upstream call. `AI_LEGAL_SERVICE_TIMEOUT_MS`, if set,
+ * overrides every per-endpoint default (operators tuning for a slow
+ * upstream; tests exercising the stall path without waiting 30 s).
+ */
+function deadlineMs(defaultMs: number): number {
+  const override = Number(process.env.AI_LEGAL_SERVICE_TIMEOUT_MS)
+  return Number.isFinite(override) && override > 0 ? override : defaultMs
+}
+
 export class LegalRagError extends Error {
   status: number
   constructor(message: string, status: number) {
@@ -78,13 +88,20 @@ export async function askLegalRag(
   officeId: string,
   history?: ChatTurn[]
 ): Promise<LegalRagResult> {
-  const res = await callLegalService('/api/chat', officeId, {
-    method: 'POST',
-    body: JSON.stringify({ question, filters, history: history?.length ? history : undefined }),
-    extraHeaders: { 'Content-Type': 'application/json' },
-  })
-  if (!res.ok || !res.body) throw new LegalRagError('تعذّر الحصول على استجابة من خدمة البحث القانوني', 502)
-  return consumeChatStream(res.body)
+  return callLegalService(
+    '/api/chat',
+    officeId,
+    {
+      method: 'POST',
+      body: JSON.stringify({ question, filters, history: history?.length ? history : undefined }),
+      extraHeaders: { 'Content-Type': 'application/json' },
+    },
+    LEGAL_RAG_TIMEOUT_MS,
+    async (res) => {
+      if (!res.ok || !res.body) throw new LegalRagError('تعذّر الحصول على استجابة من خدمة البحث القانوني', 502)
+      return consumeChatStream(res.body)
+    }
+  )
 }
 
 function asString(v: unknown): string | undefined {
@@ -98,61 +115,90 @@ function serviceCoordinates(): { baseUrl: string; serviceKey: string } | null {
   return { baseUrl, serviceKey }
 }
 
+/** Upstream error text is relayed to users; cap it so an upstream fault can't dump arbitrary internals into a response. */
+const MAX_UPSTREAM_MESSAGE = 300
+function upstreamMessage(value: unknown, fallback: string): string {
+  return typeof value === 'string' && value.trim() && value.length <= MAX_UPSTREAM_MESSAGE ? value : fallback
+}
+
 /**
- * Shared plumbing for the three plain-JSON/binary ailegal_hussein endpoints
- * (/api/cases, /api/draft, /api/draft/export) — unlike /api/chat, none of
- * these stream SSE, so there's no frame parsing here, just the same auth
- * headers, timeout, and upstream-status mapping askLegalRag already has.
+ * Shared plumbing for every ailegal_hussein call: auth headers, upstream
+ * status mapping, and ONE deadline that covers the whole exchange —
+ * connecting, response headers AND reading the body. The timer used to be
+ * cleared as soon as headers arrived, so an upstream that sent headers and
+ * then stalled mid-body (SSE or JSON) held the request open indefinitely.
+ * `consume` reads the body inside the deadline; aborting the controller also
+ * aborts an in-progress body read.
  */
-async function callLegalService(
+async function callLegalService<T>(
   path: string,
   officeId: string,
   init: { method: 'POST'; body: BodyInit; extraHeaders?: Record<string, string> },
-  timeoutMs = LEGAL_RAG_TIMEOUT_MS
-): Promise<Response> {
+  timeoutMs: number,
+  consume: (res: Response) => Promise<T>
+): Promise<T> {
   const coords = serviceCoordinates()
   if (!coords) throw new LegalRagError('خدمة الذكاء الاصطناعي القانوني غير مُفعّلة على هذا الخادم حالياً', 503)
 
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), timeoutMs)
-  let res: Response
+  let timedOut = false
+  const timeout = setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, deadlineMs(timeoutMs))
+
   try {
-    res = await fetch(`${coords.baseUrl}${path}`, {
-      method: init.method,
-      headers: {
-        'X-Internal-Service-Key': coords.serviceKey,
-        'X-Dostoori-Office-Id': officeId,
-        ...init.extraHeaders,
-      },
-      body: init.body,
-      signal: controller.signal,
-    })
-  } catch (err) {
-    const isAbort = err instanceof Error && err.name === 'AbortError'
-    throw new LegalRagError(
-      isAbort ? 'انتهت مهلة الاتصال بخدمة الذكاء الاصطناعي القانوني' : 'تعذّر الاتصال بخدمة الذكاء الاصطناعي القانوني',
-      isAbort ? 504 : 502
-    )
+    let res: Response
+    try {
+      res = await fetch(`${coords.baseUrl}${path}`, {
+        method: init.method,
+        headers: {
+          'X-Internal-Service-Key': coords.serviceKey,
+          'X-Dostoori-Office-Id': officeId,
+          ...init.extraHeaders,
+        },
+        body: init.body,
+        signal: controller.signal,
+      })
+    } catch {
+      throw timedOut
+        ? new LegalRagError('انتهت مهلة الاتصال بخدمة الذكاء الاصطناعي القانوني', 504)
+        : new LegalRagError('تعذّر الاتصال بخدمة الذكاء الاصطناعي القانوني', 502)
+    }
+
+    if (res.status === 401) throw new LegalRagError('فشل التحقق من خدمة الذكاء الاصطناعي القانوني — مفتاح الخدمة غير متطابق', 502)
+    if (res.status === 429) {
+      const retryAfter = res.headers.get('retry-after')
+      const seconds = retryAfter && /^\d{1,6}$/.test(retryAfter) ? retryAfter : null
+      throw new LegalRagError(
+        seconds ? `تجاوزت الخدمة الحد المسموح، حاول بعد ${seconds} ثانية` : 'تجاوزت الخدمة الحد المسموح، حاول لاحقاً',
+        429
+      )
+    }
+    if (res.status === 503) throw new LegalRagError('الخدمة متوقفة مؤقتاً (بلغت الحد اليومي للإنفاق)', 503)
+
+    try {
+      return await consume(res)
+    } catch (err) {
+      if (timedOut) throw new LegalRagError('انتهت مهلة انتظار الرد من خدمة الذكاء الاصطناعي القانوني', 504)
+      if (err instanceof LegalRagError) throw err
+      throw new LegalRagError('وصلت استجابة غير صالحة من خدمة الذكاء الاصطناعي القانوني', 502)
+    }
   } finally {
     clearTimeout(timeout)
   }
-
-  if (res.status === 401) throw new LegalRagError('فشل التحقق من خدمة الذكاء الاصطناعي القانوني — مفتاح الخدمة غير متطابق', 502)
-  if (res.status === 429) {
-    const retryAfter = res.headers.get('retry-after')
-    throw new LegalRagError(
-      retryAfter ? `تجاوزت الخدمة الحد المسموح، حاول بعد ${retryAfter} ثانية` : 'تجاوزت الخدمة الحد المسموح، حاول لاحقاً',
-      429
-    )
-  }
-  if (res.status === 503) throw new LegalRagError('الخدمة متوقفة مؤقتاً (بلغت الحد اليومي للإنفاق)', 503)
-  return res
 }
 
 async function readJsonOrThrow(res: Response, fallbackMessage: string): Promise<any> {
-  const body = await res.json().catch(() => null)
+  // Read the body as text first so a stalled/aborted read surfaces as a
+  // rejection (handled by callLegalService's deadline), not as "null JSON".
+  const text = await res.text()
+  let body: any = null
+  try { body = text ? JSON.parse(text) : null } catch { body = null }
   if (!res.ok) {
-    throw new LegalRagError(typeof body?.error === 'string' ? body.error : fallbackMessage, res.status || 502)
+    // Upstream 4xx carry a user-facing reason; 5xx become a generic 502.
+    const status = res.status >= 400 && res.status < 500 ? res.status : 502
+    throw new LegalRagError(upstreamMessage(body?.error, fallbackMessage), status)
   }
   if (!body) throw new LegalRagError(fallbackMessage, 502)
   return body
@@ -178,8 +224,8 @@ export interface CaseAnalysisResult {
 export async function analyzeCaseFile(bytes: Buffer, filename: string, officeId: string): Promise<CaseAnalysisResult> {
   const form = new FormData()
   form.append('file', new Blob([new Uint8Array(bytes)]), filename)
-  const res = await callLegalService('/api/cases', officeId, { method: 'POST', body: form }, 60_000)
-  return readJsonOrThrow(res, 'تعذّر تحليل ملف القضية')
+  return callLegalService('/api/cases', officeId, { method: 'POST', body: form }, 60_000,
+    (res) => readJsonOrThrow(res, 'تعذّر تحليل ملف القضية'))
 }
 
 export interface ContractReviewResult {
@@ -200,13 +246,13 @@ export interface ContractReviewResult {
  * on ailegal_hussein's side would duplicate work, not add safety.
  */
 export async function analyzeContract(contractText: string, officeId: string): Promise<ContractReviewResult> {
-  const res = await callLegalService(
+  return callLegalService(
     '/api/contract-review',
     officeId,
     { method: 'POST', body: JSON.stringify({ contractText }), extraHeaders: { 'Content-Type': 'application/json' } },
-    60_000
+    60_000,
+    (res) => readJsonOrThrow(res, 'تعذّر مراجعة العقد')
   )
-  return readJsonOrThrow(res, 'تعذّر مراجعة العقد')
 }
 
 export type DraftKind = 'statement_of_claim' | 'reply' | 'defense_memo' | 'petition' | 'contract'
@@ -230,13 +276,13 @@ export async function generateDraft(
   notes: string,
   officeId: string
 ): Promise<DraftResult> {
-  const res = await callLegalService(
+  return callLegalService(
     '/api/draft',
     officeId,
     { method: 'POST', body: JSON.stringify({ kind, fields, notes }), extraHeaders: { 'Content-Type': 'application/json' } },
-    60_000
+    60_000,
+    (res) => readJsonOrThrow(res, 'تعذّر توليد المسودة')
   )
-  return readJsonOrThrow(res, 'تعذّر توليد المسودة')
 }
 
 export interface ExportedFile {
@@ -251,21 +297,22 @@ export async function exportDraft(
   format: 'docx' | 'pdf',
   officeId: string
 ): Promise<ExportedFile> {
-  const res = await callLegalService(
+  return callLegalService(
     '/api/draft/export',
     officeId,
     { method: 'POST', body: JSON.stringify({ draft, filename, format }), extraHeaders: { 'Content-Type': 'application/json' } },
-    30_000
+    30_000,
+    async (res) => {
+      if (!res.ok) await readJsonOrThrow(res, 'تعذّر تصدير الملف')
+      const arrayBuffer = await res.arrayBuffer()
+      return {
+        buffer: Buffer.from(arrayBuffer),
+        // Never relay the upstream Content-Type: the file is always one of
+        // these two formats, and it's served to the browser as a download.
+        contentType: format === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      }
+    }
   )
-  if (!res.ok) {
-    const body = await res.json().catch(() => null)
-    throw new LegalRagError(typeof body?.error === 'string' ? body.error : 'تعذّر تصدير الملف', res.status || 502)
-  }
-  const arrayBuffer = await res.arrayBuffer()
-  return {
-    buffer: Buffer.from(arrayBuffer),
-    contentType: res.headers.get('content-type') ?? (format === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
-  }
 }
 
 /**
@@ -325,7 +372,7 @@ async function consumeChatStream(body: ReadableStream<Uint8Array>): Promise<Lega
   }
   if (buffer.trim()) processFrame(buffer)
 
-  if (errorMessage) throw new LegalRagError(errorMessage, 502)
+  if (errorMessage) throw new LegalRagError(upstreamMessage(errorMessage, 'خطأ غير معروف من خدمة البحث القانوني'), 502)
   if (!doneEvent) throw new LegalRagError('لم تصل إجابة كاملة من خدمة البحث القانوني', 502)
 
   const done = doneEvent as Record<string, unknown>

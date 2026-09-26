@@ -20,6 +20,6 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
   const limited = rateLimit(req, `auth:verify-email:resend:${auth.user.id}`, { limit: 3, windowMs: 15 * 60_000 })
   if (limited) return limited
 
-  await issueAndSendVerificationEmail(req, auth.user)
+  await issueAndSendVerificationEmail(auth.user)
   return NextResponse.json({ ok: true, message: 'تم إرسال رابط تأكيد جديد إلى بريدك الإلكتروني' })
 })

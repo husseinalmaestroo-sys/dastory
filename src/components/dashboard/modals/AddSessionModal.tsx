@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { apiFetch, errorMessage, fetchAllPages } from '@/lib/dashboard/api-client'
 import { Field } from '@/components/dashboard/ui'
 import { useDashboard } from '@/components/dashboard/DashboardContext'
 
@@ -12,23 +13,26 @@ export default function AddSessionModal() {
   const [err, setErr] = useState('')
 
   useEffect(() => {
-    fetch('/api/cases').then(r => r.json()).then(d => { if (Array.isArray(d)) setCases(d) }).catch(() => {})
+    // Picker loads EVERY case, not the first page of 200.
+    fetchAllPages<any>('/api/cases').then(({ items }) => setCases(items)).catch((e) => setErr(`تعذّر تحميل قائمة القضايا: ${errorMessage(e)}`))
   }, [])
 
   const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setForm(p => ({ ...p, [k]: e.target.value }))
+
+  // One key per opened form — a double-click can't create two sessions.
+  const [idempotencyKey] = useState(() => crypto.randomUUID())
 
   async function save() {
     if (!form.caseId) return setErr('يجب اختيار القضية')
     if (!form.date) return setErr('تاريخ الجلسة مطلوب')
     setBusy(true); setErr('')
     try {
-      const res = await fetch('/api/sessions', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+      await apiFetch('/api/sessions', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey },
         body: JSON.stringify({ ...form, judge: form.judge || null, notes: form.notes || null }),
       })
-      if (!res.ok) { const d = await res.json(); setErr(d.error || 'خطأ في الحفظ'); return }
       notifySuccess()
-    } catch { setErr('تعذّر الاتصال بالخادم') } finally { setBusy(false) }
+    } catch (e) { setErr(errorMessage(e)) } finally { setBusy(false) }
   }
 
   return (

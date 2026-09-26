@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { fmtDate, fmtMoney, statusAr } from '@/lib/api'
-import { Badge, Notification, QuickAction, SectionHeader, StatCard } from '@/components/dashboard/ui'
+import { Badge, Notification, QuickAction, SectionHeader, StatCard, ErrorState } from '@/components/dashboard/ui'
+import { apiFetch, errorMessage } from '@/lib/dashboard/api-client'
 import { useDashboard } from '@/components/dashboard/DashboardContext'
 
 type DashStats = {
@@ -32,26 +33,29 @@ export default function DashboardHomeClient({ authUserName }: { authUserName: st
   const [recentCases, setRecentCases] = useState<RecentCase[]>([])
   const [todaySessions, setTodaySessions] = useState<UpcomingSession[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [retryKey, setRetryKey] = useState(0)
 
   useEffect(() => {
-    fetch('/api/dashboard')
-      .then(r => r.json())
-      .then(d => {
-        if (d.stats) {
-          setStats(d.stats)
-          setRecentCases(d.recentCases ?? [])
-          setTodaySessions(d.todaySessions ?? [])
-        }
+    let cancelled = false
+    apiFetch<any>('/api/dashboard')
+      .then(({ data: d }) => {
+        if (cancelled) return
+        setStats(d.stats)
+        setRecentCases(d.recentCases ?? [])
+        setTodaySessions(d.todaySessions ?? [])
+        setError('')
       })
-      .catch(() => {})
-      .finally(() => setLoading(false))
-  }, [refreshKey])
+      .catch((err) => { if (!cancelled) setError(errorMessage(err)) })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [refreshKey, retryKey])
 
   return (
     <div className="pg">
       <SectionHeader title="لوحة التحكم" subtitle={`مرحباً ${authUserName.split(' ')[0] ?? ''}، إليك ملخص اليوم`}>
-        <button className="dbtn dbtn-s">📤 تصدير تقرير</button>
       </SectionHeader>
+      {error && <ErrorState message={`تعذّر تحميل ملخص اللوحة: ${error}`} onRetry={() => setRetryKey((k) => k + 1)} />}
 
       <div className="sg">
         <StatCard icon="⚖️" value={loading ? '...' : String(stats?.activeCases ?? 0)} label="القضايا المفتوحة" change={stats ? `${stats.totalCases} إجمالي` : undefined} />

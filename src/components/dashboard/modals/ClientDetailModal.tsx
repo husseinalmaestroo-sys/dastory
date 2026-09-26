@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { apiFetch, errorMessage } from '@/lib/dashboard/api-client'
 import { statusAr } from '@/lib/api'
 import { Badge, DetailRow, Field, InfoLine, TabButton } from '@/components/dashboard/ui'
 import { useDashboard } from '@/components/dashboard/DashboardContext'
@@ -22,13 +23,16 @@ export default function ClientDetailModal({ clientId }: { clientId?: string }) {
   const [editForm, setEditForm] = useState({ name: '', phone: '', email: '', idNumber: '', address: '' })
   const [editBusy, setEditBusy] = useState(false)
   const [editErr, setEditErr] = useState('')
+  const [loadErr, setLoadErr] = useState('')
 
   const loadClient = useCallback(() => {
     if (!clientId) return
-    fetch(`/api/clients/${clientId}`).then(r => r.json()).then(d => {
+    // A 404/403 body ({error}) used to be stored as if it were the client.
+    apiFetch<any>(`/api/clients/${clientId}`).then(({ data: d }) => {
       setClient(d)
+      setLoadErr('')
       setEditForm({ name: d.name ?? '', phone: d.phone ?? '', email: d.email ?? '', idNumber: d.idNumber ?? '', address: d.address ?? '' })
-    }).catch(() => {}).finally(() => setLoading(false))
+    }).catch((e) => { setClient(null); setLoadErr(errorMessage(e)) }).finally(() => setLoading(false))
   }, [clientId])
   useEffect(() => { loadClient() }, [loadClient])
 
@@ -88,7 +92,7 @@ export default function ClientDetailModal({ clientId }: { clientId?: string }) {
         <TabButton active={tab === 'invoices'} onClick={() => setTab('invoices')}>الفواتير</TabButton>
         <TabButton active={tab === 'account'} onClick={() => setTab('account')}>الحساب 🌐</TabButton>
       </div>
-      {loading ? <div style={{ padding: 24, color: '#94A3B8', textAlign: 'center' }}>جارٍ التحميل...</div> : !client ? <div style={{ padding: 24, color: '#F87171', textAlign: 'center' }}>تعذّر تحميل البيانات</div> : (
+      {loading ? <div style={{ padding: 24, color: '#94A3B8', textAlign: 'center' }}>جارٍ التحميل...</div> : !client ? <div role="alert" style={{ padding: 24, color: '#F87171', textAlign: 'center' }}>⚠️ {loadErr || 'تعذّر تحميل البيانات'}</div> : (
         <>
           {tab === 'data' && (
             <div className="tp active">

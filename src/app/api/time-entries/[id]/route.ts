@@ -6,6 +6,8 @@ import { rateLimit } from '@/lib/api-security'
 import { auditLog } from '@/lib/audit'
 import { timeEntryDeletionGuard } from '@/lib/financial-guards'
 import { withErrorHandling } from '@/lib/api-handler'
+import { validateFields } from '@/lib/validation'
+import { TIME_ENTRY_FIELDS } from '@/lib/field-specs'
 
 // Matches the cap in ../route.ts POST — see the comment there.
 const MAX_MINUTES_PER_ENTRY = 100_000
@@ -18,15 +20,17 @@ export const PATCH = withErrorHandling(async (req: NextRequest, { params }: { pa
 
   const { id } = await params
   const body = await req.json().catch(() => null)
-  if (!body) return NextResponse.json({ error: 'بيانات غير صالحة' }, { status: 400 })
+  if (!body || typeof body !== 'object') return NextResponse.json({ error: 'بيانات غير صالحة' }, { status: 400 })
+  const v = validateFields(body, TIME_ENTRY_FIELDS)
+  if (!v.ok) return NextResponse.json({ error: v.error }, { status: 400 })
 
   const existing = await prisma.timeEntry.findFirst({ where: timeEntryVisibilityWhere(auth.user, { id }), select: { id: true } })
   if (!existing) return NextResponse.json({ error: 'غير موجود' }, { status: 404 })
 
   const data: Record<string, unknown> = {}
-  if (typeof body.task === 'string') {
-    if (!body.task.trim()) return NextResponse.json({ error: 'وصف المهمة مطلوب' }, { status: 400 })
-    data.task = body.task.trim().slice(0, 200)
+  if ('task' in body) {
+    if (!v.values.task) return NextResponse.json({ error: 'وصف المهمة مطلوب' }, { status: 400 })
+    data.task = v.values.task
   }
   if (body.minutes !== undefined) {
     const minutes = Number(body.minutes)
@@ -51,6 +55,8 @@ export const PATCH = withErrorHandling(async (req: NextRequest, { params }: { pa
 export const DELETE = withErrorHandling(async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const auth = await requireOfficeUser(req)
   if (!auth.ok) return auth.response
+  const limited = rateLimit(req, `timelog:delete:${auth.user.id}`, { limit: 60, windowMs: 60 * 60_000 })
+  if (limited) return limited
 
   const { id } = await params
   const existing = await prisma.timeEntry.findFirst({ where: timeEntryVisibilityWhere(auth.user, { id }), select: { id: true, invoiced: true } })

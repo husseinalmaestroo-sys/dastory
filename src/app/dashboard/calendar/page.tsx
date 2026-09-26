@@ -1,7 +1,8 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { CalendarItem, Field, SectionHeader } from '@/components/dashboard/ui'
+import { useEffect, useMemo, useState } from 'react'
+import { CalendarItem, ErrorState, Field, SectionHeader } from '@/components/dashboard/ui'
+import { apiFetch, errorMessage, fetchAllPages } from '@/lib/dashboard/api-client'
 
 const monthNames = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر']
 
@@ -19,12 +20,33 @@ export default function CalendarPage() {
   const [newTitle, setNewTitle] = useState('')
   const [newDate, setNewDate] = useState('')
   const [busy, setBusy] = useState(false)
+  const [loadError, setLoadError] = useState('')
+  const [formError, setFormError] = useState('')
+  const [reloadKey, setReloadKey] = useState(0)
+  const load = () => setReloadKey((k) => k + 1)
 
-  const load = useCallback(() => {
-    fetch('/api/sessions').then(r => r.json()).then(d => { if (Array.isArray(d)) setSessions(d) }).catch(() => {})
-    fetch('/api/calendar-events').then(r => r.json()).then(d => { if (Array.isArray(d)) setCalEvents(d) }).catch(() => {})
-  }, [])
-  useEffect(() => { load() }, [load])
+  // Fetch exactly the range on screen — the visible month plus the next 7
+  // days (the "week ahead" panel) — walking every page of it. The old page
+  // loaded the first 200 sessions/events of all time, so a busy office's
+  // current month was simply missing from its own calendar.
+  useEffect(() => {
+    const from = new Date(Math.min(new Date(year, month, 1).getTime(), new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()))
+    const to = new Date(Math.max(new Date(year, month + 1, 1).getTime(), new Date(now.getFullYear(), now.getMonth(), now.getDate() + 8).getTime()))
+    const range = `from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}`
+    let cancelled = false
+    Promise.all([
+      fetchAllPages<CalSession>(`/api/sessions?${range}`),
+      fetchAllPages<CalEvent>(`/api/calendar-events?${range}`),
+    ])
+      .then(([s, e]) => {
+        if (cancelled) return
+        setSessions(s.items)
+        setCalEvents(e.items)
+        setLoadError('')
+      })
+      .catch((err) => { if (!cancelled) setLoadError(errorMessage(err)) })
+    return () => { cancelled = true }
+  }, [month, year, now, reloadKey])
 
   const dayKey = (d: Date | string) => { const dt = new Date(d); return `${dt.getFullYear()}-${dt.getMonth()}-${dt.getDate()}` }
 
@@ -61,12 +83,15 @@ export default function CalendarPage() {
   async function addEvent() {
     if (!newTitle.trim() || !newDate) return
     setBusy(true)
+    setFormError('')
     try {
-      const res = await fetch('/api/calendar-events', {
+      await apiFetch('/api/calendar-events', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: newTitle.trim(), date: newDate }),
       })
-      if (res.ok) { setNewTitle(''); setNewDate(''); setShowForm(false); load() }
+      setNewTitle(''); setNewDate(''); setShowForm(false); load()
+    } catch (err) {
+      setFormError(errorMessage(err))
     } finally { setBusy(false) }
   }
 
@@ -92,12 +117,14 @@ export default function CalendarPage() {
           <button className="dbtn dbtn-p" onClick={() => setShowForm(v => !v)}>+ حدث جديد</button>
         </div>
       </SectionHeader>
+      {loadError && <ErrorState message={`تعذّر تحميل التقويم: ${loadError}`} onRetry={load} />}
       {showForm && (
         <div className="card" style={{ marginBottom: 14, border: '1px solid rgba(212,175,55,.25)' }}>
           <div className="fg">
             <Field label="عنوان الحدث"><input className="fi" value={newTitle} onChange={e => setNewTitle(e.target.value)} placeholder="مثال: تجديد اشتراك النقابة" /></Field>
             <Field label="التاريخ"><input className="fi" type="date" value={newDate} onChange={e => setNewDate(e.target.value)} /></Field>
           </div>
+          {formError && <div style={{ color: '#F87171', fontSize: '.8rem', marginTop: 8 }}>⚠️ {formError}</div>}
           <div style={{ marginTop: 10, display: 'flex', gap: 8 }}>
             <button className="dbtn dbtn-p" onClick={addEvent} disabled={busy || !newTitle.trim() || !newDate}>{busy ? 'جارٍ الحفظ...' : '✅ حفظ'}</button>
             <button className="dbtn dbtn-s" onClick={() => setShowForm(false)}>إلغاء</button>

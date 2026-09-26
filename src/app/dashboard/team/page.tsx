@@ -1,7 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Badge, SectionHeader, StatCard } from '@/components/dashboard/ui'
+import { Badge, ErrorState, SectionHeader, StatCard } from '@/components/dashboard/ui'
+import { apiFetch, errorMessage } from '@/lib/dashboard/api-client'
 import { useDashboard } from '@/components/dashboard/DashboardContext'
 import { PermissionsMatrix } from '@/components/dashboard/PermissionsMatrix'
 
@@ -46,6 +47,9 @@ export default function TeamPage() {
 function TeamPageContent() {
   const [team, setTeam] = useState<TeamMember[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
+  const [actionError, setActionError] = useState('')
+  const [reloadKey, setReloadKey] = useState(0)
   const [showAdd, setShowAdd] = useState(false)
   const [pwdFor, setPwdFor]   = useState<string | null>(null)
   const [newPwd, setNewPwd]   = useState('')
@@ -56,12 +60,25 @@ function TeamPageContent() {
   const [showPwd, setShowPwd] = useState(false)
 
   useEffect(() => {
-    fetch('/api/team').then(r => r.json()).then(d => { if (Array.isArray(d)) setTeam(d) }).catch(() => {}).finally(() => setLoading(false))
-  }, [])
+    let cancelled = false
+    apiFetch<TeamMember[]>('/api/team')
+      .then(({ data }) => { if (!cancelled && Array.isArray(data)) { setTeam(data); setLoadError('') } })
+      .catch((err) => { if (!cancelled) setLoadError(errorMessage(err)) })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [reloadKey])
 
   async function toggleActive(id: string, current: boolean) {
+    setActionError('')
+    // Optimistic — but reverted if the server refuses, so the switch never
+    // shows a state the account isn't actually in.
     setTeam(t => t.map(m => m.id === id ? { ...m, active: !current } : m))
-    await fetch('/api/team', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, active: !current }) }).catch(() => {})
+    try {
+      await apiFetch('/api/team', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, active: !current }) })
+    } catch (err) {
+      setTeam(t => t.map(m => m.id === id ? { ...m, active: current } : m))
+      setActionError(errorMessage(err))
+    }
   }
 
   async function changePassword(id: string) {
@@ -94,6 +111,8 @@ function TeamPageContent() {
       <SectionHeader title="إدارة الفريق" subtitle={loading ? 'جاري التحميل...' : `${team.length} أعضاء — ${activeCount} نشط، ${inactiveCount} موقوف`}>
         <button className="dbtn dbtn-p" onClick={() => setShowAdd(true)}>+ دعوة محامٍ</button>
       </SectionHeader>
+      {loadError && <ErrorState message={loadError} onRetry={() => { setLoading(true); setReloadKey((k) => k + 1) }} />}
+      {actionError && <ErrorState message={actionError} />}
 
       <div className="sg" style={{ marginBottom: 16 }}>
         <StatCard icon="👥" value={loading ? '...' : String(team.length)}   label="إجمالي الفريق" />

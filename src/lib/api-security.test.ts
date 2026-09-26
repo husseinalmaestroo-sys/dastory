@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { NextRequest } from 'next/server'
-import { __getRateLimitStoreSizeForTests, cleanupRateLimitStore, isHttpsRequest, rateLimit } from './api-security'
+import { __getRateLimitStoreSizeForTests, accountThrottle, cleanupRateLimitStore, clearAccountFailures, getClientIp, isHttpsRequest, rateLimit, recordAccountFailure } from './api-security'
 
 function fakeRequest(opts: { ip?: string; headers?: Record<string, string>; url?: string } = {}) {
   const headers = { 'x-forwarded-for': opts.ip ?? '203.0.113.5', ...opts.headers }
@@ -148,5 +148,50 @@ describe('isHttpsRequest', () => {
       // @ts-expect-error restore
       process.env.NODE_ENV = originalEnv
     }
+  })
+})
+
+describe('getClientIp — proxy headers trusted only behind our own proxy', () => {
+  const withTrust = async (value: string | undefined, fn: () => void | Promise<void>) => {
+    const original = process.env.TRUST_PROXY
+    if (value === undefined) delete process.env.TRUST_PROXY
+    else process.env.TRUST_PROXY = value
+    try { await fn() } finally {
+      if (original === undefined) delete process.env.TRUST_PROXY
+      else process.env.TRUST_PROXY = original
+    }
+  }
+
+  it('without TRUST_PROXY, client-supplied headers are ignored (no per-request rotation to dodge limits)', async () => {
+    await withTrust(undefined, () => {
+      expect(getClientIp(fakeRequest({ ip: '1.1.1.1' }))).toBe('direct')
+      expect(getClientIp(fakeRequest({ ip: '2.2.2.2', headers: { 'x-real-ip': '3.3.3.3' } }))).toBe('direct')
+    })
+  })
+
+  it('behind the proxy, prefers X-Real-IP (set by nginx, overwriting any client value)', async () => {
+    await withTrust('1', () => {
+      expect(getClientIp(fakeRequest({ ip: '9.9.9.9, 203.0.113.7', headers: { 'x-real-ip': '198.51.100.4' } }))).toBe('198.51.100.4')
+    })
+  })
+
+  it('ignores values that are not IP addresses', async () => {
+    await withTrust('1', () => {
+      expect(getClientIp(fakeRequest({ ip: 'not-an-ip', headers: { 'x-real-ip': '<script>' } }))).toBe('unknown')
+      expect(getClientIp(fakeRequest({ ip: '1.1.1.1, garbage' }))).toBe('unknown')
+    })
+  })
+})
+
+describe('accountThrottle — per-account failures, independent of IP', () => {
+  it('blocks after the limit, and a success clears it', () => {
+    const key = `unit-${Math.random()}`
+    for (let i = 0; i < 3; i++) {
+      expect(accountThrottle(key, 3)).toBeNull()
+      recordAccountFailure(key, 60_000)
+    }
+    expect(accountThrottle(key, 3)?.status).toBe(429)
+    clearAccountFailures(key)
+    expect(accountThrottle(key, 3)).toBeNull()
   })
 })

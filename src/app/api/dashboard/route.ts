@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { requireOfficeUser } from '@/lib/auth-server'
 import { caseVisibilityWhere, clientVisibilityWhere, invoiceVisibilityWhere, sessionVisibilityWhere } from '@/lib/tenant-scope'
 import { withErrorHandling } from '@/lib/api-handler'
+import { jsonWithMoney } from '@/lib/money'
 
 export const GET = withErrorHandling(async (req: NextRequest) => {
   const auth = await requireOfficeUser(req)
@@ -39,7 +40,7 @@ export const GET = withErrorHandling(async (req: NextRequest) => {
     }),
   ])
 
-  return NextResponse.json({
+  return jsonWithMoney({
     stats: {
       totalClients,
       totalCases,

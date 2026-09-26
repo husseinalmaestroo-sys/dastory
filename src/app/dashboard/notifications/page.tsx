@@ -1,25 +1,36 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Notification, SectionHeader } from '@/components/dashboard/ui'
+import { ErrorState, LoadMore, Notification, SectionHeader } from '@/components/dashboard/ui'
+import { usePaginatedList } from '@/components/dashboard/usePaginatedList'
+import { apiFetch, errorMessage } from '@/lib/dashboard/api-client'
 
 export default function NotificationsPage() {
-  const [notifs, setNotifs] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    fetch('/api/notifications').then(r => r.json()).then(setNotifs).finally(() => setLoading(false))
-  }, [])
-
-  const unread = notifs.filter(n => !n.read).length
+  const [reloadKey, setReloadKey] = useState(0)
+  const list = usePaginatedList<any>('/api/notifications', reloadKey, 20)
+  const [unread, setUnread] = useState<number | null>(null)
+  const [markError, setMarkError] = useState('')
   // Captured once via the lazy initializer — calling Date.now() straight in
-  // the render body (inside timeAgo) trips react-hooks/purity. The "منذ س
-  // دقيقة" labels are relative to first paint, fine for a once-fetched list.
+  // the render body (inside timeAgo) trips react-hooks/purity.
   const [now] = useState(() => Date.now())
 
+  useEffect(() => {
+    let cancelled = false
+    apiFetch('/api/notifications?limit=1')
+      .then(({ res }) => { if (!cancelled) setUnread(Number(res.headers.get('X-Unread-Count') ?? '0')) })
+      .catch(() => { if (!cancelled) setUnread(null) })
+    return () => { cancelled = true }
+  }, [reloadKey])
+
   const markAll = async () => {
-    await fetch('/api/notifications', { method: 'PATCH' })
-    setNotifs(notifs.map(n => ({ ...n, read: true })))
+    setMarkError('')
+    try {
+      await apiFetch('/api/notifications', { method: 'PATCH' })
+      list.setItems((items) => items.map(n => ({ ...n, read: true })))
+      setUnread(0)
+    } catch (err) {
+      setMarkError(errorMessage(err))
+    }
   }
 
   const timeAgo = (d: string) => {
@@ -34,18 +45,25 @@ export default function NotificationsPage() {
 
   return (
     <div className="pg">
-      <SectionHeader title="الإشعارات" subtitle={`${unread} إشعار جديد`}>
+      <SectionHeader title="الإشعارات" subtitle={unread !== null ? `${unread} إشعار جديد` : ''}>
         <button className="dbtn dbtn-s" onClick={markAll}>تحديد الكل كمقروء</button>
       </SectionHeader>
+      {markError && <ErrorState message={markError} />}
       <div className="card">
-        {loading ? <div style={{ padding: 24, textAlign: 'center', color: '#94A3B8' }}>جارٍ التحميل...</div> : (
-          notifs.length === 0
-            ? <div style={{ padding: 24, textAlign: 'center', color: '#94A3B8' }}>لا توجد إشعارات</div>
-            : notifs.map((n) => (
-              <div key={n.id} style={{ opacity: n.read ? 0.6 : 1 }}>
-                <Notification icon={n.read ? '📩' : '🔔'} color={n.read ? '#64748B' : '#F59E0B'} title={n.title} subtitle={n.body} time={timeAgo(n.createdAt)} />
-              </div>
-            ))
+        {list.loading ? <div style={{ padding: 24, textAlign: 'center', color: '#94A3B8' }}>جارٍ التحميل...</div> : list.error && list.items.length === 0 ? (
+          <ErrorState message={list.error} onRetry={() => setReloadKey((k) => k + 1)} />
+        ) : (
+          <>
+            {list.items.length === 0
+              ? <div style={{ padding: 24, textAlign: 'center', color: '#94A3B8' }}>لا توجد إشعارات</div>
+              : list.items.map((n) => (
+                <div key={n.id} style={{ opacity: n.read ? 0.6 : 1 }}>
+                  <Notification icon={n.read ? '📩' : '🔔'} color={n.read ? '#64748B' : '#F59E0B'} title={n.title} subtitle={n.body} time={timeAgo(n.createdAt)} />
+                </div>
+              ))}
+            {list.error && <ErrorState message={list.error} onRetry={list.loadMore} />}
+            <LoadMore shown={list.items.length} total={list.total} hasMore={list.hasMore} loading={list.loadingMore} onClick={list.loadMore} />
+          </>
         )}
       </div>
     </div>

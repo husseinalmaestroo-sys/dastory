@@ -1,7 +1,7 @@
 import { cache } from 'react'
 import { cookies } from 'next/headers'
 import { prisma } from '@/lib/prisma'
-import { getActiveUserFromToken, isPlatformAdminEmail, type ActiveUser } from '@/lib/auth-server'
+import { getActiveUserFromToken, type ActiveUser } from '@/lib/auth-server'
 import type { AuthUser } from '@/lib/dashboard/types'
 
 /**
@@ -21,8 +21,8 @@ export const getSessionUser = cache(async (): Promise<ActiveUser | null> => {
   return getActiveUserFromToken(store.get('ds_token')?.value)
 })
 
-export async function isSessionPlatformAdmin(user: Pick<ActiveUser, 'email' | 'role'>): Promise<boolean> {
-  return user.role === 'OFFICE_MANAGER' && isPlatformAdminEmail(user.email)
+export async function isSessionPlatformAdmin(user: Pick<ActiveUser, 'isPlatformAdmin'>): Promise<boolean> {
+  return user.isPlatformAdmin
 }
 
 /**
@@ -48,7 +48,7 @@ export const getFullAuthUser = cache(async (): Promise<AuthUser | null> => {
     role: user.role,
     officeId: user.officeId ?? '',
     officeName: user.office?.name ?? null,
-    isPlatformAdmin: user.role === 'OFFICE_MANAGER' && isPlatformAdminEmail(user.email),
+    isPlatformAdmin: sessionUser.isPlatformAdmin,
     barNumber: user.barNumber,
     clientId: user.clientId ?? null,
     twoFactorEnabled: user.twoFactorEnabled,

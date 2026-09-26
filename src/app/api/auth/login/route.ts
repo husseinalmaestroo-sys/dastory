@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
 import { prisma } from '@/lib/prisma'
 import { signToken } from '@/lib/jwt'
-import { enforceRequestSecurity, isHttpsRequest } from '@/lib/api-security'
-import { isPlatformAdminEmail } from '@/lib/auth-server'
+import { accountThrottle, clearAccountFailures, enforceRequestSecurity, isHttpsRequest, recordAccountFailure } from '@/lib/api-security'
+import { withErrorHandling } from '@/lib/api-handler'
+import { isPlatformAdmin } from '@/lib/auth-server'
 import { auditLog } from '@/lib/audit'
 
 function userPayload(user: {
@@ -26,8 +27,11 @@ function userPayload(user: {
   }
 }
 
-export async function POST(req: NextRequest) {
-  try {
+// Per-account failure budget, independent of client IP.
+const ACCOUNT_FAILURE_LIMIT = 10
+const ACCOUNT_FAILURE_WINDOW_MS = 15 * 60_000
+
+export const POST = withErrorHandling(async (req: NextRequest) => {
     const blocked = enforceRequestSecurity(req, 'auth:login', { limit: 8, windowMs: 60_000 })
     if (blocked) return blocked
 
@@ -35,8 +39,15 @@ export async function POST(req: NextRequest) {
     const { email, password } = payload ?? {}
     const normalizedEmail = typeof email === 'string' ? email.toLowerCase().trim() : ''
 
-    if (typeof email !== 'string' || typeof password !== 'string') {
+    if (typeof email !== 'string' || typeof password !== 'string' || normalizedEmail.length > 254 || password.length > 1024) {
       return NextResponse.json({ error: 'البريد وكلمة المرور مطلوبان' }, { status: 400 })
+    }
+
+    const throttleKey = `login:${normalizedEmail}`
+    const throttled = accountThrottle(throttleKey, ACCOUNT_FAILURE_LIMIT)
+    if (throttled) {
+      await auditLog(req, null, 'auth.login_throttled', { actorEmail: normalizedEmail })
+      return throttled
     }
 
     const user = await prisma.user.findUnique({
@@ -45,6 +56,7 @@ export async function POST(req: NextRequest) {
     })
 
     if (!user || !user.active || !user.office?.active) {
+      recordAccountFailure(throttleKey, ACCOUNT_FAILURE_WINDOW_MS)
       await auditLog(req, null, 'auth.login_failed', {
         actorEmail: normalizedEmail,
         metadata: { reason: 'not_found_or_inactive' },
@@ -54,12 +66,14 @@ export async function POST(req: NextRequest) {
 
     const valid = await bcrypt.compare(password, user.password)
     if (!valid) {
+      recordAccountFailure(throttleKey, ACCOUNT_FAILURE_WINDOW_MS)
       await auditLog(req, { id: user.id, email: user.email, role: user.role, officeId: user.officeId }, 'auth.login_failed', {
         metadata: { reason: 'invalid_password' },
       })
       return NextResponse.json({ error: 'بيانات الدخول غير صحيحة' }, { status: 401 })
     }
 
+    clearAccountFailures(throttleKey)
     const basePayload = userPayload(user)
 
     if (user.twoFactorEnabled) {
@@ -97,7 +111,7 @@ export async function POST(req: NextRequest) {
         role: user.role,
         officeId: user.officeId,
         officeName: user.office?.name ?? null,
-        isPlatformAdmin: user.role === 'OFFICE_MANAGER' && isPlatformAdminEmail(user.email),
+        isPlatformAdmin: isPlatformAdmin(user),
         barNumber: user.barNumber,
         clientId: user.clientId ?? null,
         twoFactorEnabled: user.twoFactorEnabled,
@@ -114,8 +128,4 @@ export async function POST(req: NextRequest) {
 
     await auditLog(req, { id: user.id, email: user.email, role: user.role, officeId: user.officeId }, 'auth.login_success')
     return res
-  } catch (err) {
-    console.error(err)
-    return NextResponse.json({ error: 'خطأ في الخادم' }, { status: 500 })
-  }
-}
+})

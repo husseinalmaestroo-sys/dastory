@@ -3,15 +3,13 @@ import { createHash, randomBytes } from 'crypto'
 import { prisma } from '@/lib/prisma'
 import { enforceRequestSecurity } from '@/lib/api-security'
 import { auditLog } from '@/lib/audit'
-import { isSmtpConfigured, requestOrigin, sendMail } from '@/lib/email'
-
-function isValidEmail(value: unknown) {
-  return typeof value === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())
-}
+import { appOrigin, escapeHtml, isSmtpConfigured, reportUndeliveredLink, sendMail } from '@/lib/email'
+import { withErrorHandling } from '@/lib/api-handler'
+import { isValidEmail } from '@/lib/validation'
 
 const GENERIC_MESSAGE = 'إذا كان هذا البريد مسجلاً لدينا، سيصلك رابط لإعادة تعيين كلمة المرور خلال دقائق.'
 
-export async function POST(req: NextRequest) {
+export const POST = withErrorHandling(async (req: NextRequest) => {
   const blocked = enforceRequestSecurity(req, 'auth:forgot-password', { limit: 5, windowMs: 10 * 60_000 })
   if (blocked) return blocked
 
@@ -34,24 +32,26 @@ export async function POST(req: NextRequest) {
         data: { userId: user.id, tokenHash, expiresAt: new Date(Date.now() + 30 * 60_000) },
       })
 
-      const resetLink = `${requestOrigin(req)}/login?resetToken=${token}`
+      const resetLink = `${appOrigin()}/login?resetToken=${token}`
 
       if (isSmtpConfigured()) {
         await sendMail({
           to: user.email,
           subject: 'إعادة تعيين كلمة المرور — دُسْتُورِي',
           text: `مرحباً ${user.name}،\n\nاضغط على الرابط التالي لإعادة تعيين كلمة المرور (صالح لمدة 30 دقيقة):\n${resetLink}\n\nإذا لم تطلب هذا، تجاهل هذه الرسالة.`,
-          html: `<div dir="rtl" style="font-family:Arial,sans-serif;line-height:1.8;font-size:14px">مرحباً ${user.name}،<br><br>اضغط على الرابط التالي لإعادة تعيين كلمة المرور (صالح لمدة 30 دقيقة):<br><a href="${resetLink}">${resetLink}</a><br><br>إذا لم تطلب هذا، تجاهل هذه الرسالة.</div>`,
+          html: `<div dir="rtl" style="font-family:Arial,sans-serif;line-height:1.8;font-size:14px">مرحباً ${escapeHtml(user.name)}،<br><br>اضغط على الرابط التالي لإعادة تعيين كلمة المرور (صالح لمدة 30 دقيقة):<br><a href="${resetLink}">${resetLink}</a><br><br>إذا لم تطلب هذا، تجاهل هذه الرسالة.</div>`,
         })
       } else {
-        console.error(`[forgot-password] SMTP غير معد — رابط إعادة التعيين لـ ${user.email}: ${resetLink}`)
+        reportUndeliveredLink('password-reset', user.id, resetLink)
       }
 
       await auditLog(req, { id: user.id, email: user.email, role: user.role, officeId: user.officeId }, 'auth.password_reset_requested')
     }
   } catch (err) {
-    console.error(err)
+    // Deliberately the same generic answer whether or not this failed, so
+    // the response never reveals whether the address has an account.
+    console.error('[forgot-password] failed to issue/send reset link', err)
   }
 
   return NextResponse.json({ ok: true, message: GENERIC_MESSAGE })
-}
+})

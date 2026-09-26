@@ -60,21 +60,39 @@ describe('withErrorHandling', () => {
     })
     const res = await handler()
     expect(res.status).toBe(409)
-    expect(await res.json()).toEqual({ error: 'يوجد سجل بنفس القيمة مسبقاً' })
+    expect(await res.json()).toEqual({ error: 'يوجد سجل بنفس القيمة مسبقاً', code: 'duplicate' })
     consoleSpy.mockRestore()
   })
 
-  it('treats a non-P2002 Prisma error as a generic 500, not a 409', async () => {
+  it.each([
+    ['P2003', 409, 'related_records'],
+    ['P2000', 400, 'value_too_long'],
+    ['P2025', 404, 'not_found'],
+    ['P2034', 409, 'write_conflict'],
+  ])('maps predictable Prisma error %s to %i (%s), never a 500', async (code, status, stableCode) => {
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-    const prismaError = new Prisma.PrismaClientKnownRequestError('Foreign key constraint failed', {
-      code: 'P2003',
+    const prismaError = new Prisma.PrismaClientKnownRequestError(`internal detail for ${code} with table names`, {
+      code,
       clientVersion: '5.22.0',
     })
-    const handler = withErrorHandling(async () => {
-      throw prismaError
+    const res = await withErrorHandling(async () => { throw prismaError })()
+    expect(res.status).toBe(status)
+    const body = await res.json()
+    expect(body.code).toBe(stableCode)
+    // Never the raw Prisma message (table/column names, SQL).
+    expect(JSON.stringify(body)).not.toContain('internal detail')
+    consoleSpy.mockRestore()
+  })
+
+  it('treats an unmapped Prisma error (e.g. connection failure) as a generic 500', async () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const prismaError = new Prisma.PrismaClientKnownRequestError('Server has closed the connection', {
+      code: 'P1017',
+      clientVersion: '5.22.0',
     })
-    const res = await handler()
+    const res = await withErrorHandling(async () => { throw prismaError })()
     expect(res.status).toBe(500)
+    expect(await res.json()).toEqual({ error: 'خطأ في الخادم' })
     consoleSpy.mockRestore()
   })
 

@@ -7,6 +7,10 @@ import { auditLog } from '@/lib/audit'
 import { buildPage, cursorWhereClause, paginationHeaders, parsePagination } from '@/lib/pagination'
 import type { Prisma } from '@prisma/client'
 import { withErrorHandling } from '@/lib/api-handler'
+import { validateFields } from '@/lib/validation'
+import { TIME_ENTRY_FIELDS, required } from '@/lib/field-specs'
+
+const TIME_ENTRY_FIELDS_CREATE = required(TIME_ENTRY_FIELDS, 'task')
 
 const DEFAULT_LIMIT = 200
 // A single logged task realistically never exceeds a couple of months of
@@ -44,9 +48,11 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
 
   const body = await req.json().catch(() => null)
   const minutes = Number(body?.minutes)
-  if (!body || typeof body.task !== 'string' || !body.task.trim() || !Number.isFinite(minutes) || minutes <= 0) {
+  if (!body || typeof body !== 'object' || !Number.isFinite(minutes) || minutes <= 0) {
     return NextResponse.json({ error: 'وصف المهمة والمدة مطلوبان' }, { status: 400 })
   }
+  const v = validateFields(body, TIME_ENTRY_FIELDS_CREATE)
+  if (!v.ok) return NextResponse.json({ error: v.error }, { status: 400 })
   if (minutes > MAX_MINUTES_PER_ENTRY) {
     return NextResponse.json({ error: 'المدة أكبر من المسموح لتسجيل وقت واحد' }, { status: 400 })
   }
@@ -63,7 +69,7 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
 
   const entry = await prisma.timeEntry.create({
     data: {
-      task: body.task.trim().slice(0, 200),
+      task: v.values.task as string,
       minutes: Math.round(minutes),
       billable: body.billable !== false,
       caseId,

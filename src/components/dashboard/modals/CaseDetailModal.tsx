@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { apiFetch, errorMessage } from '@/lib/dashboard/api-client'
 import { fmtDate, statusAr } from '@/lib/api'
 import { Badge, DetailRow, Field, InfoLine, TabButton, TimelineItem } from '@/components/dashboard/ui'
 import { useDashboard } from '@/components/dashboard/DashboardContext'
@@ -18,21 +19,24 @@ export default function CaseDetailModal({ caseId }: { caseId?: string }) {
   const [editForm, setEditForm] = useState({ number: '', title: '', type: '', court: '', notes: '', status: 'ACTIVE', lawyerId: '' })
   const [editBusy, setEditBusy] = useState(false)
   const [editErr, setEditErr] = useState('')
+  const [loadErr, setLoadErr] = useState('')
 
   const loadCase = useCallback(() => {
     if (!caseId) return
-    fetch(`/api/cases/${caseId}`).then(r => r.json()).then(d => {
+    // A 404/403 body ({error}) used to be stored as if it were the case.
+    apiFetch<any>(`/api/cases/${caseId}`).then(({ data: d }) => {
       setC(d)
+      setLoadErr('')
       setEditForm({
         number: d.number ?? '', title: d.title ?? '', type: d.type ?? '', court: d.court ?? '',
         notes: d.notes ?? '', status: d.status ?? 'ACTIVE', lawyerId: d.lawyer?.id ?? '',
       })
-    }).catch(() => {}).finally(() => setLoading(false))
+    }).catch((e) => { setC(null); setLoadErr(errorMessage(e)) }).finally(() => setLoading(false))
   }, [caseId])
   useEffect(() => { loadCase() }, [loadCase])
   useEffect(() => {
     if (!isAdmin) return
-    fetch('/api/team').then(r => r.json()).then(d => { if (Array.isArray(d)) setLawyers(d) }).catch(() => {})
+    apiFetch<any[]>('/api/team').then(({ data }) => { if (Array.isArray(data)) setLawyers(data) }).catch((e) => setEditErr(`تعذّر تحميل قائمة المحامين: ${errorMessage(e)}`))
   }, [isAdmin])
 
   const ef = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setEditForm(p => ({ ...p, [k]: e.target.value }))
@@ -77,7 +81,7 @@ export default function CaseDetailModal({ caseId }: { caseId?: string }) {
         <TabButton active={tab === 'sessions'} onClick={() => setTab('sessions')}>الجلسات</TabButton>
         <TabButton active={tab === 'files'} onClick={() => setTab('files')}>الملفات</TabButton>
       </div>
-      {loading ? <div style={{ padding: 24, color: '#94A3B8', textAlign: 'center' }}>جارٍ التحميل...</div> : !c ? <div style={{ padding: 24, color: '#F87171', textAlign: 'center' }}>تعذّر تحميل البيانات</div> : (
+      {loading ? <div style={{ padding: 24, color: '#94A3B8', textAlign: 'center' }}>جارٍ التحميل...</div> : !c ? <div role="alert" style={{ padding: 24, color: '#F87171', textAlign: 'center' }}>⚠️ {loadErr || 'تعذّر تحميل البيانات'}</div> : (
         <>
           {tab === 'details' && (
             <div className="tp active">

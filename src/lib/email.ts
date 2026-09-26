@@ -1,13 +1,39 @@
 import nodemailer from 'nodemailer'
-import type { NextRequest } from 'next/server'
-import { isHttpsRequest } from '@/lib/api-security'
+import { APP_ORIGIN } from '@/lib/env'
 
-/** Builds an absolute app origin for links embedded in outgoing email (password reset, email verification, ...). */
-export function requestOrigin(req: NextRequest): string {
-  const configured = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL
-  if (configured) return configured
-  const host = req.headers.get('host')
-  return host ? `${isHttpsRequest(req) ? 'https' : 'http'}://${host}` : ''
+/**
+ * The absolute origin for links embedded in outgoing email (password reset,
+ * email verification). Always the configured APP_URL — never the request's
+ * Host header, which the client controls: building reset links from it let
+ * a forged Host turn a genuine reset email into a link to an attacker's
+ * server (and with it, the reset token).
+ */
+/** Escapes text for interpolation into an email's HTML body. */
+export function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+}
+
+export function appOrigin(): string {
+  return APP_ORIGIN
+}
+
+/**
+ * When SMTP isn't configured, a bearer link (reset / verification) can't be
+ * delivered. It is NOT logged: server logs are shipped, retained and read by
+ * people who must not be able to take over accounts. The one exception is an
+ * explicit opt-in for local development only.
+ */
+export function reportUndeliveredLink(kind: 'password-reset' | 'email-verification', userId: string, link: string) {
+  if (process.env.NODE_ENV === 'development' && process.env.DEV_LOG_EMAIL_LINKS === 'true') {
+    console.warn(`[${kind}] SMTP not configured — DEV ONLY link for user ${userId}: ${link}`)
+    return
+  }
+  console.warn(`[${kind}] SMTP not configured — email NOT sent (user ${userId}). Configure SMTP_HOST/SMTP_USER/SMTP_PASS.`)
 }
 
 // Centralizes what was previously duplicated inline in both

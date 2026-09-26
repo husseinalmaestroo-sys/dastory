@@ -1,7 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { FileHit, SectionHeader } from '@/components/dashboard/ui'
+import { ErrorState, FileHit, SectionHeader } from '@/components/dashboard/ui'
+import { apiFetch, errorMessage } from '@/lib/dashboard/api-client'
 import { docIcon } from '@/lib/dashboard/format'
 
 export default function FileSearchPage() {
@@ -9,16 +10,20 @@ export default function FileSearchPage() {
   const [searched, setSearched] = useState(false)
   const [loading, setLoading] = useState(false)
   const [docs, setDocs] = useState<{ id: string; name: string; type: string; case: { number: string } | null }[]>([])
+  const [error, setError] = useState('')
 
   const search = async (value = query) => {
     setQuery(value)
     if (value.trim().length < 2) return
-    setSearched(true); setLoading(true)
+    setSearched(true); setLoading(true); setError('')
     try {
-      const res = await fetch(`/api/search?q=${encodeURIComponent(value.trim())}`)
-      const data = await res.json()
+      const { data } = await apiFetch<any>(`/api/search?q=${encodeURIComponent(value.trim())}`)
       setDocs(Array.isArray(data.documents) ? data.documents : [])
-    } catch { setDocs([]) } finally { setLoading(false) }
+    } catch (err) {
+      // A failed search is reported as such — never as "no results".
+      setDocs([])
+      setError(errorMessage(err))
+    } finally { setLoading(false) }
   }
 
   return (
@@ -39,6 +44,8 @@ export default function FileSearchPage() {
           <div className="ct">📂 نتائج البحث في الملفات</div>
           {loading ? (
             <div style={{ color: '#64748B', textAlign: 'center', padding: 24 }}>جارٍ البحث...</div>
+          ) : error ? (
+            <ErrorState message={error} onRetry={() => search()} />
           ) : docs.length === 0 ? (
             <div style={{ color: '#64748B', textAlign: 'center', padding: 24 }}>لا توجد نتائج</div>
           ) : (

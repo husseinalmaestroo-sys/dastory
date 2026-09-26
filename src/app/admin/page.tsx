@@ -90,6 +90,10 @@ export default function AdminPage() {
   const [password, setPassword]     = useState('')
   const [loginBusy, setLoginBusy]   = useState(false)
   const [loginError, setLoginError] = useState('')
+  // Platform admin requires 2FA: the password step issues a short-lived
+  // pending session, completed by the TOTP code step below.
+  const [needs2fa, setNeeds2fa]     = useState(false)
+  const [totpCode, setTotpCode]     = useState('')
   const [authEmail, setAuthEmail]   = useState('')
   const [page, setPage]             = useState<Page>('overview')
   const [tickerItems, setTickerItems] = useState<string[]>(DEFAULT_TICKER)
@@ -136,23 +140,28 @@ export default function AdminPage() {
           setAuthEmail(data.user.email)
         }
       })
-      .catch(() => {})
+      .catch(() => { /* not signed in — the login form is shown */ })
   }, [])
 
   useEffect(() => {
     if (!loggedIn) return
     fetch('/api/trial-requests')
-      .then((res) => res.ok ? res.json() : [])
+      .then(async (res) => {
+        if (!res.ok) throw new Error((await res.json().catch(() => null))?.error || `HTTP ${res.status}`)
+        return res.json()
+      })
       .then((data) => { if (Array.isArray(data)) setTrialRequests(data) })
-      .catch(() => {})
+      .catch((err: Error) => setToast(`⚠ تعذّر تحميل طلبات التجربة: ${err.message}`))
     fetch('/api/admin/overview')
-      .then((res) => res.ok ? res.json() : null)
+      .then(async (res) => {
+        if (!res.ok) throw new Error((await res.json().catch(() => null))?.error || `HTTP ${res.status}`)
+        return res.json()
+      })
       .then((data) => {
-        if (!data) return
         if (data.stats) setStats(data.stats)
         if (Array.isArray(data.subscribers)) setSubscribers(data.subscribers)
       })
-      .catch(() => {})
+      .catch((err: Error) => setToast(`⚠ تعذّر تحميل بيانات المشتركين: ${err.message}`))
   }, [loggedIn])
 
   async function runOfficeAction(officeId: string, action: 'activate' | 'suspend' | 'extend-trial', successMsg: string) {
@@ -174,9 +183,11 @@ export default function AdminPage() {
   useEffect(() => {
     if (!loggedIn) return
     fetch('/api/site-settings')
-      .then((res) => res.ok ? res.json() : null)
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        return res.json()
+      })
       .then((s) => {
-        if (!s) return
         setTickerItems(s.tickerItems)
         setTickerBg(s.tickerBg)
         setTickerColor(s.tickerColor)
@@ -192,7 +203,7 @@ export default function AdminPage() {
         setCtWa(s.contactWhatsapp)
         setCtEmail(s.contactEmail)
       })
-      .catch(() => {})
+      .catch((err: Error) => setToast(`⚠ تعذّر تحميل إعدادات الموقع: ${err.message}`))
   }, [loggedIn])
 
   async function patchSiteSettings(body: Record<string, unknown>, successMsg: string) {
@@ -236,13 +247,42 @@ export default function AdminPage() {
         setLoginError(data.error || 'تعذر تسجيل الدخول')
         return
       }
-      if (!data.user?.isPlatformAdmin) {
-        await fetch('/api/auth/logout', { method: 'POST' })
-        setLoginError('هذه اللوحة متاحة لمدير منصة دُسْتُورِي فقط')
+      if (data.requires2FA) {
+        setNeeds2fa(true)
         return
       }
-      setAuthEmail(data.user.email)
-      setLoggedIn(true)
+      await finishLogin(data)
+    } catch {
+      setLoginError('تعذر الاتصال بالخادم')
+    } finally {
+      setLoginBusy(false)
+    }
+  }
+
+  async function finishLogin(data: { user?: { isPlatformAdmin?: boolean; email?: string } }) {
+    if (!data.user?.isPlatformAdmin) {
+      await fetch('/api/auth/logout', { method: 'POST' })
+      setNeeds2fa(false)
+      setLoginError('هذه اللوحة متاحة لمدير منصة دُسْتُورِي فقط — ويتطلب الحساب بريداً مؤكداً ومصادقة ثنائية مفعّلة')
+      return
+    }
+    setAuthEmail(data.user.email ?? '')
+    setLoggedIn(true)
+  }
+
+  const verify2fa = async () => {
+    if (!/^\d{6}$/.test(totpCode.trim())) { setLoginError('أدخل رمز التحقق المكوّن من 6 أرقام'); return }
+    setLoginBusy(true)
+    setLoginError('')
+    try {
+      const res = await fetch('/api/auth/2fa/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: totpCode.trim() }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setLoginError(data.error || 'رمز التحقق غير صحيح'); return }
+      await finishLogin(data)
     } catch {
       setLoginError('تعذر الاتصال بالخادم')
     } finally {
@@ -295,15 +335,20 @@ export default function AdminPage() {
             <div style={{ fontSize: '.8rem', color: '#64748B', marginTop: 2 }}>DOSTOORI LEGAL</div>
             <span style={{ display: 'inline-block', background: 'rgba(239,68,68,.1)', border: '1px solid rgba(239,68,68,.25)', color: '#EF4444', fontSize: '.72rem', fontWeight: 700, padding: '3px 10px', borderRadius: 20, marginTop: 6 }}>🔒 لوحة الإدارة — Admin Panel</span>
           </div>
-          {[{ label: 'البريد الإلكتروني', value: email, set: setEmail, type: 'email', placeholder: 'admin@dostoori.jo' }, { label: 'كلمة المرور', value: password, set: setPassword, type: 'password', placeholder: '••••••••' }].map((f) => (
+          {!needs2fa ? [{ label: 'البريد الإلكتروني', value: email, set: setEmail, type: 'email', placeholder: 'you@example.com' }, { label: 'كلمة المرور', value: password, set: setPassword, type: 'password', placeholder: '••••••••' }].map((f) => (
             <div key={f.label} style={{ marginBottom: 14 }}>
               <label style={S.label}>{f.label}</label>
               <input type={f.type} value={f.value} onChange={(e) => f.set(e.target.value)} placeholder={f.placeholder} onKeyDown={(e) => e.key === 'Enter' && login()} style={{ ...S.inp, borderColor: 'rgba(255,255,255,.07)' }} />
             </div>
-          ))}
+          )) : (
+            <div style={{ marginBottom: 14 }}>
+              <label style={S.label}>رمز المصادقة الثنائية (6 أرقام)</label>
+              <input inputMode="numeric" autoComplete="one-time-code" value={totpCode} onChange={(e) => setTotpCode(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && verify2fa()} style={{ ...S.inp, borderColor: 'rgba(255,255,255,.07)', direction: 'ltr', textAlign: 'center', letterSpacing: 4 }} />
+            </div>
+          )}
           {loginError && <div style={{ color: '#F87171', fontSize: '.8rem', textAlign: 'center', marginBottom: 10 }}>{loginError}</div>}
-          <button onClick={login} disabled={loginBusy} style={{ width: '100%', background: 'linear-gradient(135deg,#EF4444,#DC2626)', border: 'none', borderRadius: 10, padding: 13, color: '#fff', fontFamily: "'Cairo',sans-serif", fontSize: '1rem', fontWeight: 800, cursor: loginBusy ? 'wait' : 'pointer', marginTop: 6, opacity: loginBusy ? .8 : 1 }}>
-            {loginBusy ? 'جارٍ التحقق...' : 'دخول إلى لوحة الإدارة'}
+          <button onClick={needs2fa ? verify2fa : login} disabled={loginBusy} style={{ width: '100%', background: 'linear-gradient(135deg,#EF4444,#DC2626)', border: 'none', borderRadius: 10, padding: 13, color: '#fff', fontFamily: "'Cairo',sans-serif", fontSize: '1rem', fontWeight: 800, cursor: loginBusy ? 'wait' : 'pointer', marginTop: 6, opacity: loginBusy ? .8 : 1 }}>
+            {loginBusy ? 'جارٍ التحقق...' : needs2fa ? 'تأكيد الرمز' : 'دخول إلى لوحة الإدارة'}
           </button>
           <div style={{ textAlign: 'center', fontSize: '.73rem', color: '#374151', marginTop: 16 }}>هذه الصفحة مخصصة لفريق دُسْتُورِي فقط</div>
         </div>

@@ -16,7 +16,9 @@ const REQUIRED_FIELDS = [
   'nationalId',
 ] as const
 
-function text(value: unknown, max = 240) {
+// Every TrialRequest column is VARCHAR(191); the default must not exceed it
+// (it was 240, so a long address/specialty turned into a 500).
+function text(value: unknown, max = 191) {
   return typeof value === 'string' ? value.trim().slice(0, max) : ''
 }
 

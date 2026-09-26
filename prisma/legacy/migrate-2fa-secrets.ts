@@ -9,7 +9,7 @@
 // Usage:
 //   npx tsx prisma/migrate-2fa-secrets.ts
 import { PrismaClient } from '@prisma/client'
-import { encryptSecret, isLegacyPlaintext } from '../src/lib/secret-crypto'
+import { encryptSecret, isLegacyPlaintext } from '../../src/lib/secret-crypto'
 
 const prisma = new PrismaClient()
 

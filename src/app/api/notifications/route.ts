@@ -21,14 +21,20 @@ export const GET = withErrorHandling(async (req: NextRequest) => {
     cursorWhereClause('createdAt', 'desc', cursor)
   ) as Prisma.NotificationWhereInput
 
-  const rows = await prisma.notification.findMany({
-    where,
-    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-    take: limit + 1,
-  })
+  const [rows, total, unread] = await Promise.all([
+    prisma.notification.findMany({
+      where,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: limit + 1,
+    }),
+    cursor ? Promise.resolve(undefined) : prisma.notification.count({ where: { userId: user.id } }),
+    cursor ? Promise.resolve(undefined) : prisma.notification.count({ where: { userId: user.id, read: false } }),
+  ])
 
   const result = buildPage(rows, limit, (r) => r.createdAt)
-  return NextResponse.json(result.page, { headers: paginationHeaders(result) })
+  const headers = paginationHeaders(result, total)
+  if (unread !== undefined) headers['X-Unread-Count'] = String(unread)
+  return NextResponse.json(result.page, { headers })
 })
 
 export const PATCH = withErrorHandling(async (req: NextRequest) => {

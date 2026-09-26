@@ -5,8 +5,9 @@ import { documentVisibilityWhere } from '@/lib/tenant-scope'
 import { rateLimit } from '@/lib/api-security'
 import { auditLog, getRequestIp } from '@/lib/audit'
 import { withErrorHandling } from '@/lib/api-handler'
-import { readDocumentFile, writeDocumentFile } from '@/lib/document-storage'
+import { deleteDocumentFile, readDocumentFile, writeDocumentFile } from '@/lib/document-storage'
 import { DISCLOSURE_TEXT, sha256Hex } from '@/lib/signature'
+import { fitFileName } from '@/lib/validation'
 
 type RouteContext = { params: Promise<{ id: string }> }
 
@@ -51,30 +52,37 @@ export const POST = withErrorHandling(async (req: NextRequest, { params }: Route
     `توقيع-${targetDoc.name}.png`, 'PNG', imageBytes
   )
 
-  const result = await prisma.$transaction(async (tx) => {
-    const signatureDoc = await tx.document.create({
-      data: {
-        name: `توقيع - ${targetDoc.name}.png`,
-        type: 'PNG',
-        size: imageBytes.length,
-        url: storedPath,
-        caseId: targetDoc.caseId,
-        officeId: auth.user.officeId,
-        ownerId: auth.user.id,
-      },
+  let result
+  try {
+    result = await prisma.$transaction(async (tx) => {
+      const signatureDoc = await tx.document.create({
+        data: {
+          name: fitFileName(`توقيع - ${targetDoc.name}.png`),
+          type: 'PNG',
+          size: imageBytes.length,
+          url: storedPath,
+          caseId: targetDoc.caseId,
+          officeId: auth.user.officeId,
+          ownerId: auth.user.id,
+        },
+      })
+      const signature = await tx.documentSignature.create({
+        data: {
+          documentId: targetDoc.id,
+          signatureImageId: signatureDoc.id,
+          signerId: auth.user.id,
+          officeId: auth.user.officeId,
+          documentHash,
+          ipAddress: getRequestIp(req),
+        },
+      })
+      return { signatureDoc, signature }
     })
-    const signature = await tx.documentSignature.create({
-      data: {
-        documentId: targetDoc.id,
-        signatureImageId: signatureDoc.id,
-        signerId: auth.user.id,
-        officeId: auth.user.officeId,
-        documentHash,
-        ipAddress: getRequestIp(req),
-      },
-    })
-    return { signatureDoc, signature }
-  })
+  } catch (err) {
+    // The image file was written before the transaction; don't orphan it.
+    await deleteDocumentFile(storedPath)
+    throw err
+  }
 
   await auditLog(req, auth.user, 'document.signed', {
     entityType: 'document',

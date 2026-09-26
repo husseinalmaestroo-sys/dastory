@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { requireActiveUser, isPlatformAdminEmail } from '@/lib/auth-server'
+import { requireActiveUser, isPlatformAdmin } from '@/lib/auth-server'
 import { rateLimit, isHttpsRequest } from '@/lib/api-security'
 import { auditLog } from '@/lib/audit'
 import { formatTotpSecret, generateTotpSecret, getTotpUri, verifyTotpCode } from '@/lib/totp'
@@ -50,6 +50,8 @@ function publicUser(user: {
   barNumber: string | null
   clientId: string | null
   twoFactorEnabled: boolean
+  emailVerified: boolean
+  isPlatformAdmin: boolean
   office: { name: string } | null
 }) {
   return {
@@ -59,7 +61,7 @@ function publicUser(user: {
     role: user.role,
     officeId: user.officeId,
     officeName: user.office?.name ?? null,
-    isPlatformAdmin: user.role === 'OFFICE_MANAGER' && isPlatformAdminEmail(user.email),
+    isPlatformAdmin: isPlatformAdmin(user),
     barNumber: user.barNumber,
     clientId: user.clientId ?? null,
     twoFactorEnabled: user.twoFactorEnabled,

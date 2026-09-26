@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireOfficeUser } from '@/lib/auth-server'
+import { requireOfficeUser, requireVerifiedEmail } from '@/lib/auth-server'
 import { rateLimit } from '@/lib/api-security'
 import { withErrorHandling } from '@/lib/api-handler'
 import { exportDraft, LegalRagError } from '@/lib/ai/legal-rag-client'
@@ -13,15 +13,23 @@ import { exportDraft, LegalRagError } from '@/lib/ai/legal-rag-client'
 export const POST = withErrorHandling(async (req: NextRequest) => {
   const auth = await requireOfficeUser(req)
   if (!auth.ok) return auth.response
+  const unverified = requireVerifiedEmail(auth.user)
+  if (unverified) return unverified
 
   const limited = rateLimit(req, `ai:contract-draft-export:${auth.user.id}`, { limit: 20, windowMs: 60 * 60_000 })
   if (limited) return limited
 
   const body = await req.json().catch(() => null)
   const draft = typeof body?.draft === 'string' ? body.draft : ''
-  const filename = typeof body?.filename === 'string' && body.filename.trim() ? body.filename.trim().slice(0, 100) : 'عقد'
+  // Only letters, digits, spaces, dot, dash, underscore (Arabic included) —
+  // the name becomes a file name on the user's disk and is passed upstream.
+  const rawName = typeof body?.filename === 'string' ? body.filename.trim().slice(0, 100) : ''
+  const filename = rawName.replace(/[^\p{L}\p{N} ._-]/gu, '_').trim() || 'عقد'
   const format = body?.format === 'pdf' ? 'pdf' : 'docx'
   if (!draft.trim()) return NextResponse.json({ error: 'لا يوجد نص عقد لتصديره' }, { status: 400 })
+  // A generated draft is at most a few tens of KB; this bounds what gets
+  // relayed to the upstream exporter.
+  if (draft.length > 200_000) return NextResponse.json({ error: 'نص العقد أطول من المسموح للتصدير' }, { status: 413 })
 
   try {
     const file = await exportDraft(draft, filename, format, auth.user.officeId)

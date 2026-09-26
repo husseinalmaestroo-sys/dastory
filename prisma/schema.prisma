@@ -86,6 +86,11 @@ model User {
   twoFactorSecret String?       @db.Text
   active        Boolean        @default(true)
   emailVerified Boolean        @default(false)
+  // Platform (cross-tenant) administrator. Never set by any HTTP route —
+  // only by the operator CLI scripts/platform-admin.mjs. Effective only
+  // together with an email listed in PLATFORM_ADMIN_EMAILS, a verified email
+  // and enabled 2FA (see isPlatformAdmin in src/lib/auth-server.ts).
+  isPlatformAdmin Boolean      @default(false)
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
   cases         Case[]         @relation("LawyerCases")
@@ -178,9 +183,14 @@ model Session {
 model Invoice {
   id        String        @id @default(cuid())
   number    String
-  amount    Float
-  paid      Float         @default(0)
+  // Exact decimal money: JOD has 3 minor-unit digits (fils). Never Float.
+  amount    Decimal       @db.Decimal(12, 3)
+  paid      Decimal       @default(0) @db.Decimal(12, 3)
   status    InvoiceStatus @default(UNPAID)
+  // Set the first time a payment is recorded (paid > 0 or status PAID) and
+  // never cleared — the deletion guard keys off it, so resetting `paid` to 0
+  // cannot turn a paid invoice back into a deletable draft.
+  paymentRecordedAt DateTime?
   dueDate   DateTime?
   clientId  String
   client    Client        @relation(fields: [clientId], references: [id])
@@ -221,7 +231,7 @@ model Document {
 model Notification {
   id        String   @id @default(cuid())
   title     String
-  body      String
+  body      String   @db.Text
   read      Boolean  @default(false)
   userId    String
   user      User     @relation(fields: [userId], references: [id])

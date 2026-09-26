@@ -1,6 +1,7 @@
 import type { NextRequest } from 'next/server'
 import type { Prisma, Role } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
+import { getClientIp } from '@/lib/api-security'
 
 type AuditActor = {
   id?: string | null
@@ -17,12 +18,14 @@ type AuditDetails = {
   metadata?: Prisma.InputJsonValue
 }
 
+/**
+ * The client IP recorded in audit logs and signature records. Same trusted-
+ * proxy logic as rate limiting (getClientIp): the FIRST X-Forwarded-For entry
+ * used to be taken here, which is exactly the part a client writes itself,
+ * so audit trails could be made to show any IP an attacker liked.
+ */
 export function getRequestIp(req: NextRequest) {
-  return (
-    req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
-    req.headers.get('x-real-ip') ||
-    'local'
-  )
+  return getClientIp(req)
 }
 
 export async function auditLog(

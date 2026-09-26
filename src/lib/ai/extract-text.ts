@@ -1,8 +1,31 @@
 import { PDFParse } from 'pdf-parse'
 import mammoth from 'mammoth'
-import { runOcrOnImage } from './ocr'
+import { OcrTimeoutError, OcrUnavailableError, runOcrOnImage, withOcrWorker } from './ocr'
 
-export class ExtractionError extends Error {}
+/**
+ * A user-presentable extraction failure. `status` is the HTTP status the
+ * calling route should answer with: 422 for a document we can't read, 503
+ * when the OCR engine itself is unavailable on this server, 504 when OCR ran
+ * out of time.
+ */
+export class ExtractionError extends Error {
+  status: number
+  constructor(message: string, status = 422) {
+    super(message)
+    this.status = status
+  }
+}
+
+function toExtractionError(err: unknown): unknown {
+  if (err instanceof OcrUnavailableError) {
+    console.error('[extract-text] OCR unavailable:', err.message)
+    return new ExtractionError('خدمة التعرف الضوئي على النصوص غير متاحة على الخادم حالياً', 503)
+  }
+  if (err instanceof OcrTimeoutError) {
+    return new ExtractionError('استغرق التعرف الضوئي على النص وقتاً أطول من المسموح — جرّب ملفاً أوضح أو أصغر', 504)
+  }
+  return err
+}
 
 export interface ExtractedText {
   text: string
@@ -27,6 +50,14 @@ const MAX_OCR_PAGES = 30
  * through real OCR. DOCX is parsed structurally. Images go straight to OCR.
  */
 export async function extractText(bytes: Buffer, ext: string): Promise<ExtractedText> {
+  try {
+    return await extractTextUnsafe(bytes, ext)
+  } catch (err) {
+    throw toExtractionError(err)
+  }
+}
+
+async function extractTextUnsafe(bytes: Buffer, ext: string): Promise<ExtractedText> {
   const type = ext.toUpperCase()
 
   if (type === 'PDF') {
@@ -55,12 +86,16 @@ export async function extractText(bytes: Buffer, ext: string): Promise<Extracted
       // for real and OCR the resulting images, rather than returning near-
       // empty text and pretending analysis happened on it.
       const shots = await parser.getScreenshot({ scale: 2 })
-      const ocrParts: string[] = []
-      for (const page of shots.pages) {
-        if (!page.data) continue
-        const pageText = await runOcrOnImage(Buffer.from(page.data))
-        if (pageText.trim()) ocrParts.push(pageText.trim())
-      }
+      // One OCR worker for every page — the language models load once.
+      const ocrParts = await withOcrWorker(async (recognize) => {
+        const parts: string[] = []
+        for (const page of shots.pages) {
+          if (!page.data) continue
+          const pageText = (await recognize(Buffer.from(page.data))).text
+          if (pageText.trim()) parts.push(pageText.trim())
+        }
+        return parts
+      })
       const ocrText = ocrParts.join('\n\n').trim()
       if (!ocrText) {
         throw new ExtractionError('تعذّر استخراج أي نص من هذا الملف — تأكد أنه يحتوي نصاً واضحاً أو صورة مقروءة')

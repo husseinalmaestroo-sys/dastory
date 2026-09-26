@@ -1,7 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Badge, Field, SectionHeader, SettingRow } from '@/components/dashboard/ui'
+import { Badge, Field, SectionHeader, SettingRow, ErrorState } from '@/components/dashboard/ui'
+import { apiFetch, errorMessage } from '@/lib/dashboard/api-client'
 import { PermissionsMatrix } from '@/components/dashboard/PermissionsMatrix'
 import { useDashboard } from '@/components/dashboard/DashboardContext'
 
@@ -90,15 +91,17 @@ export default function SettingsClient({
   // is no synchronous setAuditLoading(true) inside that effect
   // (react-hooks/set-state-in-effect); later manual reloads refresh in place.
   const [auditLoading, setAuditLoading] = useState(isAdmin)
+  const [auditError, setAuditError] = useState('')
+  const [billingError, setBillingError] = useState('')
 
   const loadAuditLogs = useCallback(async () => {
     if (!isAdmin) return
     try {
-      const res = await fetch('/api/audit-logs?limit=50')
-      if (!res.ok) return
-      const data = await res.json()
+      const { data } = await apiFetch<AuditLogItem[]>('/api/audit-logs?limit=50')
       if (Array.isArray(data)) setAuditLogs(data)
-    } catch {
+      setAuditError('')
+    } catch (err) {
+      setAuditError(errorMessage(err))
     } finally {
       setAuditLoading(false)
     }
@@ -107,27 +110,25 @@ export default function SettingsClient({
   const [billing, setBilling] = useState<{ status: string; planName: string | null; daysLeftInTrial: number | null; paymentProviderConnected: boolean } | null>(null)
   useEffect(() => {
     if (!isAdmin) return
-    fetch('/api/billing/status').then(r => r.ok ? r.json() : null).then(setBilling).catch(() => {})
+    apiFetch<any>('/api/billing/status').then(({ data }) => setBilling(data)).catch((err) => setBillingError(errorMessage(err)))
   }, [isAdmin])
 
   useEffect(() => {
     let alive = true
-    fetch('/api/auth/2fa')
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
+    apiFetch<any>('/api/auth/2fa')
+      .then(({ data }) => {
         if (!alive || !data) return
         setSecurity({ enabled: Boolean(data.enabled), setupPending: Boolean(data.setupPending) })
       })
-      .catch(() => {})
+      .catch((err) => { if (alive) setSecurityError(`تعذّر تحميل حالة المصادقة الثنائية: ${errorMessage(err)}`) })
 
     // Audit logs fetched inline (setState only in the promise callbacks, not
     // synchronously in the effect body — react-hooks/set-state-in-effect).
     // loadAuditLogs() itself stays for the post-action manual refreshes below.
     if (isAdmin) {
-      fetch('/api/audit-logs?limit=50')
-        .then(r => (r.ok ? r.json() : null))
-        .then(data => { if (alive && Array.isArray(data)) setAuditLogs(data) })
-        .catch(() => {})
+      apiFetch<AuditLogItem[]>('/api/audit-logs?limit=50')
+        .then(({ data }) => { if (alive && Array.isArray(data)) setAuditLogs(data) })
+        .catch((err) => { if (alive) setAuditError(errorMessage(err)) })
         .finally(() => { if (alive) setAuditLoading(false) })
     }
     return () => { alive = false }
@@ -301,6 +302,7 @@ export default function SettingsClient({
       {isAdmin && (
         <div className="card" style={{ marginTop: 14 }}>
           <div className="ct">📋 سجل التدقيق</div>
+          {auditError && <ErrorState message={`تعذّر تحميل سجل التدقيق: ${auditError}`} onRetry={loadAuditLogs} />}
           {auditLoading ? (
             <div style={{ padding: 18, textAlign: 'center', color: '#94A3B8' }}>جارٍ تحميل السجل...</div>
           ) : auditLogs.length === 0 ? (
@@ -329,6 +331,7 @@ export default function SettingsClient({
         </div>
       )}
 
+      {isAdmin && billingError && <ErrorState message={`تعذّر تحميل حالة الاشتراك: ${billingError}`} />}
       {isAdmin && billing && (
         <div className="card" style={{ marginTop: 14 }}>
           <div className="ct">💳 حالة الاشتراك</div>

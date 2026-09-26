@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { requireOfficeUser } from '@/lib/auth-server'
 import { InvoiceStatus, Prisma } from '@prisma/client'
@@ -8,9 +8,14 @@ import { auditLog } from '@/lib/audit'
 import { buildPage, cursorWhereClause, paginationHeaders, parsePagination } from '@/lib/pagination'
 import { withIdempotency } from '@/lib/idempotency'
 import { withErrorHandling } from '@/lib/api-handler'
+import { decimalsToNumbers, jsonWithMoney, parseMoney } from '@/lib/money'
+import { resolveInvoiceStatus } from '@/lib/financial-guards'
+import { validateFields } from '@/lib/validation'
+import { INVOICE_FIELDS, required } from '@/lib/field-specs'
 
 const INVOICE_STATUSES = new Set<string>(Object.values(InvoiceStatus))
 const DEFAULT_LIMIT = 200
+const INVOICE_FIELDS_CREATE = required(INVOICE_FIELDS, 'number')
 
 export const GET = withErrorHandling(async (req: NextRequest) => {
   const auth = await requireOfficeUser(req)
@@ -36,7 +41,7 @@ export const GET = withErrorHandling(async (req: NextRequest) => {
   ])
 
   const result = buildPage(rows, limit, (r) => r.createdAt)
-  return NextResponse.json(result.page, { headers: paginationHeaders(result, total) })
+  return jsonWithMoney(result.page, { headers: paginationHeaders(result, total) })
 })
 
 export const POST = withErrorHandling(async (req: NextRequest) => {
@@ -47,24 +52,22 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
 
   return withIdempotency(req, auth.user.id, 'invoices:create', async () => {
     const body = await req.json().catch(() => null)
-    const amount = Number(body?.amount)
-    const paid = Number(body?.paid ?? 0)
-    if (
-      !body ||
-      typeof body.number !== 'string' ||
-      typeof body.clientId !== 'string' ||
-      !body.number.trim() ||
-      !body.clientId.trim() ||
-      !Number.isFinite(amount) ||
-      amount <= 0 ||
-      !Number.isFinite(paid) ||
-      paid < 0
-    ) {
+    if (!body || typeof body !== 'object' || typeof body.clientId !== 'string' || !body.clientId.trim()) {
       return { status: 400, body: { error: 'بيانات الفاتورة المطلوبة غير صالحة' } }
     }
-    if (paid > amount) {
-      return { status: 400, body: { error: 'المبلغ المدفوع لا يمكن أن يتجاوز مبلغ الفاتورة' } }
+    const v = validateFields(body, INVOICE_FIELDS_CREATE)
+    if (!v.ok) return { status: 400, body: { error: v.error } }
+
+    const amount = parseMoney(body.amount)
+    const paid = body.paid === undefined || body.paid === null ? parseMoney(0) : parseMoney(body.paid)
+    if (!amount || amount.lte(0) || !paid) {
+      return { status: 400, body: { error: 'بيانات الفاتورة المطلوبة غير صالحة — المبالغ بثلاث منازل عشرية كحد أقصى' } }
     }
+    const requestedStatus = typeof body.status === 'string' && INVOICE_STATUSES.has(body.status)
+      ? body.status as InvoiceStatus
+      : undefined
+    const status = resolveInvoiceStatus(amount, paid, requestedStatus)
+    if (!status.ok) return { status: 400, body: { error: status.error } }
 
     const client = await prisma.client.findFirst({
       where: clientWritableWhere(auth.user, { id: body.clientId, active: true }),
@@ -90,22 +93,19 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
       }
     }
 
-    const status = typeof body.status === 'string' && INVOICE_STATUSES.has(body.status)
-      ? body.status as InvoiceStatus
-      : undefined
-
     let inv
     try {
       inv = await prisma.invoice.create({
         data: {
-          number: body.number.trim(),
+          number: v.values.number as string,
           amount,
           paid,
-          status,
+          status: status.status,
+          paymentRecordedAt: paid.gt(0) || status.status === 'PAID' ? new Date() : null,
           dueDate,
           clientId: client.id,
           caseId,
-          notes: typeof body.notes === 'string' && body.notes.trim() ? body.notes.trim() : null,
+          notes: v.values.notes ?? null,
           officeId: auth.user.officeId,
         },
         include: { client: { select: { name: true } } },
@@ -120,8 +120,10 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
     await auditLog(req, auth.user, 'invoice.created', {
       entityType: 'invoice',
       entityId: inv.id,
-      metadata: { clientId: client.id, caseId, status: inv.status },
+      metadata: { clientId: client.id, caseId, status: inv.status, amount: inv.amount.toFixed(3), paid: inv.paid.toFixed(3) },
     })
-    return { status: 201, body: inv }
+    // Converted here (not just at response time) because the idempotency
+    // layer stores this body as JSON for replay.
+    return { status: 201, body: decimalsToNumbers(inv) }
   })
 })

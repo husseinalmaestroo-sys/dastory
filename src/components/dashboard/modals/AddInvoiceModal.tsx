@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { apiFetch, errorMessage, fetchAllPages } from '@/lib/dashboard/api-client'
 import { Field } from '@/components/dashboard/ui'
 import { useDashboard } from '@/components/dashboard/DashboardContext'
 
@@ -13,27 +14,32 @@ export default function AddInvoiceModal() {
   const [err, setErr] = useState('')
 
   useEffect(() => {
-    fetch('/api/clients').then(r => r.json()).then(d => { if (Array.isArray(d)) setClients(d) }).catch(() => {})
-    fetch('/api/cases').then(r => r.json()).then(d => { if (Array.isArray(d)) setCases(d) }).catch(() => {})
+    // Pickers load EVERY client/case, not the first page of 200.
+    fetchAllPages<any>('/api/clients').then(({ items }) => setClients(items)).catch((e) => setErr(`تعذّر تحميل قائمة العملاء: ${errorMessage(e)}`))
+    fetchAllPages<any>('/api/cases').then(({ items }) => setCases(items)).catch((e) => setErr(`تعذّر تحميل قائمة القضايا: ${errorMessage(e)}`))
   }, [])
 
   const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm(p => ({ ...p, [k]: e.target.value }))
 
   const clientCases = cases.filter(c => !form.clientId || c.clientId === form.clientId)
+  // One key per opened form: a double-click or network retry of the same
+  // submission is de-duplicated by the API (src/lib/idempotency.ts).
+  const [idempotencyKey] = useState(() => crypto.randomUUID())
 
   async function save() {
     if (!form.clientId) return setErr('يجب اختيار العميل')
-    if (!form.amount || isNaN(Number(form.amount)) || Number(form.amount) <= 0) return setErr('المبلغ غير صحيح')
+    const amount = form.amount.trim()
+    // Up to 3 decimals (JOD fils); sent as the typed decimal string.
+    if (!/^\d+(\.\d{1,3})?$/.test(amount) || Number(amount) <= 0) return setErr('المبلغ غير صحيح (ثلاث منازل عشرية كحد أقصى)')
     setBusy(true); setErr('')
     const number = form.number.trim() || `INV-${Date.now()}`
     try {
-      const res = await fetch('/api/invoices', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, number, amount: Number(form.amount), caseId: form.caseId || null, dueDate: form.dueDate || null, notes: form.notes || null }),
+      await apiFetch('/api/invoices', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey },
+        body: JSON.stringify({ ...form, number, amount, caseId: form.caseId || null, dueDate: form.dueDate || null, notes: form.notes || null }),
       })
-      if (!res.ok) { const d = await res.json(); setErr(d.error || 'خطأ في الحفظ'); return }
       notifySuccess()
-    } catch { setErr('تعذّر الاتصال بالخادم') } finally { setBusy(false) }
+    } catch (e) { setErr(errorMessage(e)) } finally { setBusy(false) }
   }
 
   return (

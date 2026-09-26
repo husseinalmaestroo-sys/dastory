@@ -4,6 +4,7 @@ import { requireCitizenUser } from '@/lib/auth-server'
 import { buildPage, combineWhere, cursorWhereClause, paginationHeaders, parsePagination } from '@/lib/pagination'
 import type { Prisma } from '@prisma/client'
 import { withErrorHandling } from '@/lib/api-handler'
+import { CITIZEN_SESSION_SELECT } from '@/lib/citizen-fields'
 
 const DEFAULT_LIMIT = 200
 
@@ -25,9 +26,8 @@ export const GET = withErrorHandling(async (req: NextRequest) => {
 
   const rows = await prisma.session.findMany({
     where,
-    include: {
-      case: { select: { number: true, title: true } },
-    },
+    // Explicit allow-list — never session notes (citizen-fields.ts).
+    select: CITIZEN_SESSION_SELECT,
     orderBy: [{ date: 'asc' }, { id: 'asc' }],
     take: limit + 1,
   })

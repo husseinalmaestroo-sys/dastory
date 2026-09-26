@@ -1,9 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { requireCitizenUser } from '@/lib/auth-server'
 import { buildPage, combineWhere, cursorWhereClause, paginationHeaders, parsePagination } from '@/lib/pagination'
 import type { Prisma } from '@prisma/client'
 import { withErrorHandling } from '@/lib/api-handler'
+import { CITIZEN_INVOICE_SELECT } from '@/lib/citizen-fields'
+import { jsonWithMoney } from '@/lib/money'
 
 const DEFAULT_LIMIT = 200
 
@@ -22,13 +24,12 @@ export const GET = withErrorHandling(async (req: NextRequest) => {
 
   const rows = await prisma.invoice.findMany({
     where,
-    include: {
-      case: { select: { number: true, title: true } },
-    },
+    // Explicit allow-list — never invoice notes (citizen-fields.ts).
+    select: CITIZEN_INVOICE_SELECT,
     orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     take: limit + 1,
   })
 
   const result = buildPage(rows, limit, (r) => r.createdAt)
-  return NextResponse.json(result.page, { headers: paginationHeaders(result) })
+  return jsonWithMoney(result.page, { headers: paginationHeaders(result) })
 })

@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { enforceRequestSecurity, isHttpsRequest } from '@/lib/api-security'
+import { accountThrottle, clearAccountFailures, enforceRequestSecurity, isHttpsRequest, recordAccountFailure } from '@/lib/api-security'
+import { withErrorHandling } from '@/lib/api-handler'
 import { auditLog } from '@/lib/audit'
 import { signToken, verifyToken } from '@/lib/jwt'
 import { verifyTotpCode } from '@/lib/totp'
 import { resolveAndMigrateSecret } from '@/lib/secret-crypto'
-import { isPlatformAdminEmail } from '@/lib/auth-server'
+import { isPlatformAdmin } from '@/lib/auth-server'
 
-export async function POST(req: NextRequest) {
-  try {
+export const POST = withErrorHandling(async (req: NextRequest) => {
     const blocked = enforceRequestSecurity(req, 'auth:2fa-verify', { limit: 12, windowMs: 60_000 })
     if (blocked) return blocked
 
@@ -30,16 +30,22 @@ export async function POST(req: NextRequest) {
     if (!user.twoFactorEnabled || !user.twoFactorSecret) {
       return NextResponse.json({ error: 'المصادقة الثنائية غير مفعلة لهذا الحساب' }, { status: 400 })
     }
+    // A 6-digit code has 10^6 values; bound guesses per account, not just per IP.
+    const throttleKey = `2fa:${user.id}`
+    const throttled = accountThrottle(throttleKey, 10)
+    if (throttled) return throttled
     const secret = await resolveAndMigrateSecret(user.twoFactorSecret, (encrypted) =>
       prisma.user.update({ where: { id: user.id }, data: { twoFactorSecret: encrypted } })
     )
     if (!verifyTotpCode(secret, code)) {
+      recordAccountFailure(throttleKey, 15 * 60_000)
       await auditLog(req, { id: user.id, email: user.email, role: user.role, officeId: user.officeId }, 'auth.2fa_login_failed', {
         metadata: { reason: 'invalid_code' },
       })
       return NextResponse.json({ error: 'رمز التحقق غير صحيح' }, { status: 401 })
     }
 
+    clearAccountFailures(throttleKey)
     const fullToken = signToken({
       id: user.id,
       email: user.email,
@@ -59,7 +65,7 @@ export async function POST(req: NextRequest) {
         role: user.role,
         officeId: user.officeId,
         officeName: user.office?.name ?? null,
-        isPlatformAdmin: user.role === 'OFFICE_MANAGER' && isPlatformAdminEmail(user.email),
+        isPlatformAdmin: isPlatformAdmin(user),
         barNumber: user.barNumber,
         clientId: user.clientId ?? null,
         twoFactorEnabled: user.twoFactorEnabled,
@@ -76,8 +82,4 @@ export async function POST(req: NextRequest) {
 
     await auditLog(req, { id: user.id, email: user.email, role: user.role, officeId: user.officeId }, 'auth.2fa_login_success')
     return res
-  } catch (err) {
-    console.error(err)
-    return NextResponse.json({ error: 'خطأ في الخادم' }, { status: 500 })
-  }
-}
+})

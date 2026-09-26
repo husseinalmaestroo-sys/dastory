@@ -172,3 +172,29 @@ export function CalendarItem({ color, title, subtitle }: { color: string; title:
     </div>
   )
 }
+
+/**
+ * A failed request, shown as such — distinct from an empty result. Used
+ * wherever a list or panel used to swallow fetch errors into an empty state.
+ */
+export function ErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
+  return (
+    <div role="alert" style={{ padding: 20, textAlign: 'center', color: '#FCA5A5', background: 'rgba(239,68,68,.06)', border: '1px solid rgba(239,68,68,.25)', borderRadius: 10, margin: '10px 0' }}>
+      <div style={{ fontSize: '.85rem', marginBottom: onRetry ? 10 : 0 }}>⚠️ {message}</div>
+      {onRetry && <button className="dbtn dbtn-s" onClick={onRetry}>إعادة المحاولة</button>}
+    </div>
+  )
+}
+
+/** Pagination footer: how many rows are shown out of how many, and a "load more" button while more exist. */
+export function LoadMore({ shown, total, hasMore, loading, onClick }: { shown: number; total: number | null; hasMore: boolean; loading: boolean; onClick: () => void }) {
+  if (!hasMore && (total === null || shown >= total)) return null
+  return (
+    <div style={{ textAlign: 'center', padding: '12px 0', color: '#94A3B8', fontSize: '.78rem' }}>
+      <div style={{ marginBottom: 8 }}>يُعرض {shown}{total !== null ? ` من أصل ${total}` : ''}</div>
+      {hasMore && (
+        <button className="dbtn dbtn-s" onClick={onClick} disabled={loading}>{loading ? 'جارٍ التحميل...' : 'عرض المزيد'}</button>
+      )}
+    </div>
+  )
+}

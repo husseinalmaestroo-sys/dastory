@@ -6,6 +6,9 @@ import { rateLimit } from '@/lib/api-security'
 import { auditLog } from '@/lib/audit'
 import { notifyUser } from '@/lib/notify'
 import { writeDocumentFile } from '@/lib/document-storage'
+import { withErrorHandling } from '@/lib/api-handler'
+import { fitFileName } from '@/lib/validation'
+import { MAX_UPLOAD_BYTES, MAX_UPLOAD_REQUEST_BYTES } from '@/lib/upload-limits'
 
 const ALLOWED_TYPES = new Set(['PDF', 'DOC', 'DOCX', 'XLS', 'XLSX', 'PNG', 'JPG', 'JPEG', 'TXT'])
 const ALLOWED_MIME_PREFIXES = ['application/pdf', 'application/msword', 'application/vnd.', 'image/png', 'image/jpeg', 'text/plain']
@@ -24,68 +27,85 @@ function hasValidSignature(ext: string, buffer: Buffer) {
   return false
 }
 
-export async function POST(req: NextRequest) {
-  try {
-    const auth = await requireOfficeUser(req)
-    if (!auth.ok) return auth.response
-    const limited = rateLimit(req, `documents:upload:${auth.user.id}`, { limit: 30, windowMs: 60 * 60_000 })
-    if (limited) return limited
+const TOO_LARGE = 'حجم الملف يتجاوز 20MB'
 
-    const formData = await req.formData()
-    const file = formData.get('file') as File | null
-    const caseId = (formData.get('caseId') as string) || null
+export const POST = withErrorHandling(async (req: NextRequest) => {
+  const auth = await requireOfficeUser(req)
+  if (!auth.ok) return auth.response
+  const limited = rateLimit(req, `documents:upload:${auth.user.id}`, { limit: 30, windowMs: 60 * 60_000 })
+  if (limited) return limited
 
-    if (!file || file.size === 0) return NextResponse.json({ error: 'لم يتم اختيار ملف' }, { status: 400 })
-    if (file.size > 20 * 1024 * 1024) return NextResponse.json({ error: 'حجم الملف يتجاوز 20MB' }, { status: 400 })
-
-    const ext = (file.name.split('.').pop() ?? '').toUpperCase()
-    if (!ALLOWED_TYPES.has(ext)) {
-      return NextResponse.json({ error: 'نوع الملف غير مدعوم' }, { status: 400 })
-    }
-    if (file.type && !ALLOWED_MIME_PREFIXES.some((mime) => file.type.startsWith(mime))) {
-      return NextResponse.json({ error: 'نوع الملف لا يطابق الامتداد' }, { status: 400 })
-    }
-
-    let linkedCase: { id: string; number: string; ownerId: string } | null = null
-    if (caseId) {
-      linkedCase = await prisma.case.findFirst({
-        where: caseVisibilityWhere(auth.user, { id: caseId }),
-        select: { id: true, number: true, ownerId: true },
-      })
-      if (!linkedCase) return NextResponse.json({ error: 'القضية غير موجودة' }, { status: 404 })
-    }
-
-    const bytes = Buffer.from(await file.arrayBuffer())
-    if (!hasValidSignature(ext, bytes)) {
-      return NextResponse.json({ error: 'محتوى الملف لا يطابق نوعه' }, { status: 400 })
-    }
-
-    const storedPath = await writeDocumentFile(auth.user.officeId, auth.user.id, file.name, ext, bytes)
-
-    const doc = await prisma.document.create({
-      data: {
-        name: file.name,
-        type: ext,
-        size: file.size,
-        url: storedPath,
-        caseId: caseId || null,
-        officeId: auth.user.officeId,
-        ownerId: auth.user.id,
-      },
-      include: { case: { select: { number: true, title: true } } },
-    })
-
-    await auditLog(req, auth.user, 'document.uploaded', {
-      entityType: 'document',
-      entityId: doc.id,
-      metadata: { type: doc.type, size: doc.size, caseId: doc.caseId },
-    })
-    if (linkedCase && linkedCase.ownerId !== auth.user.id) {
-      await notifyUser(linkedCase.ownerId, auth.user.officeId, 'مستند جديد', `تم رفع مستند جديد على قضية ${linkedCase.number}: ${doc.name}`)
-    }
-    return NextResponse.json({ ...doc, url: `/api/documents/${doc.id}/download` })
-  } catch (err) {
-    console.error(err)
-    return NextResponse.json({ error: 'خطأ في الخادم' }, { status: 500 })
+  // Refuse an oversized body up front, before buffering/parsing it.
+  const declared = Number(req.headers.get('content-length'))
+  if (Number.isFinite(declared) && declared > MAX_UPLOAD_REQUEST_BYTES) {
+    return NextResponse.json({ error: TOO_LARGE }, { status: 413 })
   }
-}
+
+  // A body that can't be parsed as multipart (truncated in transit, not
+  // multipart at all) is the client's problem — 400, not a 500.
+  let formData: FormData
+  try {
+    formData = await req.formData()
+  } catch {
+    return NextResponse.json({ error: 'تعذّرت قراءة الملف المرفوع — أعد المحاولة' }, { status: 400 })
+  }
+  const file = formData.get('file')
+  const rawCaseId = formData.get('caseId')
+  const caseId = typeof rawCaseId === 'string' && rawCaseId ? rawCaseId : null
+
+  if (!(file instanceof File) || file.size === 0) return NextResponse.json({ error: 'لم يتم اختيار ملف' }, { status: 400 })
+  if (file.size > MAX_UPLOAD_BYTES) return NextResponse.json({ error: TOO_LARGE }, { status: 413 })
+
+  const ext = (file.name.split('.').pop() ?? '').toUpperCase()
+  if (!ALLOWED_TYPES.has(ext)) {
+    return NextResponse.json({ error: 'نوع الملف غير مدعوم' }, { status: 400 })
+  }
+  if (file.type && !ALLOWED_MIME_PREFIXES.some((mime) => file.type.startsWith(mime))) {
+    return NextResponse.json({ error: 'نوع الملف لا يطابق الامتداد' }, { status: 400 })
+  }
+
+  let linkedCase: { id: string; number: string; ownerId: string } | null = null
+  if (caseId) {
+    linkedCase = await prisma.case.findFirst({
+      where: caseVisibilityWhere(auth.user, { id: caseId }),
+      select: { id: true, number: true, ownerId: true },
+    })
+    if (!linkedCase) return NextResponse.json({ error: 'القضية غير موجودة' }, { status: 404 })
+  }
+
+  const bytes = Buffer.from(await file.arrayBuffer())
+  if (bytes.length !== file.size) {
+    // Defense in depth against a body cut short in transit.
+    return NextResponse.json({ error: 'تعذّرت قراءة الملف المرفوع — أعد المحاولة' }, { status: 400 })
+  }
+  if (!hasValidSignature(ext, bytes)) {
+    return NextResponse.json({ error: 'محتوى الملف لا يطابق نوعه' }, { status: 400 })
+  }
+
+  const storedPath = await writeDocumentFile(auth.user.officeId, auth.user.id, file.name, ext, bytes)
+
+  const doc = await prisma.document.create({
+    data: {
+      // The stored display name must fit its VARCHAR(191) column; the file
+      // on disk keeps its own (separately sanitized) name.
+      name: fitFileName(file.name),
+      type: ext,
+      size: file.size,
+      url: storedPath,
+      caseId: linkedCase?.id ?? null,
+      officeId: auth.user.officeId,
+      ownerId: auth.user.id,
+    },
+    include: { case: { select: { number: true, title: true } } },
+  })
+
+  await auditLog(req, auth.user, 'document.uploaded', {
+    entityType: 'document',
+    entityId: doc.id,
+    metadata: { type: doc.type, size: doc.size, caseId: doc.caseId },
+  })
+  if (linkedCase && linkedCase.ownerId !== auth.user.id) {
+    await notifyUser(linkedCase.ownerId, auth.user.officeId, 'مستند جديد', `تم رفع مستند جديد على قضية ${linkedCase.number}: ${doc.name}`)
+  }
+  return NextResponse.json({ ...doc, url: `/api/documents/${doc.id}/download` })
+})

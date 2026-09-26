@@ -6,10 +6,14 @@ import { caseVisibilityWhere, sessionVisibilityWhere } from '@/lib/tenant-scope'
 import { rateLimit } from '@/lib/api-security'
 import { auditLog } from '@/lib/audit'
 import { notifyUser } from '@/lib/notify'
-import { buildPage, combineWhere, cursorWhereClause, paginationHeaders, parsePagination } from '@/lib/pagination'
+import { buildPage, combineWhere, cursorWhereClause, paginationHeaders, parseDateRange, parsePagination } from '@/lib/pagination'
 import type { Prisma } from '@prisma/client'
 import { withIdempotency } from '@/lib/idempotency'
 import { withErrorHandling } from '@/lib/api-handler'
+import { validateFields } from '@/lib/validation'
+import { SESSION_FIELDS, required } from '@/lib/field-specs'
+
+const SESSION_FIELDS_CREATE = required(SESSION_FIELDS, 'time', 'court')
 
 const SESSION_STATUSES = new Set<string>(Object.values(SessionStatus))
 const DEFAULT_LIMIT = 200
@@ -21,21 +25,29 @@ export const GET = withErrorHandling(async (req: NextRequest) => {
   const pagination = parsePagination(req, DEFAULT_LIMIT)
   if (!pagination.ok) return pagination.response
   const { limit, cursor } = pagination.params
+  const range = parseDateRange(req, 'date')
+  if (!range.ok) return range.response
+  // Ascending (default; upcoming first when combined with from=now) or
+  // descending (most recent past sessions first, with to=now).
+  const order = req.nextUrl.searchParams.get('order') === 'desc' ? 'desc' : 'asc'
 
   const where = combineWhere(
-    sessionVisibilityWhere(auth.user),
-    cursorWhereClause('date', 'asc', cursor)
+    sessionVisibilityWhere(auth.user, range.where as Prisma.SessionWhereInput),
+    cursorWhereClause('date', order, cursor)
   ) as Prisma.SessionWhereInput
 
-  const rows = await prisma.session.findMany({
-    where,
-    include: { case: { include: { client: { select: { name: true } } } } },
-    orderBy: [{ date: 'asc' }, { id: 'asc' }],
-    take: limit + 1,
-  })
+  const [rows, total] = await Promise.all([
+    prisma.session.findMany({
+      where,
+      include: { case: { include: { client: { select: { name: true } } } } },
+      orderBy: [{ date: order }, { id: order }],
+      take: limit + 1,
+    }),
+    cursor ? Promise.resolve(undefined) : prisma.session.count({ where: sessionVisibilityWhere(auth.user, range.where as Prisma.SessionWhereInput) }),
+  ])
 
   const result = buildPage(rows, limit, (r) => r.date)
-  return NextResponse.json(result.page, { headers: paginationHeaders(result) })
+  return NextResponse.json(result.page, { headers: paginationHeaders(result, total) })
 })
 
 export const POST = withErrorHandling(async (req: NextRequest) => {
@@ -48,17 +60,16 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
     const body = await req.json().catch(() => null)
     if (
       !body ||
+      typeof body !== 'object' ||
       typeof body.caseId !== 'string' ||
       typeof body.date !== 'string' ||
-      typeof body.time !== 'string' ||
-      typeof body.court !== 'string' ||
       !body.caseId.trim() ||
-      !body.date.trim() ||
-      !body.time.trim() ||
-      !body.court.trim()
+      !body.date.trim()
     ) {
       return { status: 400, body: { error: 'بيانات الجلسة المطلوبة ناقصة' } }
     }
+    const v = validateFields(body, SESSION_FIELDS_CREATE)
+    if (!v.ok) return { status: 400, body: { error: v.error } }
 
     const date = new Date(body.date)
     if (Number.isNaN(date.getTime())) {
@@ -79,11 +90,11 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
       data: {
         caseId: caseRow.id,
         date,
-        time: body.time.trim(),
-        court: body.court.trim(),
-        judge: typeof body.judge === 'string' && body.judge.trim() ? body.judge.trim() : null,
+        time: v.values.time as string,
+        court: v.values.court as string,
+        judge: v.values.judge ?? null,
         status,
-        notes: typeof body.notes === 'string' && body.notes.trim() ? body.notes.trim() : null,
+        notes: v.values.notes ?? null,
         officeId: auth.user.officeId,
       },
       include: { case: { include: { client: { select: { name: true } } } } },

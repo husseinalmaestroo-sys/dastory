@@ -1,3 +1,4 @@
+import { isIP } from 'net'
 import { NextRequest, NextResponse } from 'next/server'
 
 // Rate limiting here is in-process memory (a Map on globalThis) — correct
@@ -82,28 +83,40 @@ if (!globalForSecurity.dostooriRateLimitCleanupStarted) {
 }
 
 /**
- * Best-effort client IP for rate limiting only — not an authentication or
- * authorization signal. Reverse proxies APPEND their observed peer to the
- * end of an existing X-Forwarded-For chain rather than rewriting earlier
- * entries, so the LAST entry is what our own proxy hop actually saw as its
- * direct peer. A client sending their own X-Forwarded-For header to spoof
- * this just adds an earlier, ignored entry — unlike taking the *first*
- * entry (a common mistake), which trusts whatever the client claims about
- * itself outright.
- *
- * This still assumes a single trusted reverse proxy sits directly in front
- * of the app and no other untrusted hop is between it and us. That matches
- * a standard single-proxy deployment (e.g. Hostinger's Node.js hosting),
- * but if the real topology is ever different, verify against real traffic
- * — don't rely on this for anything beyond best-effort rate limiting.
+ * Whether proxy-supplied client-IP headers may be believed. Only true when
+ * the app sits behind our own reverse proxy (deploy/setup-nginx.sh sets
+ * X-Real-IP to the TCP peer and appends it to X-Forwarded-For, overwriting or
+ * extending anything the client sent) — docker-compose.yml sets
+ * TRUST_PROXY=1 for exactly that topology. Without a trusted proxy those
+ * headers are pure client input: honoring them let anyone rotate a fake
+ * X-Forwarded-For per request and never hit a rate limit.
  */
-function clientIp(req: NextRequest) {
+function trustProxy(): boolean {
+  const v = process.env.TRUST_PROXY?.trim().toLowerCase()
+  return v === '1' || v === 'true'
+}
+
+/**
+ * Best-effort client IP for rate limiting and audit logs — not an
+ * authentication or authorization signal. Behind the trusted proxy: the
+ * proxy's X-Real-IP, else the LAST X-Forwarded-For entry (the hop our proxy
+ * appended; earlier entries are client-supplied). Anything that doesn't
+ * parse as an IP address is ignored. Without a trusted proxy every request
+ * resolves to one shared 'direct' bucket — correct for local development,
+ * and fail-safe (limits still apply) if TRUST_PROXY is ever missing in
+ * production.
+ */
+export function getClientIp(req: NextRequest): string {
+  if (!trustProxy()) return 'direct'
+  const realIp = req.headers.get('x-real-ip')?.trim()
+  if (realIp && isIP(realIp)) return realIp
   const forwardedFor = req.headers.get('x-forwarded-for')
   if (forwardedFor) {
     const parts = forwardedFor.split(',').map((p) => p.trim()).filter(Boolean)
-    if (parts.length > 0) return parts[parts.length - 1]
+    const last = parts[parts.length - 1]
+    if (last && isIP(last)) return last
   }
-  return req.headers.get('x-real-ip') || 'local'
+  return 'unknown'
 }
 
 // Whether the client's connection to us is HTTPS. Reads the actual request
@@ -145,7 +158,7 @@ export function rejectCrossSite(req: NextRequest) {
 
 export function rateLimit(req: NextRequest, bucket: string, options: RateLimitOptions) {
   const now = Date.now()
-  const key = `${bucket}:${clientIp(req)}`
+  const key = `${bucket}:${getClientIp(req)}`
   const existing = rateLimitStore.get(key)
 
   if (!existing || existing.resetAt <= now) {
@@ -165,4 +178,40 @@ export function rateLimit(req: NextRequest, bucket: string, options: RateLimitOp
 
 export function enforceRequestSecurity(req: NextRequest, bucket: string, options: RateLimitOptions) {
   return rejectCrossSite(req) ?? rateLimit(req, bucket, options)
+}
+
+// ── Per-account failure throttling ─────────────────────────────────────────
+// IP-keyed limits alone don't protect one account from a distributed guess
+// (many IPs, few attempts each). These count *failures* per account key
+// (e.g. the login email) regardless of IP: after `limit` failures within the
+// window, further attempts are refused until it expires. A success clears
+// the counter. Same single-process store as rateLimit() above.
+
+const FAILURE_PREFIX = 'failures:'
+
+/** 429 if this account key already has `limit` recent failures; does not count this attempt. */
+export function accountThrottle(key: string, limit: number): NextResponse | null {
+  const entry = rateLimitStore.get(FAILURE_PREFIX + key)
+  const now = Date.now()
+  if (!entry || entry.resetAt <= now || entry.count < limit) return null
+  const retryAfter = Math.ceil((entry.resetAt - now) / 1000)
+  return NextResponse.json(
+    { error: 'محاولات فاشلة كثيرة لهذا الحساب، جرّب لاحقاً', code: 'account_throttled' },
+    { status: 429, headers: { 'Retry-After': String(retryAfter) } }
+  )
+}
+
+export function recordAccountFailure(key: string, windowMs: number) {
+  const now = Date.now()
+  const storeKey = FAILURE_PREFIX + key
+  const entry = rateLimitStore.get(storeKey)
+  if (!entry || entry.resetAt <= now) {
+    rateLimitStore.set(storeKey, { count: 1, resetAt: now + windowMs })
+  } else {
+    entry.count += 1
+  }
+}
+
+export function clearAccountFailures(key: string) {
+  rateLimitStore.delete(FAILURE_PREFIX + key)
 }

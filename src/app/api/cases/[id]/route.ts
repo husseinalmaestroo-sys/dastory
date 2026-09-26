@@ -8,13 +8,16 @@ import { auditLog } from '@/lib/audit'
 import { notifyUser } from '@/lib/notify'
 import { deleteDocumentFile } from '@/lib/document-storage'
 import { withErrorHandling } from '@/lib/api-handler'
+import { validateFields } from '@/lib/validation'
+import { CASE_FIELDS } from '@/lib/field-specs'
+import { caseHasSignatureTrail, signedDocumentConflict } from '@/lib/signature-guards'
 
 const CASE_STATUSES = new Set<string>(Object.values(CaseStatus))
 
 export const GET = withErrorHandling(async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const auth = await requireOfficeUser(req)
   if (!auth.ok) return auth.response
-  const limited = rateLimit(req, `cases:update:${auth.user.id}`, { limit: 120, windowMs: 60 * 60_000 })
+  const limited = rateLimit(req, `cases:read:${auth.user.id}`, { limit: 600, windowMs: 60 * 60_000 })
   if (limited) return limited
 
   const { id } = await params
@@ -44,12 +47,14 @@ export const GET = withErrorHandling(async (req: NextRequest, { params }: { para
 export const PATCH = withErrorHandling(async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const auth = await requireOfficeUser(req)
   if (!auth.ok) return auth.response
-  const limited = rateLimit(req, `cases:delete:${auth.user.id}`, { limit: 60, windowMs: 60 * 60_000 })
+  const limited = rateLimit(req, `cases:update:${auth.user.id}`, { limit: 120, windowMs: 60 * 60_000 })
   if (limited) return limited
 
   const { id } = await params
   const body = await req.json().catch(() => null)
-  if (!body) return NextResponse.json({ error: 'بيانات غير صالحة' }, { status: 400 })
+  if (!body || typeof body !== 'object') return NextResponse.json({ error: 'بيانات غير صالحة' }, { status: 400 })
+  const v = validateFields(body, CASE_FIELDS)
+  if (!v.ok) return NextResponse.json({ error: v.error }, { status: 400 })
 
   const existing = await prisma.case.findFirst({
     where: caseVisibilityWhere(auth.user, { id }),
@@ -58,20 +63,20 @@ export const PATCH = withErrorHandling(async (req: NextRequest, { params }: { pa
   if (!existing) return NextResponse.json({ error: 'غير موجود' }, { status: 404 })
 
   const data: Record<string, unknown> = {}
-  if (typeof body.number === 'string') {
-    if (!body.number.trim()) return NextResponse.json({ error: 'رقم القضية مطلوب' }, { status: 400 })
-    data.number = body.number.trim()
+  if ('number' in body) {
+    if (!v.values.number) return NextResponse.json({ error: 'رقم القضية مطلوب' }, { status: 400 })
+    data.number = v.values.number
   }
-  if (typeof body.title === 'string') {
-    if (!body.title.trim()) return NextResponse.json({ error: 'عنوان القضية مطلوب' }, { status: 400 })
-    data.title = body.title.trim()
+  if ('title' in body) {
+    if (!v.values.title) return NextResponse.json({ error: 'عنوان القضية مطلوب' }, { status: 400 })
+    data.title = v.values.title
   }
-  if (typeof body.type === 'string') {
-    if (!body.type.trim()) return NextResponse.json({ error: 'نوع القضية مطلوب' }, { status: 400 })
-    data.type = body.type.trim()
+  if ('type' in body) {
+    if (!v.values.type) return NextResponse.json({ error: 'نوع القضية مطلوب' }, { status: 400 })
+    data.type = v.values.type
   }
-  if ('court' in body) data.court = typeof body.court === 'string' && body.court.trim() ? body.court.trim() : null
-  if ('notes' in body) data.notes = typeof body.notes === 'string' && body.notes.trim() ? body.notes.trim() : null
+  if ('court' in body) data.court = v.values.court ?? null
+  if ('notes' in body) data.notes = v.values.notes ?? null
   if (typeof body.status === 'string') {
     if (!CASE_STATUSES.has(body.status)) return NextResponse.json({ error: 'حالة القضية غير صالحة' }, { status: 400 })
     data.status = body.status
@@ -122,6 +127,8 @@ export const PATCH = withErrorHandling(async (req: NextRequest, { params }: { pa
 export const DELETE = withErrorHandling(async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const auth = await requireOfficeUser(req)
   if (!auth.ok) return auth.response
+  const limited = rateLimit(req, `cases:delete:${auth.user.id}`, { limit: 60, windowMs: 60 * 60_000 })
+  if (limited) return limited
 
   const { id } = await params
   const existing = await prisma.case.findFirst({
@@ -129,6 +136,15 @@ export const DELETE = withErrorHandling(async (req: NextRequest, { params }: { p
     select: { id: true },
   })
   if (!existing) return NextResponse.json({ error: 'غير موجود' }, { status: 404 })
+
+  // Signed documents (and their signature images) are an audit trail —
+  // refuse rather than destroy it. A signature created concurrently after
+  // this check makes the transaction below fail on its foreign key, which
+  // withErrorHandling also answers with 409 (never a 500).
+  if (await caseHasSignatureTrail(existing.id)) {
+    await auditLog(req, auth.user, 'case.delete_blocked', { entityType: 'case', entityId: existing.id, metadata: { reason: 'signed_document' } })
+    return signedDocumentConflict('case')
+  }
 
   const documentsToRemove = await prisma.document.findMany({
     where: { caseId: existing.id },

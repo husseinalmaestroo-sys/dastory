@@ -2,7 +2,8 @@
 
 import { useState } from 'react'
 import { statusAr } from '@/lib/api'
-import { Badge, InfoLine, SectionHeader } from '@/components/dashboard/ui'
+import { Badge, ErrorState, InfoLine, SectionHeader } from '@/components/dashboard/ui'
+import { apiFetch, errorMessage } from '@/lib/dashboard/api-client'
 
 type OfficeSearchResults = {
   clients: { id: string; name: string; phone: string | null; email: string | null }[]
@@ -16,21 +17,25 @@ export default function OfficeSearchPage() {
   const [searched, setSearched] = useState(false)
   const [loading, setLoading] = useState(false)
   const [results, setResults] = useState<OfficeSearchResults>({ clients: [], cases: [], invoices: [], documents: [] })
+  const [error, setError] = useState('')
 
   const search = async (value = query) => {
     setQuery(value)
     if (value.trim().length < 2) return
-    setSearched(true); setLoading(true)
+    setSearched(true); setLoading(true); setError('')
     try {
-      const res = await fetch(`/api/search?q=${encodeURIComponent(value.trim())}`)
-      const data = await res.json()
+      const { data } = await apiFetch<any>(`/api/search?q=${encodeURIComponent(value.trim())}`)
       setResults({
         clients: Array.isArray(data.clients) ? data.clients : [],
         cases: Array.isArray(data.cases) ? data.cases : [],
         invoices: Array.isArray(data.invoices) ? data.invoices : [],
         documents: Array.isArray(data.documents) ? data.documents : [],
       })
-    } catch { setResults({ clients: [], cases: [], invoices: [], documents: [] }) } finally { setLoading(false) }
+    } catch (err) {
+      // A failed search is reported as such — never as "no results".
+      setResults({ clients: [], cases: [], invoices: [], documents: [] })
+      setError(errorMessage(err))
+    } finally { setLoading(false) }
   }
 
   const totalHits = results.clients.length + results.cases.length + results.invoices.length + results.documents.length
@@ -43,6 +48,7 @@ export default function OfficeSearchPage() {
         <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="اسم عميل، رقم قضية، رقم فاتورة، اسم ملف..." onKeyDown={(e) => e.key === 'Enter' && search()} />
         <button className="dbtn dbtn-p" onClick={() => search()}>🔍 بحث</button>
       </div>
+      {error && <ErrorState message={error} onRetry={() => search()} />}
       {searched && (
         loading ? (
           <div className="card"><div style={{ color: '#64748B', textAlign: 'center', padding: 24 }}>جارٍ البحث...</div></div>

@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import { fmtMoney } from '@/lib/api'
-import { Bars, SectionHeader, StatCard } from '@/components/dashboard/ui'
+import { Bars, ErrorState, SectionHeader, StatCard } from '@/components/dashboard/ui'
+import { apiFetch, errorMessage } from '@/lib/dashboard/api-client'
 import { useDashboard } from '@/components/dashboard/DashboardContext'
 
 function RestrictedNotice() {
@@ -24,12 +25,20 @@ export default function ReportsPage() {
 function ReportsPageContent() {
   const [data, setData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [retryKey, setRetryKey] = useState(0)
 
   useEffect(() => {
-    fetch('/api/reports').then(r => r.json()).then(setData).catch(() => {}).finally(() => setLoading(false))
-  }, [])
+    let cancelled = false
+    apiFetch<any>('/api/reports')
+      .then(({ data }) => { if (!cancelled) { setData(data); setError('') } })
+      .catch((err) => { if (!cancelled) setError(errorMessage(err)) })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [retryKey])
 
   if (loading) return <div className="pg"><div style={{ padding: 48, textAlign: 'center', color: '#94A3B8' }}>جارٍ تحميل التقارير...</div></div>
+  if (error) return <div className="pg"><ErrorState message={`تعذّر تحميل التقارير: ${error}`} onRetry={() => { setLoading(true); setRetryKey((k) => k + 1) }} /></div>
 
   const statusLabel: Record<string, string> = { ACTIVE: 'نشطة', CLOSED: 'مغلقة', SUSPENDED: 'موقوفة', PENDING: 'معلقة' }
   const totalCases = (data?.casesByStatus ?? []).reduce((s: number, c: any) => s + c._count._all, 0)

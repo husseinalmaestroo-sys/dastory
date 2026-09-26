@@ -4,15 +4,19 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { requireOfficeUser } from '@/lib/auth-server'
 import { documentVisibilityWhere } from '@/lib/tenant-scope'
+import { rateLimit } from '@/lib/api-security'
+import { withErrorHandling } from '@/lib/api-handler'
 
 function isInside(root: string, target: string) {
   const rel = relative(root, target)
   return rel === '' || (!!rel && !rel.startsWith('..') && !isAbsolute(rel))
 }
 
-export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export const GET = withErrorHandling(async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const auth = await requireOfficeUser(req)
   if (!auth.ok) return auth.response
+  const limited = rateLimit(req, `documents:read:${auth.user.id}`, { limit: 600, windowMs: 60 * 60_000 })
+  if (limited) return limited
 
   const { id } = await params
   const doc = await prisma.document.findFirst({
@@ -40,9 +44,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       headers: {
         'Content-Type': 'application/octet-stream',
         'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(doc.name)}`,
+        // Private client material: never stored by a shared cache/proxy.
+        'Cache-Control': 'private, no-store',
       },
     })
   } catch {
     return NextResponse.json({ error: 'تعذر قراءة الملف' }, { status: 404 })
   }
-}
+})

@@ -73,7 +73,8 @@ describe('case deletion — financial integrity', () => {
     expect(survivingInvoice).not.toBeNull()
     expect(survivingInvoice?.caseId).toBeNull()
     expect(survivingInvoice?.status).toBe('PAID')
-    expect(survivingInvoice?.paid).toBe(500)
+    // Money is an exact DECIMAL(12,3) now — compare its decimal value, not a float.
+    expect(survivingInvoice?.paid.toFixed(3)).toBe('500.000')
   })
 
   it('removes the case\'s document rows when the case is deleted', async () => {

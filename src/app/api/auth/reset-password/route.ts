@@ -33,7 +33,9 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
   await prisma.$transaction([
     prisma.user.update({
       where: { id: user.id },
-      data: { password: hashed, sessionVersion: { increment: 1 } },
+      // Completing a reset proves control of the inbox the link was sent to,
+      // which is exactly what email verification establishes.
+      data: { password: hashed, sessionVersion: { increment: 1 }, emailVerified: true },
     }),
     prisma.passwordResetToken.updateMany({
       where: { userId: user.id, usedAt: null },

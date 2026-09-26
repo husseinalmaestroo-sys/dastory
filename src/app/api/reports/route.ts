@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { requireOfficeManager } from '@/lib/auth-server'
+import { withErrorHandling } from '@/lib/api-handler'
+import { jsonWithMoney } from '@/lib/money'
 
-export async function GET(req: NextRequest) {
-  try {
+export const GET = withErrorHandling(async (req: NextRequest) => {
     const auth = await requireOfficeManager(req)
     if (!auth.ok) return auth.response
     const officeId = auth.user.officeId
@@ -42,7 +43,7 @@ export async function GET(req: NextRequest) {
         prisma.client.count({ where: { officeId } }),
       ])
 
-    return NextResponse.json({
+    return jsonWithMoney({
       casesByStatus,
       casesByType,
       totalRevenue: invoiceAgg._sum.amount ?? 0,
@@ -53,8 +54,4 @@ export async function GET(req: NextRequest) {
       sessionsThisMonth,
       totalClients,
     })
-  } catch (err) {
-    console.error(err)
-    return NextResponse.json({ error: 'خطأ في الخادم' }, { status: 500 })
-  }
-}
+})

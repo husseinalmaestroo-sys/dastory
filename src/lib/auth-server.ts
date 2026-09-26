@@ -3,6 +3,7 @@ import { verifyToken, JWTPayload } from './jwt'
 import { prisma } from '@/lib/prisma'
 import { rejectCrossSite } from '@/lib/api-security'
 import { getSubscriptionEnforcement } from '@/lib/billing'
+import { PLATFORM_ADMIN_EMAILS } from '@/lib/env'
 
 export function getUser(req: NextRequest): JWTPayload | null {
   return getTokenPayload(req.cookies.get('ds_token')?.value)
@@ -20,19 +21,48 @@ type AuthResult<T extends JWTPayload> =
 type OfficeUser = ActiveUser & { officeId: string }
 type OfficeManager = OfficeUser & { role: 'OFFICE_MANAGER' }
 type CitizenUser = ActiveUser & { role: 'CITIZEN'; officeId: string; clientId: string }
-// emailVerified is deliberately NOT part of the JWT payload itself (like
-// active/twoFactorEnabled, it's re-checked fresh from the DB on every
-// request below, not trusted from a token that could be stale for days).
-export type ActiveUser = JWTPayload & { emailVerified: boolean }
+// emailVerified / twoFactorEnabled / isPlatformAdmin are deliberately NOT
+// trusted from the JWT: like `active`, they're re-read from the DB on every
+// request below, not taken from a token that could be days old.
+export type ActiveUser = JWTPayload & {
+  emailVerified: boolean
+  twoFactorEnabled: boolean
+  /** Effective platform-admin status (see isPlatformAdmin) — never the raw DB flag. */
+  isPlatformAdmin: boolean
+  /** Raw DB flag: provisioned by an operator, possibly not yet effective. */
+  platformAdminProvisioned: boolean
+}
 type PlatformAdmin = OfficeManager & { isPlatformAdmin: true }
 
-export function isPlatformAdminEmail(email: string) {
-  const configured = process.env.PLATFORM_ADMIN_EMAILS || 'admin@dostoori.jo'
-  return configured
-    .split(',')
-    .map((item) => item.trim().toLowerCase())
-    .filter(Boolean)
-    .includes(email.toLowerCase())
+export type PlatformAdminCandidate = {
+  email: string
+  role: 'OFFICE_MANAGER' | 'LAWYER' | 'CITIZEN'
+  isPlatformAdmin: boolean
+  emailVerified: boolean
+  twoFactorEnabled: boolean
+}
+
+/**
+ * Platform (cross-tenant) admin. ALL of these must hold — no single one is
+ * enough, and none can be obtained through a public endpoint:
+ *  1. `User.isPlatformAdmin` — set only by the operator CLI
+ *     (scripts/platform-admin.mjs); no HTTP route ever writes it.
+ *  2. the email is listed in PLATFORM_ADMIN_EMAILS (required env, no default).
+ *  3. the email is verified.
+ *  4. 2FA is enabled — and getActiveUserFromToken already rejects any session
+ *     for a 2FA-enabled user that didn't complete the second factor.
+ *  5. role OFFICE_MANAGER.
+ * Previously (1)(3)(4) didn't exist and (2) defaulted to a fixed address, so
+ * self-registering that address at /signup made you platform admin.
+ */
+export function isPlatformAdmin(user: PlatformAdminCandidate): boolean {
+  return (
+    user.role === 'OFFICE_MANAGER' &&
+    user.isPlatformAdmin === true &&
+    user.emailVerified === true &&
+    user.twoFactorEnabled === true &&
+    PLATFORM_ADMIN_EMAILS.has(user.email.toLowerCase())
+  )
 }
 
 function unauthorized() {
@@ -91,6 +121,7 @@ export async function getActiveUserFromToken(token: string | undefined): Promise
       sessionVersion: true,
       twoFactorEnabled: true,
       emailVerified: true,
+      isPlatformAdmin: true,
       active: true,
       office: { select: { active: true } },
     },
@@ -110,6 +141,9 @@ export async function getActiveUserFromToken(token: string | undefined): Promise
     sessionVersion: user.sessionVersion,
     twoFactorVerified: user.twoFactorEnabled ? true : payload.twoFactorVerified,
     emailVerified: user.emailVerified,
+    twoFactorEnabled: user.twoFactorEnabled,
+    isPlatformAdmin: isPlatformAdmin(user),
+    platformAdminProvisioned: user.isPlatformAdmin,
   }
 }
 
@@ -132,7 +166,7 @@ export async function requireOfficeUser(req: NextRequest, opts: OfficeAccessOpti
   // Platform admins are exempt from their own office's subscription state —
   // they're the ones who manage everyone else's, and must never be locked
   // out of /admin by the very thing they're there to fix.
-  if (!opts.skipSubscriptionCheck && !isPlatformAdminEmail(user.email)) {
+  if (!opts.skipSubscriptionCheck && !user.isPlatformAdmin) {
     const blocked = await subscriptionGate(officeUser.officeId, req.method)
     if (blocked) return { ok: false, response: blocked }
   }
@@ -150,8 +184,34 @@ export async function requireOfficeManager(req: NextRequest, opts: OfficeAccessO
 export async function requirePlatformAdmin(req: NextRequest): Promise<AuthResult<PlatformAdmin>> {
   const auth = await requireOfficeManager(req)
   if (!auth.ok) return { ok: false, response: auth.response }
-  if (!isPlatformAdminEmail(auth.user.email)) return { ok: false, response: forbidden() }
+  if (!auth.user.isPlatformAdmin) {
+    // A provisioned operator who hasn't finished securing the account gets
+    // told what's missing; anyone else gets the generic 403.
+    if (auth.user.platformAdminProvisioned) {
+      return {
+        ok: false,
+        response: NextResponse.json(
+          { error: 'حساب مدير المنصة يتطلب بريداً إلكترونياً مؤكَّداً ومصادقة ثنائية مفعّلة', code: 'platform_admin_requirements' },
+          { status: 403 }
+        ),
+      }
+    }
+    return { ok: false, response: forbidden() }
+  }
   return { ok: true, user: { ...auth.user, isPlatformAdmin: true } }
+}
+
+/**
+ * Gate for features that need a proven mailbox: AI (spends money, sends
+ * client material to an external service), the email relay, and creating
+ * accounts for other people. 403 with a stable `code` the UI can act on.
+ */
+export function requireVerifiedEmail(user: Pick<ActiveUser, 'emailVerified'>): NextResponse | null {
+  if (user.emailVerified) return null
+  return NextResponse.json(
+    { error: 'يجب تأكيد بريدك الإلكتروني قبل استخدام هذه الميزة — أعد إرسال رابط التأكيد من صفحة الإعدادات', code: 'email_not_verified' },
+    { status: 403 }
+  )
 }
 
 export async function requireCitizenUser(req: NextRequest): Promise<AuthResult<CitizenUser>> {
@@ -159,5 +219,12 @@ export async function requireCitizenUser(req: NextRequest): Promise<AuthResult<C
   if (!auth.ok) return auth
   const user = auth.user
   if (user.role !== 'CITIZEN' || !user.officeId || !user.clientId) return { ok: false, response: forbidden() }
+  // The portal exists for a live client relationship: once the office
+  // deactivates the client (soft delete), the linked login stops working.
+  const client = await prisma.client.findFirst({
+    where: { id: user.clientId, officeId: user.officeId, active: true },
+    select: { id: true },
+  })
+  if (!client) return { ok: false, response: forbidden() }
   return { ok: true, user: { ...user, role: 'CITIZEN', officeId: user.officeId, clientId: user.clientId } }
 }

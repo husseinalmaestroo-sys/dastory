@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { Field } from '@/components/dashboard/ui'
 import { useDashboard } from '@/components/dashboard/DashboardContext'
+import { apiFetch, errorMessage } from '@/lib/dashboard/api-client'
 
 export default function EditSessionModal({ sessionId }: { sessionId?: string }) {
   const { closeModal, notifySuccess } = useDashboard()
@@ -12,18 +13,24 @@ export default function EditSessionModal({ sessionId }: { sessionId?: string }) 
   const [form, setForm] = useState({ date: '', time: '', court: '', judge: '', status: 'UPCOMING', notes: '' })
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+  const [loadErr, setLoadErr] = useState('')
 
+  // Fetched by id — the old modal searched the first page of /api/sessions
+  // (the 200 OLDEST sessions), so recent sessions opened as an empty form.
   useEffect(() => {
     if (!sessionId) return
-    fetch('/api/sessions').then(r => r.json()).then(d => {
-      const s = Array.isArray(d) ? d.find((item: any) => item.id === sessionId) : null
-      if (s) {
+    let cancelled = false
+    apiFetch<any>(`/api/sessions/${sessionId}`)
+      .then(({ data: s }) => {
+        if (cancelled) return
         setForm({
           date: new Date(s.date).toISOString().slice(0, 10),
           time: s.time, court: s.court, judge: s.judge ?? '', status: s.status, notes: s.notes ?? '',
         })
-      }
-    }).catch(() => {}).finally(() => setLoading(false))
+      })
+      .catch((e) => { if (!cancelled) setLoadErr(errorMessage(e)) })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
   }, [sessionId])
 
   const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setForm(p => ({ ...p, [k]: e.target.value }))
@@ -32,26 +39,25 @@ export default function EditSessionModal({ sessionId }: { sessionId?: string }) 
     if (!form.date || !form.time || !form.court.trim()) return setErr('التاريخ والوقت والمحكمة مطلوبة')
     setBusy(true); setErr('')
     try {
-      const res = await fetch(`/api/sessions/${sessionId}`, {
+      await apiFetch(`/api/sessions/${sessionId}`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...form, judge: form.judge || null, notes: form.notes || null }),
       })
-      if (!res.ok) { const d = await res.json(); setErr(d.error || 'خطأ في الحفظ'); return }
       notifySuccess()
-    } catch { setErr('تعذّر الاتصال بالخادم') } finally { setBusy(false) }
+    } catch (e) { setErr(errorMessage(e)) } finally { setBusy(false) }
   }
 
   async function del() {
     if (!window.confirm('هل أنت متأكد من حذف هذه الجلسة؟')) return
     setBusy(true); setErr('')
     try {
-      const res = await fetch(`/api/sessions/${sessionId}`, { method: 'DELETE' })
-      if (!res.ok) { const d = await res.json(); setErr(d.error || 'تعذّر الحذف'); return }
+      await apiFetch(`/api/sessions/${sessionId}`, { method: 'DELETE' })
       notifySuccess()
-    } catch { setErr('تعذّر الاتصال بالخادم') } finally { setBusy(false) }
+    } catch (e) { setErr(errorMessage(e)) } finally { setBusy(false) }
   }
 
   if (loading) return <div className="mbox" role="dialog" aria-modal="true" tabIndex={-1}><div style={{ padding: 24, textAlign: 'center', color: '#94A3B8' }}>جارٍ التحميل...</div></div>
+  if (loadErr) return <div className="mbox" role="dialog" aria-modal="true" tabIndex={-1}><div className="mt">✏️ تعديل الجلسة <button className="mc" onClick={closeModal} aria-label="إغلاق">✕</button></div><div role="alert" style={{ padding: 24, textAlign: 'center', color: '#FCA5A5' }}>⚠️ {loadErr}</div></div>
 
   return (
     <div className="mbox" role="dialog" aria-modal="true" tabIndex={-1}>

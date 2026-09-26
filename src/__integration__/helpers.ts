@@ -2,7 +2,7 @@
 // dostoori_test database (see vitest.integration.setup.mts), real signed
 // JWTs, real route handlers invoked directly (no HTTP server needed —
 // Next.js Route Handlers are just functions).
-import { randomUUID } from 'crypto'
+import { randomBytes, randomUUID } from 'crypto'
 import { NextRequest } from 'next/server'
 import bcrypt from 'bcryptjs'
 import { Role } from '@prisma/client'
@@ -11,6 +11,12 @@ import { signToken } from '@/lib/jwt'
 
 const BASE_URL = 'https://dostoori-integration-test.local'
 const BASE_HOST = 'dostoori-integration-test.local'
+
+/** A random, valid IPv4 in 10.0.0.0/8 — the rate limiter ignores anything that doesn't parse as an IP. */
+export function randomTestIp(): string {
+  const [a, b, c] = randomBytes(3)
+  return `10.${a}.${b}.${c}`
+}
 
 export type TestUser = {
   id: string
@@ -36,7 +42,7 @@ type UserOpts = {
 function toTestUser(user: {
   id: string; email: string; name: string; role: Role; officeId: string
   clientId: string | null; sessionVersion: number
-}, twoFactorEnabled: boolean): TestUser {
+}, twoFactorEnabled: boolean, twoFactorVerified = !twoFactorEnabled): TestUser {
   const token = signToken({
     id: user.id,
     email: user.email,
@@ -45,7 +51,7 @@ function toTestUser(user: {
     officeId: user.officeId,
     clientId: user.clientId,
     sessionVersion: user.sessionVersion,
-    twoFactorVerified: !twoFactorEnabled,
+    twoFactorVerified,
   })
   return {
     id: user.id,
@@ -89,6 +95,38 @@ export async function createColleague(officeId: string, opts: UserOpts = {}): Pr
   return toTestUser(user, opts.twoFactorEnabled ?? false)
 }
 
+/** Email in vitest.integration.setup.mts's PLATFORM_ADMIN_EMAILS allow-list. */
+export const PLATFORM_ADMIN_TEST_EMAIL = 'platform-admin@dostoori.test'
+
+/**
+ * A fully qualified platform admin — every condition isPlatformAdmin()
+ * requires: operator-provisioned flag, allow-listed email, verified email,
+ * 2FA enabled, and a session that completed the second factor. Removes any
+ * leftover holder of the allow-listed address first (emails are unique).
+ */
+export async function createPlatformAdmin(
+  overrides: { isPlatformAdmin?: boolean; emailVerified?: boolean; twoFactorEnabled?: boolean; email?: string } = {}
+): Promise<TestUser & { officeId: string }> {
+  const email = overrides.email ?? PLATFORM_ADMIN_TEST_EMAIL
+  const leftover = await prisma.user.findUnique({ where: { email }, select: { officeId: true } })
+  if (leftover) await cleanupOffice(leftover.officeId)
+  const office = await prisma.office.create({ data: { name: `Platform Admin Office ${randomUUID().slice(0, 8)}` } })
+  const twoFactorEnabled = overrides.twoFactorEnabled ?? true
+  const user = await prisma.user.create({
+    data: {
+      email,
+      password: await bcrypt.hash('AdminPassw0rd!23', 4),
+      name: 'Platform Admin',
+      role: Role.OFFICE_MANAGER,
+      officeId: office.id,
+      emailVerified: overrides.emailVerified ?? true,
+      twoFactorEnabled,
+      isPlatformAdmin: overrides.isPlatformAdmin ?? true,
+    },
+  })
+  return { ...toTestUser(user, twoFactorEnabled, true), officeId: office.id }
+}
+
 /**
  * Builds a NextRequest against a route, pre-authenticated as `user` (or
  * anonymous if omitted). Defaults to a fresh random IP per call — the
@@ -112,7 +150,7 @@ export function testRequest(
     Origin: BASE_URL,
     Host: BASE_HOST,
     'sec-fetch-site': 'same-origin',
-    'x-forwarded-for': opts.ip ?? `test-client-${randomUUID()}`,
+    'x-forwarded-for': opts.ip ?? randomTestIp(),
     ...opts.headers,
   }
   if (opts.user) headers.Cookie = opts.user.cookie
@@ -139,7 +177,7 @@ export function testFormRequest(
     Origin: BASE_URL,
     Host: BASE_HOST,
     'sec-fetch-site': 'same-origin',
-    'x-forwarded-for': opts.ip ?? `test-client-${randomUUID()}`,
+    'x-forwarded-for': opts.ip ?? randomTestIp(),
   }
   if (opts.user) headers.Cookie = opts.user.cookie
 

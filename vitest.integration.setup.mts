@@ -7,9 +7,17 @@
 // Setup required once per machine before running `npm run test:integration`:
 //   mysql -e "CREATE DATABASE dostoori_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
 //   DATABASE_URL="mysql://root@localhost:3307/dostoori_test" npx prisma migrate deploy
-process.env.DATABASE_URL = 'mysql://root@localhost:3307/dostoori_test'
+// TEST_DATABASE_URL lets CI (or anyone without the XAMPP-style local setup)
+// point at its own MySQL; it must still be a dedicated test database.
+process.env.DATABASE_URL = process.env.TEST_DATABASE_URL || 'mysql://root@localhost:3307/dostoori_test'
 process.env.JWT_SECRET = 'integration-test-jwt-secret-0123456789-abcdefghijklmnop'
 process.env.TWO_FACTOR_ENCRYPTION_KEY = 'integration-test-2fa-key-0123456789-abcdefghijklmnopqrstuv'
+process.env.APP_URL = 'https://app.dostoori.test'
+// Allow-list used by the platform-admin tests. Listing is necessary but not
+// sufficient — see isPlatformAdmin in src/lib/auth-server.ts.
+process.env.PLATFORM_ADMIN_EMAILS = 'platform-admin@dostoori.test,admin@dostoori.jo'
+// Integration tests model the production topology (behind our own proxy).
+process.env.TRUST_PROXY = '1'
 
 // Explicitly unset, not just "happen to be absent": Vite loads the real
 // .env, so a developer who has added a real key here for their own manual

@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireOfficeUser } from '@/lib/auth-server'
+import { requireOfficeUser, requireVerifiedEmail } from '@/lib/auth-server'
 import { rateLimit } from '@/lib/api-security'
 import { auditLog } from '@/lib/audit'
 import { withErrorHandling } from '@/lib/api-handler'
 import { generateDraft, isLegalRagConfigured, LegalRagError } from '@/lib/ai/legal-rag-client'
-import { isUnderMonthlyAiCap, logAiUsage } from '@/lib/ai/usage'
+import { completeAiCall, reserveAiCall } from '@/lib/ai/usage'
 
 // Mirrors ailegal_hussein's own field spec for kind "contract"
 // (ailegal_hussein/src/lib/drafting/forms.ts) — required fields match
@@ -23,6 +23,8 @@ const KNOWN_FIELDS = [
 export const POST = withErrorHandling(async (req: NextRequest) => {
   const auth = await requireOfficeUser(req)
   if (!auth.ok) return auth.response
+  const unverified = requireVerifiedEmail(auth.user)
+  if (unverified) return unverified
 
   const limited = rateLimit(req, `ai:contract-draft:${auth.user.id}`, { limit: 10, windowMs: 60 * 60_000 })
   if (limited) return limited
@@ -44,7 +46,8 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
   if (!isLegalRagConfigured()) {
     return NextResponse.json({ error: 'خدمة صياغة العقود بالذكاء الاصطناعي غير مُفعّلة على هذا الخادم حالياً' }, { status: 503 })
   }
-  if (!(await isUnderMonthlyAiCap(auth.user.officeId))) {
+  const reservation = await reserveAiCall(auth.user, 'contract_draft')
+  if (!reservation) {
     return NextResponse.json({ error: 'تم بلوغ الحد الشهري لاستخدام أدوات الذكاء الاصطناعي لهذا المكتب' }, { status: 429 })
   }
 
@@ -55,17 +58,13 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
     await auditLog(req, auth.user, 'ai.contract_drafted', {
       metadata: { grounded: result.grounded, sourceCount: result.sources.length, contractType: fields.contract_type },
     })
-    await logAiUsage(auth.user, 'contract_draft', {
-      model: 'ailegal_hussein', inputTokens: 0, outputTokens: 0,
-      latencyMs: Date.now() - start, success: true,
-    })
+    await completeAiCall(reservation, { success: true, latencyMs: Date.now() - start })
 
     return NextResponse.json(result)
   } catch (err) {
     const ragError = err instanceof LegalRagError ? err : null
-    await logAiUsage(auth.user, 'contract_draft', {
-      model: 'ailegal_hussein', inputTokens: 0, outputTokens: 0,
-      latencyMs: Date.now() - start, success: false,
+    await completeAiCall(reservation, {
+      success: false, latencyMs: Date.now() - start,
       errorCode: ragError ? String(ragError.status) : 'unknown_error',
     })
     if (ragError) return NextResponse.json({ error: ragError.message }, { status: ragError.status })

@@ -14,16 +14,20 @@ export default function Sidebar({ authUser, isAdmin }: { authUser: AuthUser; isA
   const [counts, setCounts] = useState({ cases: 0, sessions: 0, notifs: 0 })
 
   useEffect(() => {
+    // Badges are decoration: on failure they are simply omitted (the pages
+    // themselves show the error), but the failure is logged, not swallowed.
     Promise.all([
-      fetch('/api/dashboard').then(r => r.json()).catch(() => null),
-      fetch('/api/notifications').then(r => r.json()).catch(() => []),
-    ]).then(([dash, notifs]) => {
+      fetch('/api/dashboard').then(r => (r.ok ? r.json() : null)),
+      // limit=1: only the X-Unread-Count header is needed — it counts ALL
+      // unread notifications, not just those on the first page.
+      fetch('/api/notifications?limit=1').then(r => (r.ok ? Number(r.headers.get('X-Unread-Count') ?? '0') : 0)),
+    ]).then(([dash, unread]) => {
       setCounts({
         cases: dash?.stats?.activeCases ?? 0,
         sessions: dash?.stats?.upcomingSessions ?? 0,
-        notifs: Array.isArray(notifs) ? notifs.filter((n: any) => !n.read).length : 0,
+        notifs: unread,
       })
-    })
+    }).catch((err) => console.warn('[sidebar] badge counts unavailable', err))
   }, [refreshKey])
 
   const sections = isAdmin ? [...BASE_NAV, ADMIN_NAV] : BASE_NAV

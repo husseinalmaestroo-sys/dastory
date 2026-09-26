@@ -1,2 +1,2 @@
 -- AlterTable
-ALTER TABLE `plan` MODIFY `priceMonthlyJod` INTEGER NULL;
+ALTER TABLE `Plan` MODIFY `priceMonthlyJod` INTEGER NULL;

@@ -2,45 +2,46 @@ import { NextResponse } from 'next/server'
 import { access, constants } from 'fs/promises'
 import { join } from 'path'
 import { prisma } from '@/lib/prisma'
-import { isSmtpConfigured } from '@/lib/email'
-import { isLegalRagConfigured } from '@/lib/ai/legal-rag-client'
+import { missingOcrModels } from '@/lib/ai/ocr'
 
-// Public and unauthenticated (standard for a health/liveness endpoint hit by
-// a load balancer or uptime monitor) — deliberately reports only ok/degraded
-// per check, never a connection string, stack trace, or any other secret.
-// Real checks, not a hardcoded {"status":"ok"}: this will genuinely report
-// "down" if the database is actually unreachable or storage isn't writable.
+// Public and unauthenticated — hit by the container HEALTHCHECK, deploy.sh
+// and any external uptime monitor. Reports only what an operator needs to
+// tell "healthy" from "broken", never configuration details (which optional
+// integrations are set up), connection strings or errors.
+//
+// Load-bearing checks (any failure -> 503):
+//   database — a real round trip
+//   storage  — the documents directory is writable (bind mount present)
+//   ocr      — the bundled language models are installed
+
 export async function GET() {
-  const checks: Record<string, { ok: boolean; detail?: string }> = {}
+  const checks: Record<string, boolean> = {}
 
   try {
     await prisma.$queryRaw`SELECT 1`
-    checks.database = { ok: true }
-  } catch {
-    checks.database = { ok: false, detail: 'unreachable' }
+    checks.database = true
+  } catch (err) {
+    console.error('[health] database check failed', err)
+    checks.database = false
   }
 
   try {
-    const storageDir = join(process.cwd(), 'storage', 'case-documents')
-    await access(storageDir, constants.W_OK)
-    checks.storage = { ok: true }
+    await access(join(process.cwd(), 'storage', 'case-documents'), constants.W_OK)
+    checks.storage = true
   } catch {
-    checks.storage = { ok: false, detail: 'not writable or missing' }
+    checks.storage = false
   }
 
-  checks.email = { ok: isSmtpConfigured(), detail: isSmtpConfigured() ? undefined : 'SMTP not configured (optional)' }
-  // Every AI feature in the app now routes through ailegal_hussein (see
-  // ARCHITECTURE.md) — this replaced the earlier Anthropic-direct check,
-  // which would otherwise report status for a provider nothing calls anymore.
-  const aiConfigured = isLegalRagConfigured()
-  checks.ai = { ok: aiConfigured, detail: aiConfigured ? undefined : 'ailegal_hussein not configured (optional)' }
+  checks.ocr = missingOcrModels().length === 0
 
-  // Only database and storage are load-bearing for the app to function at
-  // all; email/AI being unconfigured is a documented, non-degraded state.
-  const healthy = checks.database.ok && checks.storage.ok
-
+  const healthy = Object.values(checks).every(Boolean)
   return NextResponse.json(
-    { status: healthy ? 'ok' : 'degraded', checks, timestamp: new Date().toISOString() },
-    { status: healthy ? 200 : 503 }
+    {
+      status: healthy ? 'ok' : 'degraded',
+      version: process.env.APP_VERSION || 'dev',
+      checks,
+      timestamp: new Date().toISOString(),
+    },
+    { status: healthy ? 200 : 503, headers: { 'Cache-Control': 'no-store' } }
   )
 }

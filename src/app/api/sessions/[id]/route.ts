@@ -7,8 +7,27 @@ import { rateLimit } from '@/lib/api-security'
 import { auditLog } from '@/lib/audit'
 import { notifyUser } from '@/lib/notify'
 import { withErrorHandling } from '@/lib/api-handler'
+import { validateFields } from '@/lib/validation'
+import { SESSION_FIELDS } from '@/lib/field-specs'
 
 const SESSION_STATUSES = new Set<string>(Object.values(SessionStatus))
+
+// Fetch-by-id so the edit modal never depends on the session being in the
+// first page of the list.
+export const GET = withErrorHandling(async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  const auth = await requireOfficeUser(req)
+  if (!auth.ok) return auth.response
+  const limited = rateLimit(req, `sessions:read:${auth.user.id}`, { limit: 600, windowMs: 60 * 60_000 })
+  if (limited) return limited
+
+  const { id } = await params
+  const session = await prisma.session.findFirst({
+    where: sessionVisibilityWhere(auth.user, { id }),
+    include: { case: { select: { id: true, number: true, title: true, client: { select: { name: true } } } } },
+  })
+  if (!session) return NextResponse.json({ error: 'غير موجود' }, { status: 404 })
+  return NextResponse.json(session)
+})
 
 export const PATCH = withErrorHandling(async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const auth = await requireOfficeUser(req)
@@ -18,7 +37,9 @@ export const PATCH = withErrorHandling(async (req: NextRequest, { params }: { pa
 
   const { id } = await params
   const body = await req.json().catch(() => null)
-  if (!body) return NextResponse.json({ error: 'بيانات غير صالحة' }, { status: 400 })
+  if (!body || typeof body !== 'object') return NextResponse.json({ error: 'بيانات غير صالحة' }, { status: 400 })
+  const v = validateFields(body, SESSION_FIELDS)
+  if (!v.ok) return NextResponse.json({ error: v.error }, { status: 400 })
 
   const existing = await prisma.session.findFirst({
     where: sessionVisibilityWhere(auth.user, { id }),
@@ -32,16 +53,16 @@ export const PATCH = withErrorHandling(async (req: NextRequest, { params }: { pa
     if (Number.isNaN(date.getTime())) return NextResponse.json({ error: 'تاريخ الجلسة غير صالح' }, { status: 400 })
     data.date = date
   }
-  if (typeof body.time === 'string') {
-    if (!body.time.trim()) return NextResponse.json({ error: 'وقت الجلسة مطلوب' }, { status: 400 })
-    data.time = body.time.trim()
+  if ('time' in body) {
+    if (!v.values.time) return NextResponse.json({ error: 'وقت الجلسة مطلوب' }, { status: 400 })
+    data.time = v.values.time
   }
-  if (typeof body.court === 'string') {
-    if (!body.court.trim()) return NextResponse.json({ error: 'المحكمة مطلوبة' }, { status: 400 })
-    data.court = body.court.trim()
+  if ('court' in body) {
+    if (!v.values.court) return NextResponse.json({ error: 'المحكمة مطلوبة' }, { status: 400 })
+    data.court = v.values.court
   }
-  if ('judge' in body) data.judge = typeof body.judge === 'string' && body.judge.trim() ? body.judge.trim() : null
-  if ('notes' in body) data.notes = typeof body.notes === 'string' && body.notes.trim() ? body.notes.trim() : null
+  if ('judge' in body) data.judge = v.values.judge ?? null
+  if ('notes' in body) data.notes = v.values.notes ?? null
   if (typeof body.status === 'string') {
     if (!SESSION_STATUSES.has(body.status)) return NextResponse.json({ error: 'حالة الجلسة غير صالحة' }, { status: 400 })
     data.status = body.status
@@ -70,6 +91,8 @@ export const PATCH = withErrorHandling(async (req: NextRequest, { params }: { pa
 export const DELETE = withErrorHandling(async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const auth = await requireOfficeUser(req)
   if (!auth.ok) return auth.response
+  const limited = rateLimit(req, `sessions:delete:${auth.user.id}`, { limit: 60, windowMs: 60 * 60_000 })
+  if (limited) return limited
 
   const { id } = await params
   const existing = await prisma.session.findFirst({

@@ -4,6 +4,7 @@ import { requireOfficeUser } from '@/lib/auth-server'
 import { caseVisibilityWhere, clientVisibilityWhere, documentVisibilityWhere, invoiceVisibilityWhere } from '@/lib/tenant-scope'
 import { rateLimit } from '@/lib/api-security'
 import { withErrorHandling } from '@/lib/api-handler'
+import { jsonWithMoney } from '@/lib/money'
 
 export const GET = withErrorHandling(async (req: NextRequest) => {
   const auth = await requireOfficeUser(req)
@@ -42,5 +43,5 @@ export const GET = withErrorHandling(async (req: NextRequest) => {
     }),
   ])
 
-  return NextResponse.json({ query: q, clients, cases, invoices, documents })
+  return jsonWithMoney({ query: q, clients, cases, invoices, documents })
 })

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { requireOfficeUser } from '@/lib/auth-server'
 import { documentVisibilityWhere } from '@/lib/tenant-scope'
-import { buildPage, cursorWhereClause, paginationHeaders, parsePagination } from '@/lib/pagination'
+import { buildPage, combineWhere, cursorWhereClause, paginationHeaders, parsePagination } from '@/lib/pagination'
 import type { Prisma } from '@prisma/client'
 import { withErrorHandling } from '@/lib/api-handler'
 
@@ -16,7 +16,17 @@ export const GET = withErrorHandling(async (req: NextRequest) => {
   if (!pagination.ok) return pagination.response
   const { limit, cursor } = pagination.params
 
-  const where = documentVisibilityWhere(auth.user, cursorWhereClause('createdAt', 'desc', cursor) as Prisma.DocumentWhereInput)
+  // Optional server-side filters, so search/type filtering covers every
+  // document — not just the page already loaded in the browser.
+  const q = req.nextUrl.searchParams.get('q')?.trim().slice(0, 120)
+  const types = (req.nextUrl.searchParams.get('types') ?? '')
+    .split(',').map((t) => t.trim().toUpperCase()).filter((t) => /^[A-Z]{2,5}$/.test(t)).slice(0, 10)
+  const filterExtra = combineWhere(
+    q ? { OR: [{ name: { contains: q } }, { case: { is: { number: { contains: q } } } }] } : {},
+    types.length ? { type: { in: types } } : {}
+  ) as Prisma.DocumentWhereInput
+
+  const where = documentVisibilityWhere(auth.user, combineWhere(filterExtra, cursorWhereClause('createdAt', 'desc', cursor)) as Prisma.DocumentWhereInput)
 
   const [rows, total] = await Promise.all([
     prisma.document.findMany({
@@ -25,7 +35,7 @@ export const GET = withErrorHandling(async (req: NextRequest) => {
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: limit + 1,
     }),
-    cursor ? Promise.resolve(undefined) : prisma.document.count({ where: documentVisibilityWhere(auth.user) }),
+    cursor ? Promise.resolve(undefined) : prisma.document.count({ where: documentVisibilityWhere(auth.user, filterExtra) }),
   ])
 
   const result = buildPage(rows, limit, (r) => r.createdAt)

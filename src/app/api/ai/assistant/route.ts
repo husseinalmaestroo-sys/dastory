@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireOfficeUser } from '@/lib/auth-server'
+import { requireOfficeUser, requireVerifiedEmail } from '@/lib/auth-server'
 import { rateLimit } from '@/lib/api-security'
 import { auditLog } from '@/lib/audit'
 import { withErrorHandling } from '@/lib/api-handler'
 import { askLegalRag, isLegalRagConfigured, LegalRagError, type ChatTurn } from '@/lib/ai/legal-rag-client'
-import { isUnderMonthlyAiCap, logAiUsage } from '@/lib/ai/usage'
+import { completeAiCall, reserveAiCall } from '@/lib/ai/usage'
 
 // Mirrors ailegal_hussein's own limit (its /api/chat Zod schema caps
 // `question` at 2000) — validating against the real upstream limit here
@@ -46,6 +46,8 @@ function parseHistory(raw: unknown): ChatTurn[] {
 export const POST = withErrorHandling(async (req: NextRequest) => {
   const auth = await requireOfficeUser(req)
   if (!auth.ok) return auth.response
+  const unverified = requireVerifiedEmail(auth.user)
+  if (unverified) return unverified
 
   const limited = rateLimit(req, `ai:assistant:${auth.user.id}`, { limit: 20, windowMs: 60 * 60_000 })
   if (limited) return limited
@@ -62,7 +64,8 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
   if (!isLegalRagConfigured()) {
     return NextResponse.json({ error: 'خدمة المساعد الذكي غير مُفعّلة على هذا الخادم حالياً' }, { status: 503 })
   }
-  if (!(await isUnderMonthlyAiCap(auth.user.officeId))) {
+  const reservation = await reserveAiCall(auth.user, 'assistant')
+  if (!reservation) {
     return NextResponse.json({ error: 'تم بلوغ الحد الشهري لاستخدام المساعد الذكي لهذا المكتب' }, { status: 429 })
   }
 
@@ -73,17 +76,13 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
     await auditLog(req, auth.user, 'ai.assistant_used', {
       metadata: { grounded: result.grounded, mode: result.mode, sourceCount: result.sources.length, historyTurns: history.length },
     })
-    await logAiUsage(auth.user, 'assistant', {
-      model: 'ailegal_hussein', inputTokens: 0, outputTokens: 0,
-      latencyMs: Date.now() - start, success: true,
-    })
+    await completeAiCall(reservation, { success: true, latencyMs: Date.now() - start })
 
     return NextResponse.json(result)
   } catch (err) {
     const ragError = err instanceof LegalRagError ? err : null
-    await logAiUsage(auth.user, 'assistant', {
-      model: 'ailegal_hussein', inputTokens: 0, outputTokens: 0,
-      latencyMs: Date.now() - start, success: false,
+    await completeAiCall(reservation, {
+      success: false, latencyMs: Date.now() - start,
       errorCode: ragError ? String(ragError.status) : 'unknown_error',
     })
     if (ragError) return NextResponse.json({ error: ragError.message }, { status: ragError.status })

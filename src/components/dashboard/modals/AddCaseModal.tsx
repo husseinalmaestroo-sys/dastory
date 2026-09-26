@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { apiFetch, errorMessage, fetchAllPages } from '@/lib/dashboard/api-client'
 import { Field } from '@/components/dashboard/ui'
 import { useDashboard } from '@/components/dashboard/DashboardContext'
 
@@ -13,8 +14,9 @@ export default function AddCaseModal() {
   const [err, setErr] = useState('')
 
   useEffect(() => {
-    fetch('/api/clients').then(r => r.json()).then(d => { if (Array.isArray(d)) setClients(d) }).catch(() => {})
-    fetch('/api/team').then(r => r.json()).then(d => { if (Array.isArray(d)) setLawyers(d) }).catch(() => {})
+    // Pickers load EVERY client, not the first page of 200.
+    fetchAllPages<any>('/api/clients').then(({ items }) => setClients(items)).catch((e) => setErr(`تعذّر تحميل قائمة العملاء: ${errorMessage(e)}`))
+    apiFetch<any[]>('/api/team').then(({ data }) => { if (Array.isArray(data)) setLawyers(data) }).catch((e) => setErr(`تعذّر تحميل قائمة المحامين: ${errorMessage(e)}`))
   }, [])
 
   const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setForm(p => ({ ...p, [k]: e.target.value }))

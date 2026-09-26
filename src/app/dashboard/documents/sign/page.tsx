@@ -1,7 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Field, SectionHeader } from '@/components/dashboard/ui'
+import { ErrorState, Field, SectionHeader } from '@/components/dashboard/ui'
+import { errorMessage, fetchAllPages } from '@/lib/dashboard/api-client'
 
 type SignatureRecord = {
   id: string
@@ -28,8 +29,12 @@ export default function EsignPage() {
   const [historyDocId, setHistoryDocId] = useState('')
   const loadingHistory = !!selectedDoc && historyDocId !== selectedDoc
 
+  const [docsError, setDocsError] = useState('')
+  // The picker must offer every document, not only the first page.
   const loadDocs = useCallback(() => {
-    fetch('/api/documents').then(r => r.json()).then(d => { if (Array.isArray(d)) setDocs(d) }).catch(() => {})
+    fetchAllPages<any>('/api/documents')
+      .then(({ items }) => { setDocs(items); setDocsError('') })
+      .catch((err) => setDocsError(errorMessage(err)))
   }, [])
   useEffect(() => { loadDocs() }, [loadDocs])
 
@@ -133,6 +138,7 @@ export default function EsignPage() {
   return (
     <div className="pg">
       <SectionHeader title="توقيع المستندات" subtitle="صورة توقيع مرفقة مع سجل تدقيق — وليست توقيعاً إلكترونياً موثقاً قانونياً" />
+      {docsError && <ErrorState message={`تعذّر تحميل قائمة المستندات: ${docsError}`} onRetry={loadDocs} />}
       <div style={{ background: 'rgba(245,158,11,.07)', border: '1px solid rgba(245,158,11,.2)', borderRadius: 11, padding: '12px 16px', marginBottom: 16, fontSize: '.8rem', color: '#F59E0B', lineHeight: 1.8 }}>
         ⚠️ هذه الأداة ترفق صورة توقيع مرسومة يدوياً مع سجل تدقيق حقيقي (اسم الموقّع، الوقت، وبصمة SHA-256 لمحتوى المستند وقت التوقيع) — وهي <b>ليست</b> توقيعاً إلكترونياً موثقاً قانونياً بموجب قانون المعاملات الإلكترونية الأردني أو أي تشريع آخر. للتوقيع الموثّق قانونياً راجع جهة معتمدة رسمياً.
       </div>

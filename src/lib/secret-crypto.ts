@@ -8,7 +8,7 @@
 // `v1:` prefix lets decryptSecret tell an encrypted value apart from a
 // legacy plaintext TOTP secret (base32: A-Z2-7 only, never contains ':') —
 // see isLegacyPlaintext, used by the 2FA routes to migrate old rows in
-// place the next time they're read, and by prisma/migrate-2fa-secrets.ts to
+// place the next time they're read, and by prisma/legacy/migrate-2fa-secrets.ts to
 // migrate all of them up front.
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'crypto'
 import { TWO_FACTOR_ENCRYPTION_KEY } from '@/lib/env'

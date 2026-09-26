@@ -9,6 +9,10 @@ import { notifyUser } from '@/lib/notify'
 import { buildPage, combineWhere, cursorWhereClause, paginationHeaders, parsePagination } from '@/lib/pagination'
 import type { Prisma } from '@prisma/client'
 import { withErrorHandling } from '@/lib/api-handler'
+import { validateFields } from '@/lib/validation'
+import { CASE_FIELDS, required } from '@/lib/field-specs'
+
+const CASE_FIELDS_CREATE = required(CASE_FIELDS, 'number', 'title', 'type')
 
 const CASE_STATUSES = new Set<string>(Object.values(CaseStatus))
 
@@ -23,9 +27,14 @@ export const GET = withErrorHandling(async (req: NextRequest) => {
   const { limit, cursor } = pagination.params
 
   const q = req.nextUrl.searchParams.get('q')?.trim().slice(0, 120)
-  const searchExtra = q
-    ? { OR: [{ number: { contains: q } }, { title: { contains: q } }, { type: { contains: q } }, { client: { is: { name: { contains: q } } } }] }
-    : {}
+  const statusParam = req.nextUrl.searchParams.get('status')
+  if (statusParam && !CASE_STATUSES.has(statusParam)) {
+    return NextResponse.json({ error: 'حالة القضية غير صالحة' }, { status: 400 })
+  }
+  const searchExtra = combineWhere(
+    q ? { OR: [{ number: { contains: q } }, { title: { contains: q } }, { type: { contains: q } }, { client: { is: { name: { contains: q } } } }] } : {},
+    statusParam ? { status: statusParam } : {}
+  ) as Prisma.CaseWhereInput
 
   const where = caseVisibilityWhere(auth.user, combineWhere(searchExtra, cursorWhereClause('createdAt', 'desc', cursor)) as Prisma.CaseWhereInput)
 
@@ -54,19 +63,11 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
   if (limited) return limited
 
   const body = await req.json().catch(() => null)
-  if (
-    !body ||
-    typeof body.number !== 'string' ||
-    typeof body.title !== 'string' ||
-    typeof body.type !== 'string' ||
-    typeof body.clientId !== 'string' ||
-    !body.number.trim() ||
-    !body.title.trim() ||
-    !body.type.trim() ||
-    !body.clientId.trim()
-  ) {
+  if (!body || typeof body !== 'object' || typeof body.clientId !== 'string' || !body.clientId.trim()) {
     return NextResponse.json({ error: 'بيانات القضية المطلوبة ناقصة' }, { status: 400 })
   }
+  const v = validateFields(body, CASE_FIELDS_CREATE)
+  if (!v.ok) return NextResponse.json({ error: v.error }, { status: 400 })
 
   const client = await prisma.client.findFirst({
     where: clientWritableWhere(auth.user, { id: body.clientId, active: true }),
@@ -94,15 +95,15 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
 
   const c = await prisma.case.create({
     data: {
-      number: body.number.trim(),
-      title: body.title.trim(),
-      type: body.type.trim(),
-      court: typeof body.court === 'string' && body.court.trim() ? body.court.trim() : null,
+      number: v.values.number as string,
+      title: v.values.title as string,
+      type: v.values.type as string,
+      court: v.values.court ?? null,
       status,
       clientId: client.id,
       lawyerId,
       ownerId,
-      notes: typeof body.notes === 'string' && body.notes.trim() ? body.notes.trim() : null,
+      notes: v.values.notes ?? null,
       officeId: auth.user.officeId,
     },
     include: { client: { select: { name: true } } },

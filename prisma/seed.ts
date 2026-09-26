@@ -12,12 +12,17 @@
 import { PrismaClient, CaseStatus, SessionStatus, InvoiceStatus } from '@prisma/client'
 import bcrypt from 'bcryptjs'
 
-if (process.env.NODE_ENV === 'production' && process.env.ALLOW_DEV_SEED !== 'true') {
+// Two independent guards. NODE_ENV alone was not enough: run from a host
+// shell against a production DATABASE_URL, NODE_ENV is usually unset.
+if (process.env.NODE_ENV === 'production') {
+  console.error('❌ Refusing to run the demo seed with NODE_ENV=production — it wipes data and creates known-password accounts.')
+  process.exit(1)
+}
+if (process.env.ALLOW_DEV_SEED !== 'true') {
   console.error(
-    '❌ Refusing to run the demo seed with NODE_ENV=production. ' +
-    'This script wipes existing data and creates accounts with known passwords. ' +
-    'If you really intend to seed this environment (e.g. a disposable demo), ' +
-    'set ALLOW_DEV_SEED=true explicitly and re-run.'
+    '❌ Refusing to run the demo seed without ALLOW_DEV_SEED=true. ' +
+    'This script wipes existing data and creates accounts with known passwords — ' +
+    'set ALLOW_DEV_SEED=true only against a disposable local/demo database.'
   )
   process.exit(1)
 }

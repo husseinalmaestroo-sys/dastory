@@ -49,3 +49,10 @@ Thumbs.db
 # incidental local test data; this file is machine/session-specific and not
 # meant to be shared.
 .claude/settings.local.json
+
+# Tesseract models copied out of node_modules by scripts/prepare-ocr-models.mjs
+/ocr-models
+
+# Playwright output
+/test-results
+/playwright-report

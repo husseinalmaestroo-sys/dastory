@@ -1,4 +1,6 @@
-import { getSiteSettings } from '@/lib/site-settings'
+import { connection } from 'next/server'
+import * as Sentry from '@sentry/nextjs'
+import { getSiteSettings, SITE_SETTINGS_DEFAULTS, type SiteSettingsData } from '@/lib/site-settings'
 import Ticker from '@/components/landing/Ticker'
 import Navbar from '@/components/landing/Navbar'
 import Hero from '@/components/landing/Hero'
@@ -14,8 +16,27 @@ import Footer from '@/components/landing/Footer'
 import WhatsAppFloatButton from '@/components/landing/WhatsAppFloatButton'
 import ScrollReveal from '@/components/landing/ScrollReveal'
 
+// Rendered per request, never prerendered at build time: `connection()`
+// stops prerendering before the DB read. Prerendering used to query
+// SiteSettings from MySQL during `next build`, so a build without a live,
+// migrated database (the Docker build stage) failed outright. The query is a
+// single primary-key lookup.
+async function loadSettings(): Promise<SiteSettingsData> {
+  await connection()
+  try {
+    return await getSiteSettings()
+  } catch (err) {
+    // Keep the public landing page up during a DB outage (it then shows the
+    // built-in defaults — the same content shown before any admin edit), but
+    // never silently: the failure is logged and sent to Sentry.
+    console.error('[landing] site settings unavailable, rendering defaults', err)
+    Sentry.captureException(err)
+    return SITE_SETTINGS_DEFAULTS
+  }
+}
+
 export default async function LandingPage() {
-  const settings = await getSiteSettings()
+  const settings = await loadSettings()
 
   return (
     <>

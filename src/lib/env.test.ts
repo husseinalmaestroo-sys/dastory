@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { EnvValidationError, requireEnv, validateStrongSecret } from './env'
+import { parsePlatformAdminEmails, validateAppUrl } from './env'
 
 // These tests pin down the fail-closed behavior of secret validation. They
 // must never depend on NODE_ENV — that was exactly the gap that let
@@ -66,5 +67,36 @@ describe('requireEnv', () => {
     process.env.SOME_TEST_VAR = '  value  '
     expect(requireEnv('SOME_TEST_VAR')).toBe('value')
     delete process.env.SOME_TEST_VAR
+  })
+})
+
+
+describe('validateAppUrl — the only origin allowed in emailed links', () => {
+  it('is required (no fallback to the request Host)', () => {
+    expect(() => validateAppUrl(undefined)).toThrow(/APP_URL is required/)
+    expect(() => validateAppUrl('  ')).toThrow(EnvValidationError)
+  })
+  it('accepts a bare https origin and normalizes it', () => {
+    expect(validateAppUrl('https://app.example.com')).toBe('https://app.example.com')
+    expect(validateAppUrl('https://app.example.com/')).toBe('https://app.example.com')
+    expect(validateAppUrl('http://localhost:3000')).toBe('http://localhost:3000')
+  })
+  it('rejects non-http schemes, paths, queries and credentials', () => {
+    for (const bad of ['ftp://x.com', 'javascript:alert(1)', 'https://x.com/app', 'https://x.com?a=1', 'https://u:p@x.com', 'not a url']) {
+      expect(() => validateAppUrl(bad), bad).toThrow(EnvValidationError)
+    }
+  })
+})
+
+describe('parsePlatformAdminEmails — no default, fail closed', () => {
+  it('is required: an unset value no longer falls back to a fixed address', () => {
+    expect(() => parsePlatformAdminEmails(undefined)).toThrow(/PLATFORM_ADMIN_EMAILS is required/)
+    expect(() => parsePlatformAdminEmails(' , ')).toThrow(EnvValidationError)
+  })
+  it('parses and lower-cases a comma-separated list', () => {
+    expect([...parsePlatformAdminEmails(' Ops@Example.com , second@example.com ')]).toEqual(['ops@example.com', 'second@example.com'])
+  })
+  it('rejects a malformed entry', () => {
+    expect(() => parsePlatformAdminEmails('ops@example.com,not-an-email')).toThrow(/invalid email/)
   })
 })

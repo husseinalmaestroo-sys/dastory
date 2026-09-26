@@ -68,6 +68,29 @@ export function parsePagination(req: NextRequest, defaultLimit: number, maxLimit
   return { ok: true, params: { limit, cursor } }
 }
 
+/**
+ * Optional `from` / `to` query params (ISO dates) as a where-fragment on a
+ * date column — lets a calendar fetch exactly the visible range instead of
+ * the first page of everything. Invalid dates are a 400.
+ */
+export function parseDateRange(
+  req: NextRequest,
+  field: string
+): { ok: true; where: Record<string, unknown> } | { ok: false; response: NextResponse } {
+  const sp = req.nextUrl.searchParams
+  const range: Record<string, Date> = {}
+  for (const [param, op] of [['from', 'gte'], ['to', 'lt']] as const) {
+    const raw = sp.get(param)
+    if (!raw) continue
+    const d = new Date(raw)
+    if (Number.isNaN(d.getTime())) {
+      return { ok: false, response: NextResponse.json({ error: `قيمة ${param} غير صالحة` }, { status: 400 }) }
+    }
+    range[op] = d
+  }
+  return { ok: true, where: Object.keys(range).length ? { [field]: range } : {} }
+}
+
 /** Combines multiple Prisma where-fragments with AND, dropping empty ones. */
 export function combineWhere(...parts: Record<string, unknown>[]): Record<string, unknown> {
   const nonEmpty = parts.filter((p) => p && Object.keys(p).length > 0)

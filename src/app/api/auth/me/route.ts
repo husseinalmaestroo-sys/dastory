@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { isPlatformAdminEmail, requireActiveUser } from '@/lib/auth-server'
+import { isPlatformAdmin, requireActiveUser } from '@/lib/auth-server'
 import { withErrorHandling } from '@/lib/api-handler'
 
 export const GET = withErrorHandling(async (req: NextRequest) => {
@@ -22,7 +22,7 @@ export const GET = withErrorHandling(async (req: NextRequest) => {
       role: user.role,
       officeId: user.officeId,
       officeName: user.office?.name ?? null,
-      isPlatformAdmin: user.role === 'OFFICE_MANAGER' && isPlatformAdminEmail(user.email),
+      isPlatformAdmin: isPlatformAdmin(user),
       barNumber: user.barNumber,
       clientId: user.clientId ?? null,
       twoFactorEnabled: user.twoFactorEnabled,

@@ -1,36 +1,54 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { SectionHeader } from '@/components/dashboard/ui'
+import { useEffect, useRef, useState } from 'react'
+import { ErrorState, LoadMore, SectionHeader } from '@/components/dashboard/ui'
 import { docIcon, fmtSize } from '@/lib/dashboard/format'
+import { usePaginatedList } from '@/components/dashboard/usePaginatedList'
+import { apiFetch, errorMessage, fetchAllPages } from '@/lib/dashboard/api-client'
 
 type DocItem = { id: string; name: string; type: string; size: number; url: string | null; createdAt: string; case: { number: string; title: string } | null }
 
+const TYPE_FILTERS: Record<string, string> = {
+  'الكل': '',
+  'PDF': 'PDF',
+  'Word': 'DOC,DOCX',
+  'Excel': 'XLS,XLSX',
+  'صور': 'PNG,JPG,JPEG',
+}
+
 export default function DocumentsPage() {
-  const [docs, setDocs] = useState<DocItem[]>([])
-  const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [query, setQuery] = useState('')
   const [filter, setFilter] = useState('الكل')
+  const [reloadKey, setReloadKey] = useState(0)
   const uploadRef = useRef<HTMLInputElement | null>(null)
   const [cases, setCases] = useState<{ id: string; number: string; title: string }[]>([])
+  const [casesError, setCasesError] = useState('')
   const [pendingFile, setPendingFile] = useState<File | null>(null)
   const [selectedCase, setSelectedCase] = useState('')
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState('')
 
-  const loadDocs = useCallback(() => {
-    // No synchronous setLoading(true) — this runs from the mount effect
-    // (react-hooks/set-state-in-effect). useState(true) covers first load;
-    // the post-upload caller flips it itself.
-    fetch('/api/documents').then(r => r.json()).then(d => { if (Array.isArray(d)) setDocs(d) }).catch(() => {}).finally(() => setLoading(false))
-  }, [])
-
   useEffect(() => {
-    loadDocs()
-    fetch('/api/cases').then(r => r.json()).then(d => {
-      if (Array.isArray(d)) setCases(d.map((c: any) => ({ id: c.id, number: c.number, title: c.title })))
-    }).catch(() => {})
-  }, [loadDocs])
+    const q = search.trim()
+    const timer = window.setTimeout(() => setQuery(q), q ? 300 : 0)
+    return () => window.clearTimeout(timer)
+  }, [search])
+
+  const params = new URLSearchParams()
+  if (query) params.set('q', query)
+  if (TYPE_FILTERS[filter]) params.set('types', TYPE_FILTERS[filter])
+  const qs = params.toString()
+  const list = usePaginatedList<DocItem>(`/api/documents${qs ? `?${qs}` : ''}`, reloadKey)
+
+  // The case picker must offer every case, not only the first page.
+  useEffect(() => {
+    let cancelled = false
+    fetchAllPages<any>('/api/cases')
+      .then(({ items }) => { if (!cancelled) setCases(items.map((c) => ({ id: c.id, number: c.number, title: c.title }))) })
+      .catch((err) => { if (!cancelled) setCasesError(errorMessage(err)) })
+    return () => { cancelled = true }
+  }, [])
 
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]
@@ -45,30 +63,17 @@ export default function DocumentsPage() {
       const fd = new FormData()
       fd.append('file', pendingFile)
       if (selectedCase) fd.append('caseId', selectedCase)
-      const res = await fetch('/api/documents/upload', { method: 'POST', body: fd })
-      const data = await res.json()
-      if (!res.ok) { setUploadError(data.error || 'فشل الرفع'); return }
+      await apiFetch('/api/documents/upload', { method: 'POST', body: fd })
       setPendingFile(null); setSelectedCase('')
-      setLoading(true)
-      loadDocs()
-    } catch { setUploadError('تعذّر رفع الملف') }
+      setReloadKey((k) => k + 1)
+    } catch (err) { setUploadError(errorMessage(err)) }
     finally { setUploading(false) }
   }
 
-  const filtered = docs.filter(d => {
-    const q = search.toLowerCase()
-    const matchSearch = !q || d.name.toLowerCase().includes(q) || d.case?.number.includes(q) || false
-    const matchFilter = filter === 'الكل' || (filter === 'PDF' && d.type.toLowerCase().includes('pdf')) ||
-      (filter === 'Word' && d.type.toLowerCase().includes('doc')) ||
-      (filter === 'Excel' && (d.type.toLowerCase().includes('xls') || d.type.toLowerCase().includes('sheet'))) ||
-      (filter === 'صور' && /image|\.(jpg|jpeg|png)/i.test(d.type))
-    return matchSearch && matchFilter
-  })
-
   return (
     <div className="pg">
-      <SectionHeader title="إدارة الملفات" subtitle={loading ? 'جاري التحميل...' : `${docs.length} ملف`}>
-        <input ref={uploadRef} type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png" style={{ display: 'none' }} onChange={handleFile} />
+      <SectionHeader title="إدارة الملفات" subtitle={list.loading ? 'جاري التحميل...' : `${list.total ?? list.items.length} ملف`}>
+        <input ref={uploadRef} type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.txt" style={{ display: 'none' }} onChange={handleFile} />
         <button className="dbtn dbtn-p" onClick={() => uploadRef.current?.click()}>⬆ رفع ملف</button>
       </SectionHeader>
 
@@ -81,6 +86,7 @@ export default function DocumentsPage() {
               <option value="">— بدون ربط —</option>
               {cases.map(c => <option key={c.id} value={c.id}>{c.number} — {c.title}</option>)}
             </select>
+            {casesError && <div style={{ color: '#F87171', fontSize: '.75rem', marginTop: 4 }}>⚠️ تعذّر تحميل قائمة القضايا: {casesError}</div>}
           </div>
           {uploadError && <div style={{ color: '#F87171', fontSize: '.8rem', marginBottom: 8 }}>⚠️ {uploadError}</div>}
           <div style={{ display: 'flex', gap: 8 }}>
@@ -92,29 +98,35 @@ export default function DocumentsPage() {
 
       <div className="sb2"><div className="si">🔍</div><input placeholder="ابحث في الملفات..." value={search} onChange={e => setSearch(e.target.value)} /></div>
       <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
-        {['الكل', 'PDF', 'Word', 'Excel', 'صور'].map(label => (
+        {Object.keys(TYPE_FILTERS).map(label => (
           <button key={label} className={`dbtn ${filter === label ? 'dbtn-p' : 'dbtn-s'}`} style={{ fontSize: '.74rem' }} onClick={() => setFilter(label)}>{label}</button>
         ))}
       </div>
       <div className="card">
         <div className="ct">📁 المستندات</div>
-        {loading ? (
+        {list.loading ? (
           <div style={{ color: '#64748B', textAlign: 'center', padding: 24 }}>جاري التحميل...</div>
-        ) : filtered.length === 0 ? (
+        ) : list.error && list.items.length === 0 ? (
+          <ErrorState message={list.error} onRetry={list.retry} />
+        ) : list.items.length === 0 ? (
           <div style={{ color: '#64748B', textAlign: 'center', padding: 24 }}>لا توجد ملفات</div>
         ) : (
-          <div className="fg2">
-            {filtered.map(d => (
-              <div className="fc" key={d.id}>
-                <div className="fic">{docIcon(d.type)}</div>
-                <div className="fnm">{d.name}</div>
-                <div className="fsz">{fmtSize(d.size)} · {d.case ? d.case.number : '—'}</div>
-                {d.url && (
-                  <a href={d.url} download={d.name} style={{ fontSize: '.7rem', color: 'var(--gold)', marginTop: 4, display: 'block' }}>⬇ تحميل</a>
-                )}
-              </div>
-            ))}
-          </div>
+          <>
+            <div className="fg2">
+              {list.items.map(d => (
+                <div className="fc" key={d.id}>
+                  <div className="fic">{docIcon(d.type)}</div>
+                  <div className="fnm">{d.name}</div>
+                  <div className="fsz">{fmtSize(d.size)} · {d.case ? d.case.number : '—'}</div>
+                  {d.url && (
+                    <a href={d.url} download={d.name} style={{ fontSize: '.7rem', color: 'var(--gold)', marginTop: 4, display: 'block' }}>⬇ تحميل</a>
+                  )}
+                </div>
+              ))}
+            </div>
+            {list.error && <ErrorState message={list.error} onRetry={list.loadMore} />}
+            <LoadMore shown={list.items.length} total={list.total} hasMore={list.hasMore} loading={list.loadingMore} onClick={list.loadMore} />
+          </>
         )}
       </div>
     </div>

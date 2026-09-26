@@ -374,9 +374,7 @@ function SessionsList({ sessions }: { sessions: CitizenSession[] }) {
               {s.court}
             </div>
           </div>
-          {s.notes && (
-            <p className="mt-2 text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2">{s.notes}</p>
-          )}
+          {/* Session notes are internal staff data — never sent to the client portal (src/lib/citizen-fields.ts). */}
         </div>
       ))}
     </div>

@@ -4,10 +4,14 @@ import { requireOfficeUser } from '@/lib/auth-server'
 import { isOfficeManager } from '@/lib/tenant-scope'
 import { rateLimit } from '@/lib/api-security'
 import { auditLog } from '@/lib/audit'
-import { buildPage, combineWhere, cursorWhereClause, paginationHeaders, parsePagination } from '@/lib/pagination'
+import { buildPage, combineWhere, cursorWhereClause, paginationHeaders, parseDateRange, parsePagination } from '@/lib/pagination'
 import type { Prisma } from '@prisma/client'
 import { withIdempotency } from '@/lib/idempotency'
 import { withErrorHandling } from '@/lib/api-handler'
+import { validateFields } from '@/lib/validation'
+import { CALENDAR_FIELDS, required } from '@/lib/field-specs'
+
+const CALENDAR_FIELDS_CREATE = required(CALENDAR_FIELDS, 'title')
 
 const DEFAULT_LIMIT = 200
 
@@ -18,9 +22,12 @@ export const GET = withErrorHandling(async (req: NextRequest) => {
   const pagination = parsePagination(req, DEFAULT_LIMIT)
   if (!pagination.ok) return pagination.response
   const { limit, cursor } = pagination.params
+  const range = parseDateRange(req, 'date')
+  if (!range.ok) return range.response
 
   const where = combineWhere(
     { officeId: auth.user.officeId },
+    range.where,
     cursorWhereClause('date', 'asc', cursor)
   ) as Prisma.CalendarEventWhereInput
 
@@ -43,17 +50,19 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
 
   return withIdempotency(req, auth.user.id, 'calendar-events:create', async () => {
     const body = await req.json().catch(() => null)
-    if (!body || typeof body.title !== 'string' || !body.title.trim() || typeof body.date !== 'string') {
+    if (!body || typeof body !== 'object' || typeof body.date !== 'string') {
       return { status: 400, body: { error: 'عنوان الحدث وتاريخه مطلوبان' } }
     }
+    const v = validateFields(body, CALENDAR_FIELDS_CREATE)
+    if (!v.ok) return { status: 400, body: { error: v.error } }
     const date = new Date(body.date)
     if (Number.isNaN(date.getTime())) return { status: 400, body: { error: 'تاريخ غير صالح' } }
 
     const event = await prisma.calendarEvent.create({
       data: {
-        title: body.title.trim().slice(0, 200),
+        title: v.values.title as string,
         date,
-        type: typeof body.type === 'string' && body.type.trim() ? body.type.trim().slice(0, 40) : 'general',
+        type: v.values.type ?? 'general',
         officeId: auth.user.officeId,
         createdById: auth.user.id,
       },
@@ -66,6 +75,8 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
 export const DELETE = withErrorHandling(async (req: NextRequest) => {
   const auth = await requireOfficeUser(req)
   if (!auth.ok) return auth.response
+  const limited = rateLimit(req, `calendar:delete:${auth.user.id}`, { limit: 60, windowMs: 60 * 60_000 })
+  if (limited) return limited
 
   const id = req.nextUrl.searchParams.get('id')
   if (!id) return NextResponse.json({ error: 'معرّف الحدث مطلوب' }, { status: 400 })

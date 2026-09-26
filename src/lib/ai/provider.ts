@@ -23,6 +23,8 @@ export type ChatResult = {
   text: string;
   tokensIn: number;
   tokensOut: number;
+  /** The model that actually served the call, for usage accounting (may differ from the provider default when opts.model overrode it). */
+  model?: string;
 };
 
 export type EmbedResult = {
@@ -46,7 +48,7 @@ export interface ChatProvider {
   chat(messages: ChatMessage[], opts?: { maxTokens?: number; model?: string }): Promise<ChatResult>;
   chatStream(
     messages: ChatMessage[],
-    opts?: { maxTokens?: number }
+    opts?: { maxTokens?: number; model?: string }
   ): AsyncGenerator<string, ChatResult, void>;
 }
 

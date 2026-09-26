@@ -1,21 +1,45 @@
 import "server-only";
 import OpenAI from "openai";
 import { env } from "../env";
+import { isRetryableStatus, withDeadline, withIdleTimeout } from "./deadline";
 import type { ChatProvider, EmbeddingProvider, ChatMessage, ChatResult, EmbedResult } from "./provider";
 
-// Lazy for the same reason the DB pool is: `next build` imports this module,
-// and the constructor would demand OPENAI_API_KEY on any machine that builds
-// without a populated .env.
+// maxRetries: 0 — the SDK's default (2 retries, 10-minute timeout) silently
+// multiplied the cost of a failed generation and could hold a request for
+// half an hour. Every call below carries its own deadline instead; see
+// deadline.ts for the retry policy.
 let _client: OpenAI | null = null;
 function client(): OpenAI {
-  if (!_client) _client = new OpenAI({ apiKey: env.openaiApiKey });
+  if (!_client) _client = new OpenAI({ apiKey: env.openaiApiKey, maxRetries: 0, timeout: env.chatTimeoutMs });
   return _client;
 }
 
-// Embedding calls are the bulk of ingest cost. Batching cuts round-trips by
-// ~100x on a large law; the cap keeps any single request under the API's
-// per-request token ceiling.
+// OpenAI's embeddings endpoint accepts up to 2048 inputs per call, but
+// batching keeps one failed request from losing a whole large document.
 const EMBED_BATCH_SIZE = 96;
+
+async function embedBatch(batch: string[]): Promise<{ vectors: number[][]; tokens: number }> {
+  for (let attempt = 0; ; attempt++) {
+    const ctrl = new AbortController();
+    try {
+      const res = await withDeadline(
+        "embeddings",
+        env.embedTimeoutMs,
+        ctrl,
+        client().embeddings.create({ model: env.embeddingModel, input: batch }, { signal: ctrl.signal, timeout: env.embedTimeoutMs })
+      );
+      // Order by `index`, not arrival: the embedding for input[i] must land on chunk[i].
+      const sorted = [...res.data].sort((a, b) => a.index - b.index);
+      return { vectors: sorted.map((d) => d.embedding), tokens: res.usage?.total_tokens ?? 0 };
+    } catch (err) {
+      // One retry for an idempotent call on a transient failure (429, 5xx,
+      // network/timeout — no status). Anything else is final.
+      const status = (err as { status?: number }).status;
+      const retryable = status === undefined || isRetryableStatus(status);
+      if (attempt >= 1 || !retryable) throw err;
+    }
+  }
+}
 
 export const openaiEmbeddingProvider: EmbeddingProvider = {
   name: "openai",
@@ -26,26 +50,14 @@ export const openaiEmbeddingProvider: EmbeddingProvider = {
     return env.embeddingDim;
   },
 
-  // `kind` is ignored: OpenAI's embedding models have no query/document
-  // distinction, unlike Voyage. Accepted so the interface stays uniform.
   async embed(texts: string[]): Promise<EmbedResult> {
     const embeddings: number[][] = [];
     let tokens = 0;
-
     for (let i = 0; i < texts.length; i += EMBED_BATCH_SIZE) {
-      const batch = texts.slice(i, i + EMBED_BATCH_SIZE);
-      const res = await client().embeddings.create({
-        model: env.embeddingModel,
-        input: batch,
-      });
-      // The API does not guarantee response order matches input order; it
-      // returns an explicit index. Sort by it rather than trusting position,
-      // or chunk N gets chunk M's vector and retrieval silently rots.
-      const sorted = [...res.data].sort((a, b) => a.index - b.index);
-      for (const d of sorted) embeddings.push(d.embedding);
-      tokens += res.usage?.total_tokens ?? 0;
+      const { vectors, tokens: t } = await embedBatch(texts.slice(i, i + EMBED_BATCH_SIZE));
+      embeddings.push(...vectors);
+      tokens += t;
     }
-
     return { embeddings, tokens };
   },
 };
@@ -57,49 +69,71 @@ export const openaiChatProvider: ChatProvider = {
   },
 
   async chat(messages: ChatMessage[], opts = {}): Promise<ChatResult> {
-    const res = await client().chat.completions.create({
-      model: opts.model ?? env.chatModel,
-      messages,
-      // Low: this system quotes statutes. Creative phrasing here is a bug,
-      // not a feature.
-      temperature: 0.1,
-      max_tokens: opts.maxTokens ?? 1500,
-    });
+    const ctrl = new AbortController();
+    const model = opts.model ?? env.chatModel;
+    const res = await withDeadline(
+      "chat completion",
+      env.chatTimeoutMs,
+      ctrl,
+      client().chat.completions.create(
+        { model, messages, temperature: 0.1, max_tokens: opts.maxTokens ?? 1500 },
+        { signal: ctrl.signal }
+      )
+    );
 
     return {
       text: res.choices[0]?.message?.content ?? "",
       tokensIn: res.usage?.prompt_tokens ?? 0,
       tokensOut: res.usage?.completion_tokens ?? 0,
+      model,
     };
   },
 
   async *chatStream(messages: ChatMessage[], opts = {}) {
-    const stream = await client().chat.completions.create({
-      model: env.chatModel,
-      messages,
-      temperature: 0.1,
-      max_tokens: opts.maxTokens ?? 1500,
-      stream: true,
-      stream_options: { include_usage: true },
-    });
+    const ctrl = new AbortController();
+    const model = opts.model ?? env.chatModel;
+    const stream = await withDeadline(
+      "chat stream start",
+      env.chatTimeoutMs,
+      ctrl,
+      client().chat.completions.create(
+        {
+          model,
+          messages,
+          temperature: 0.1,
+          max_tokens: opts.maxTokens ?? 1500,
+          stream: true,
+          // Without this the stream never reports token usage and every
+          // streamed answer would be recorded as free.
+          stream_options: { include_usage: true },
+        },
+        { signal: ctrl.signal }
+      )
+    );
 
     let text = "";
     let tokensIn = 0;
     let tokensOut = 0;
 
-    for await (const part of stream) {
+    // A stream that goes silent (or never ends) is abandoned: idle gap and
+    // total duration are both bounded.
+    for await (const part of withIdleTimeout(stream, {
+      idleMs: env.streamIdleTimeoutMs,
+      totalMs: env.chatTimeoutMs * 3,
+      what: "chat stream",
+      abort: () => ctrl.abort(),
+    })) {
       const delta = part.choices[0]?.delta?.content;
       if (delta) {
         text += delta;
         yield delta;
       }
-      // Usage arrives on the final chunk only, once stream_options asks for it.
       if (part.usage) {
         tokensIn = part.usage.prompt_tokens ?? 0;
         tokensOut = part.usage.completion_tokens ?? 0;
       }
     }
 
-    return { text, tokensIn, tokensOut };
+    return { text, tokensIn, tokensOut, model };
   },
 };

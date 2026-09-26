@@ -1,5 +1,6 @@
 import "server-only";
 import { env } from "../env";
+import { isRetryableStatus } from "./deadline";
 import type { EmbeddingProvider, EmbedResult } from "./provider";
 
 /**
@@ -21,22 +22,18 @@ type VoyageResponse = {
   usage: { total_tokens: number };
 };
 
-export const voyageProvider: EmbeddingProvider = {
-  name: "voyage",
-  get model() {
-    return env.embeddingModel;
-  },
-  get dimensions() {
-    return env.embeddingDim;
-  },
-
-  async embed(texts: string[], kind: "document" | "query"): Promise<EmbedResult> {
-    const embeddings: number[][] = [];
-    let tokens = 0;
-
-    for (let i = 0; i < texts.length; i += BATCH_SIZE) {
-      const batch = texts.slice(i, i + BATCH_SIZE);
-
+/**
+ * One batch with a deadline covering headers AND body (it had none — a stalled
+ * connection held ingestion or a question forever), retried once on a
+ * transient failure (429 / 5xx / network). Embeddings are idempotent; see
+ * deadline.ts for the policy.
+ */
+async function postBatch(batch: string[], kind: "document" | "query"): Promise<VoyageResponse> {
+  for (let attempt = 0; ; attempt++) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), env.embedTimeoutMs);
+    let status: number | undefined;
+    try {
       const res = await fetch(API, {
         method: "POST",
         headers: {
@@ -52,14 +49,37 @@ export const voyageProvider: EmbeddingProvider = {
           input_type: kind,
           output_dimension: env.embeddingDim,
         }),
+        signal: ctrl.signal,
       });
-
+      status = res.status;
       if (!res.ok) {
         const body = await res.text().catch(() => "");
         throw new Error(`Voyage embeddings failed (HTTP ${res.status}): ${body.slice(0, 200)}`);
       }
+      return (await res.json()) as VoyageResponse;
+    } catch (err) {
+      if (attempt >= 1 || !(status === undefined || isRetryableStatus(status))) throw err;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+}
 
-      const json = (await res.json()) as VoyageResponse;
+export const voyageProvider: EmbeddingProvider = {
+  name: "voyage",
+  get model() {
+    return env.embeddingModel;
+  },
+  get dimensions() {
+    return env.embeddingDim;
+  },
+
+  async embed(texts: string[], kind: "document" | "query"): Promise<EmbedResult> {
+    const embeddings: number[][] = [];
+    let tokens = 0;
+
+    for (let i = 0; i < texts.length; i += BATCH_SIZE) {
+      const json = await postBatch(texts.slice(i, i + BATCH_SIZE), kind);
 
       // The API returns an explicit index and does not guarantee response
       // order. Sort by it rather than trusting position, or chunk N gets chunk

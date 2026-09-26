@@ -161,6 +161,36 @@ export const env = {
   get costCapSiteUsd() {
     return num("COST_CAP_SITE_USD", 20);
   },
+  /**
+   * USD/day ONE Dostoori office may spend through this service (service
+   * callers are bucketed per office — see caller.ts). A safety net under
+   * Dostoori's own per-office monthly quota, not the primary limit.
+   */
+  get costCapPerOfficeUsd() {
+    return num("COST_CAP_PER_OFFICE_USD", 5);
+  },
+
+  // ---- provider deadlines ----
+  /** Deadline for one non-streamed chat call (headers + body). */
+  get chatTimeoutMs() {
+    return num("LLM_TIMEOUT_MS", 45_000);
+  },
+  /** Max silence between streamed chunks before the stream is abandoned. */
+  get streamIdleTimeoutMs() {
+    return num("LLM_STREAM_IDLE_TIMEOUT_MS", 20_000);
+  },
+  /** Deadline for one embeddings call. */
+  get embedTimeoutMs() {
+    return num("EMBED_TIMEOUT_MS", 20_000);
+  },
+
+  /**
+   * Whether sources marked is_synthetic (eval/test fixtures) may be retrieved.
+   * Never set in production: a fixture must never be quoted to a lawyer as law.
+   */
+  get allowSyntheticCorpus() {
+    return process.env.ALLOW_SYNTHETIC_CORPUS === "true";
+  },
 
   get storageDir() {
     return process.env.STORAGE_DIR ?? "./storage";
@@ -187,7 +217,13 @@ export const env = {
    * false to restore refusal-only behaviour.
    */
   get allowGeneralFallback() {
-    return (process.env.ALLOW_GENERAL_FALLBACK ?? "true") !== "false";
+    // Phase 2: default OFF. An ungrounded "general knowledge" answer — even
+    // fenced, disclaimed and citation-redacted — still states legal rules
+    // (and, per its prompt, limitation periods) that nothing in the corpus
+    // supports. The safe default for a law office is an explicit "no
+    // sufficient evidence" answer; the fallback is an opt-in for the
+    // standalone app only, and is never used for service (Dostoori) callers.
+    return (process.env.ALLOW_GENERAL_FALLBACK ?? "false") === "true";
   },
 
   /**

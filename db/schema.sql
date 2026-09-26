@@ -504,3 +504,80 @@ SELECT
 FROM legal_sources s
 LEFT JOIN legal_sources base ON base.id = s.amendment_of
 WHERE s.source_type IN ('law', 'regulation', 'instruction');
+
+-- ============================================================
+--  Phase 2 — AI boundary, provenance, accounting
+-- ============================================================
+
+-- service_request_nonces
+-- One row per accepted service assertion (src/lib/service-auth.ts): the jti
+-- is accepted once, so a captured Dostoori request cannot be replayed even
+-- inside its short validity window. Rows are useless after expires_at and
+-- are pruned opportunistically.
+CREATE TABLE IF NOT EXISTS service_request_nonces (
+  jti         TEXT        PRIMARY KEY,
+  expires_at  TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_service_nonces_expiry ON service_request_nonces (expires_at);
+
+-- ---- source provenance ----------------------------------------------------
+-- Every legal answer must trace to a concrete source and version. title/year/
+-- law_number/effective_date/is_current_version already exist; these add where
+-- the text came from and how authoritative that origin is.
+ALTER TABLE legal_sources ADD COLUMN IF NOT EXISTS source_url        TEXT;
+ALTER TABLE legal_sources ADD COLUMN IF NOT EXISTS issuing_authority TEXT;
+-- ISO country code. Retrieval only ever serves JO; a source from elsewhere
+-- must be labelled so it can never answer a Jordanian question silently.
+ALTER TABLE legal_sources ADD COLUMN IF NOT EXISTS jurisdiction      TEXT NOT NULL DEFAULT 'JO';
+ALTER TABLE legal_sources ADD COLUMN IF NOT EXISTS language          TEXT NOT NULL DEFAULT 'ar';
+ALTER TABLE legal_sources ADD COLUMN IF NOT EXISTS publication_date  DATE;
+ALTER TABLE legal_sources ADD COLUMN IF NOT EXISTS acquired_at       TIMESTAMPTZ;
+-- 'official' (the issuing authority's own publication), 'secondary' (a
+-- non-official republication), or NULL = not recorded. Shown to the admin.
+ALTER TABLE legal_sources ADD COLUMN IF NOT EXISTS provenance        TEXT
+  CHECK (provenance IS NULL OR provenance IN ('official', 'secondary', 'synthetic'));
+-- Test fixtures (eval/fixtures) are marked synthetic and are excluded from
+-- retrieval unless ALLOW_SYNTHETIC_CORPUS=true — a fixture accidentally loaded
+-- into production can never be quoted to a lawyer as law.
+ALTER TABLE legal_sources ADD COLUMN IF NOT EXISTS is_synthetic      BOOLEAN NOT NULL DEFAULT false;
+CREATE INDEX IF NOT EXISTS idx_sources_jurisdiction ON legal_sources (jurisdiction);
+
+-- ---- embedding versioning ---------------------------------------------------
+-- Which model produced each vector. Two models with the same dimension would
+-- otherwise mix silently after a config change; retrieval only compares a
+-- query vector against rows from the SAME model (search/hybrid.ts), and the
+-- reindex script finds the stale ones.
+ALTER TABLE legal_documents ADD COLUMN IF NOT EXISTS embedding_model TEXT;
+CREATE INDEX IF NOT EXISTS idx_documents_embedding_model ON legal_documents (embedding_model);
+
+-- ---- per-request AI accounting ----------------------------------------------
+-- One row per AI request, metadata only: never the question, the document or
+-- the answer. office_id/user_id are Dostoori's opaque ids (service callers)
+-- so an office's rows can be reported on and deleted at offboarding.
+CREATE TABLE IF NOT EXISTS ai_requests (
+  id                BIGSERIAL   PRIMARY KEY,
+  request_id        TEXT,
+  caller_kind       TEXT        NOT NULL CHECK (caller_kind IN ('lawyer', 'service')),
+  office_id         TEXT,
+  user_id           TEXT,
+  lawyer_id         BIGINT,
+  feature           TEXT        NOT NULL,
+  chat_model        TEXT,
+  embedding_model   TEXT,
+  prompt_version    TEXT,
+  corpus_version    TEXT,
+  llm_calls         INTEGER     NOT NULL DEFAULT 0,
+  tokens_in         INTEGER     NOT NULL DEFAULT 0,
+  tokens_out        INTEGER     NOT NULL DEFAULT 0,
+  embedding_tokens  INTEGER     NOT NULL DEFAULT 0,
+  cost_usd          NUMERIC(12,6) NOT NULL DEFAULT 0,
+  latency_ms        INTEGER,
+  success           BOOLEAN     NOT NULL,
+  outcome           TEXT,
+  grounding_level   TEXT,
+  retrieval_count   INTEGER,
+  source_count      INTEGER,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_ai_requests_office  ON ai_requests (office_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_ai_requests_created ON ai_requests (created_at DESC);

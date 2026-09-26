@@ -34,8 +34,10 @@ playwright-report
 backups
 storage-staging
 
-# Test harnesses (HTTP-level + browser E2E) never run in the image
+# Test harnesses (HTTP-level, browser E2E, AI staging) never run in the image
 src/__http__
+src/__staging__
 e2e
 vitest.http.config.mts
+vitest.staging.config.mts
 playwright.config.ts

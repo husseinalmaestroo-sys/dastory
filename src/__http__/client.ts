@@ -7,6 +7,13 @@ import { inject } from 'vitest'
 
 export const baseUrl = inject('baseUrl')
 
+/**
+ * HTTP_TEST_BEHIND_PROXY=1: the target sits behind the real reverse proxy
+ * (deploy/setup-nginx.sh), which overwrites X-Real-IP / X-Forwarded-Proto —
+ * tests that inject those headers to simulate the proxy are skipped.
+ */
+export const behindProxy = process.env.HTTP_TEST_BEHIND_PROXY === '1'
+
 /** A fresh client address per actor, so per-IP rate-limit buckets don't collide across tests (the server runs with TRUST_PROXY=1, as behind nginx). */
 export function newIp(): string {
   const [a, b, c] = randomBytes(3)

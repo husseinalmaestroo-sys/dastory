@@ -2,7 +2,7 @@
 // (proxy.ts sets the security headers; these can't be seen by calling route
 // handlers directly).
 import { describe, expect, it } from 'vitest'
-import { http } from './client'
+import { behindProxy, http } from './client'
 
 describe('security headers (proxy.ts) on real responses', () => {
   it('pages carry a nonce-based CSP and the hardening headers; no X-Powered-By', async () => {
@@ -31,7 +31,7 @@ describe('security headers (proxy.ts) on real responses', () => {
     expect(res.headers.get('x-frame-options')).toBe('DENY')
   })
 
-  it('HSTS is sent when the request arrived over HTTPS (TLS terminated at the proxy)', async () => {
+  it.skipIf(behindProxy)('HSTS is sent when the request arrived over HTTPS (TLS terminated at the proxy)', async () => {
     const res = await http('/', { headers: { 'X-Forwarded-Proto': 'https' } })
     expect(res.headers.get('strict-transport-security')).toContain('max-age=31536000')
   })

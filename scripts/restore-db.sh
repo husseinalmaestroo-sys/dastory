@@ -10,6 +10,12 @@
 # Required:  BACKUP_ENCRYPTION_PASSPHRASE, and BACKUP_DB_SERVICE (docker
 #            mode) or DATABASE_URL (direct mode) — see lib-backup.sh. The
 #            target database name defaults to the app's own database.
+# Optional:  RESTORE_DB_DROP_FIRST=1 — drop and recreate the target database
+#            before importing, so the result is EXACTLY the backup. Without
+#            it, tables the backup doesn't contain (e.g. one created by a
+#            migration that failed half way) survive the restore. Use it to
+#            return to a pre-migration restore point; stop the app first
+#            (docker compose stop app) or it will error while the DB is empty.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -37,6 +43,10 @@ else
   sleep 5
 fi
 
+if [ "${RESTORE_DB_DROP_FIRST:-}" = "1" ]; then
+  echo "RESTORE_DB_DROP_FIRST=1 — dropping '$TARGET_DB' so it matches the backup exactly ..."
+  db_exec mysql -e "DROP DATABASE IF EXISTS \`$TARGET_DB\`;"
+fi
 echo "Ensuring target database exists ..."
 db_exec mysql -e "CREATE DATABASE IF NOT EXISTS \`$TARGET_DB\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
 

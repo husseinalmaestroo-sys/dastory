@@ -38,6 +38,11 @@ mkdir -p .deploy
 
 # ---------------------------------------------------------------- preflight
 say "Preflight"
+# Version of the running app container (the APP_VERSION baked into its image).
+running_version() {
+  docker inspect dostoori_app --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null \
+    | sed -n 's/^APP_VERSION=//p' | head -1
+}
 envval() { grep -E "^$1=" .env | tail -1 | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//'; }
 for var in JWT_SECRET TWO_FACTOR_ENCRYPTION_KEY MYSQL_PASSWORD MYSQL_ROOT_PASSWORD APP_URL PLATFORM_ADMIN_EMAILS BACKUP_ENCRYPTION_PASSPHRASE; do
   val=$(envval "$var")
@@ -51,8 +56,9 @@ if [[ -z "$(envval AI_LEGAL_SERVICE_KEY)" ]]; then
 fi
 docker network inspect dostoori_net >/dev/null 2>&1 || die "dostoori_net missing — run deploy/setup-vps.sh."
 
-if [[ "${DEPLOY_SKIP_PULL:-0}" != "1" ]]; then
-  git pull --ff-only || echo "  (not a git checkout or nothing to pull — continuing)"
+if [[ "${DEPLOY_SKIP_PULL:-0}" != "1" ]] && git rev-parse --git-dir >/dev/null 2>&1; then
+  git pull --ff-only || die "git pull --ff-only failed (offline, or the checkout has diverged).
+  Fix the checkout, or set DEPLOY_SKIP_PULL=1 to deploy exactly what is checked out."
 fi
 VERSION="$(git rev-parse --short=12 HEAD 2>/dev/null || date -u +%Y%m%d%H%M%S)"
 if [[ -n "$(git status --porcelain --untracked-files=no 2>/dev/null)" ]]; then
@@ -60,7 +66,7 @@ if [[ -n "$(git status --porcelain --untracked-files=no 2>/dev/null)" ]]; then
   echo "  WARNING: working tree has local changes — tagging as ${VERSION}."
 fi
 export APP_VERSION="$VERSION"
-PREVIOUS="$(docker inspect dostoori_app --format '{{.Config.Image}}' 2>/dev/null | sed 's/^dostoori-app://' || true)"
+PREVIOUS="$(running_version || true)"
 echo "  deploying ${VERSION} (currently running: ${PREVIOUS:-nothing})"
 
 # The container runs as uid 1000 (`node`); a bind-mounted dir that Docker
@@ -135,6 +141,7 @@ if ! wait_healthy "$VERSION"; then
     say "Rolling back to ${PREVIOUS}"
     APP_VERSION="$PREVIOUS" docker compose up -d --no-deps app
     if wait_healthy "$PREVIOUS"; then
+      docker tag "dostoori-app:${PREVIOUS}" dostoori-app:current
       die "${VERSION} was unhealthy; rolled back to ${PREVIOUS} (healthy). Migrations stay applied —
   if they were not backward compatible, restore ${BACKUP_FILE}."
     fi
@@ -143,6 +150,7 @@ if ! wait_healthy "$VERSION"; then
   die "${VERSION} unhealthy and there is no previous version to roll back to."
 fi
 echo "  healthy: $(curl -fsS http://127.0.0.1:3000/api/health)"
+docker tag "dostoori-app:${VERSION}" dostoori-app:current
 
 [[ -n "$PREVIOUS" && "$PREVIOUS" != "$VERSION" ]] && echo "$PREVIOUS" > .deploy/previous
 echo "$VERSION" > .deploy/current
@@ -164,7 +172,7 @@ else
 fi
 
 # Keep the five most recent images for rollback; drop older ones.
-docker images dostoori-app --format '{{.CreatedAt}}\t{{.Repository}}:{{.Tag}}' | sort -r | tail -n +6 | cut -f2 \
+docker images dostoori-app --format '{{.CreatedAt}}\t{{.Repository}}:{{.Tag}}' | grep -v ':current$' | sort -r | tail -n +6 | cut -f2 \
   | grep -v -e ":${VERSION}\$" -e ":${PREVIOUS:-__none__}\$" | xargs -r docker rmi >/dev/null 2>&1 || true
 
 say "Deployed ${VERSION}"

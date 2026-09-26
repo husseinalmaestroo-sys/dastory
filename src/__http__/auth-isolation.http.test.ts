@@ -2,7 +2,7 @@
 // isolation over real HTTP — cookies as the browser carries them, bodies as
 // the network delivers them, errors as the server renders them.
 import { beforeAll, describe, expect, it } from 'vitest'
-import { http, newIp, PASSWORD, sessionCookie, signup, type Actor } from './client'
+import { baseUrl, http, newIp, PASSWORD, sessionCookie, signup, type Actor } from './client'
 
 let officeA: Actor
 let officeB: Actor
@@ -28,7 +28,12 @@ describe('session cookie', () => {
     expect(cookie).toMatch(/HttpOnly/i)
     expect(cookie).toMatch(/SameSite=lax/i)
 
-    const tls = await http('/api/auth/login', { json: { email: officeA.email, password: PASSWORD }, headers: { 'X-Forwarded-Proto': 'https' } })
+    // As a browser behind the TLS-terminating proxy: https Origin + forwarded proto.
+    const tls = await http('/api/auth/login', {
+      json: { email: officeA.email, password: PASSWORD },
+      headers: { 'X-Forwarded-Proto': 'https', Origin: baseUrl.replace(/^http:/, 'https:') },
+    })
+    expect(tls.status).toBe(200)
     expect(tls.headers.get('set-cookie')).toMatch(/;\s*Secure/i)
   })
 
@@ -54,7 +59,7 @@ describe('session cookie', () => {
 
 describe('platform admin cannot be obtained by signing up with an allow-listed email', () => {
   it('the account is created as an ordinary office manager and the admin API refuses it', async () => {
-    const admin = await signup({ email: 'platform-admin@dostoori.test' })
+    const admin = await signup({ email: 'platform-admin@dostoori.test', loginIfExists: true })
     const me = await (await http('/api/auth/me', { actor: admin })).json()
     expect(me.user?.isPlatformAdmin ?? me.isPlatformAdmin).toBe(false)
     expect((await http('/api/admin/overview', { actor: admin })).status).toBe(403)

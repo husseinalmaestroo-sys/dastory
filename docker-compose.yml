@@ -28,10 +28,12 @@ services:
 
   app:
     # Every deploy builds an image tagged with the git commit (deploy/deploy.sh
-    # sets APP_VERSION), and rollback re-points this at an earlier tag —
-    # see deploy/rollback.sh. `pull_policy: never`: these images only ever
-    # come from a local build, never from a registry.
-    image: dostoori-app:${APP_VERSION:-latest}
+    # sets APP_VERSION) and, once healthy, also tags it `current` — so plain
+    # `docker compose run/up` (backups, manual commands) use the deployed
+    # version. Rollback re-points `current` (deploy/rollback.sh).
+    # `pull_policy: never`: these images only ever come from a local build,
+    # never from a registry.
+    image: dostoori-app:${APP_VERSION:-current}
     pull_policy: never
     build:
       context: .

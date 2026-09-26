@@ -33,7 +33,7 @@ services:
 
   app:
     # Same locally-built, commit-tagged images as prod (see docker-compose.yml).
-    image: dostoori-app:${APP_VERSION:-latest}
+    image: dostoori-app:${APP_VERSION:-current}
     pull_policy: never
     build:
       context: .

@@ -19,7 +19,12 @@ TARGET="${1:-$(cat .deploy/previous 2>/dev/null || true)}"
 docker image inspect "dostoori-app:${TARGET}" >/dev/null 2>&1 \
   || { echo "Image dostoori-app:${TARGET} not found. Available:" >&2; docker images dostoori-app >&2; exit 1; }
 
-CURRENT="$(docker inspect dostoori_app --format '{{.Config.Image}}' 2>/dev/null | sed 's/^dostoori-app://' || true)"
+# Version of the running app container (the APP_VERSION baked into its image).
+running_version() {
+  docker inspect dostoori_app --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null \
+    | sed -n 's/^APP_VERSION=//p' | head -1
+}
+CURRENT="$(running_version || true)"
 say "Rolling back ${CURRENT:-?} -> ${TARGET}"
 APP_VERSION="$TARGET" docker compose up -d --no-deps app
 
@@ -27,6 +32,7 @@ for _ in {1..60}; do
   status="$(docker inspect dostoori_app --format '{{.State.Health.Status}}' 2>/dev/null || echo missing)"
   body="$(curl -fsS -m 5 http://127.0.0.1:3000/api/health 2>/dev/null || true)"
   if [[ "$status" == "healthy" && "$body" == *"\"version\":\"${TARGET}\""* ]]; then
+    docker tag "dostoori-app:${TARGET}" dostoori-app:current
     mkdir -p .deploy
     echo "$TARGET" > .deploy/current
     [[ -n "$CURRENT" ]] && echo "$CURRENT" > .deploy/previous

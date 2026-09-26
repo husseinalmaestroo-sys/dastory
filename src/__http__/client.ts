@@ -54,14 +54,21 @@ export function sessionCookie(res: Response): string {
 
 export const PASSWORD = 'HttpTestPassw0rd!'
 
-/** Signs up a brand-new office manager through the public signup endpoint. */
-export async function signup(overrides: { email?: string } = {}): Promise<Actor> {
+/**
+ * Signs up a brand-new office manager through the public signup endpoint.
+ * `loginIfExists` makes a fixed-email signup repeatable against a long-lived
+ * server (HTTP_TEST_BASE_URL): a 409 from an earlier run logs in instead.
+ */
+export async function signup(overrides: { email?: string; loginIfExists?: boolean } = {}): Promise<Actor> {
   const ip = newIp()
   const email = overrides.email ?? `http-${randomUUID().slice(0, 12)}@dostoori.test`
-  const res = await http('/api/auth/signup', {
+  let res = await http('/api/auth/signup', {
     ip,
     json: { name: 'HTTP Test Manager', officeName: `HTTP Office ${randomUUID().slice(0, 6)}`, email, password: PASSWORD },
   })
+  if (res.status === 409 && overrides.loginIfExists) {
+    res = await http('/api/auth/login', { ip, json: { email, password: PASSWORD } })
+  }
   if (res.status !== 200 && res.status !== 201) throw new Error(`signup failed: ${res.status} ${await res.text()}`)
   const { user } = await res.json()
   return { cookie: sessionCookie(res), ip, email, id: user.id, officeId: user.officeId }

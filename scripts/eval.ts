@@ -9,8 +9,13 @@
  *
  *   LIVE (operator): … scripts/eval.ts --mode live
  *     Real providers + the real corpus (needs API keys and DATABASE_URL of the
- *     real database). Runs the synthetic-independent safety/security cases and
- *     the retrieval benchmark (benchmark/legal-qa-100.json, GOLD UNVERIFIED).
+ *     real database). Runs every case that does not depend on the synthetic
+ *     corpus — no evidence, jurisdiction, injection, forged history, the
+ *     document cases — plus the tenant-canary, unauthorized-access and
+ *     adversarial-output batteries. Cases written against the synthetic laws
+ *     are skipped. Real-corpus retrieval (and, with --generate, citations) is
+ *     measured by `npm run benchmark` over benchmark/legal-qa-100.json, whose
+ *     labels are GOLD UNVERIFIED until a qualified reviewer checks them.
  *
  * Every metric carries a label: MEASURED / NOT REPRESENTATIVE / UNKNOWN.
  */

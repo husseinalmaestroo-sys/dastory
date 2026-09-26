@@ -3,8 +3,9 @@
 // standalone bundle assembled exactly as the Docker image ships it, and
 // `node server.js` with NODE_ENV=production.
 import { spawn, execFileSync, type ChildProcess } from 'child_process'
-import { createWriteStream, existsSync, mkdirSync, readFileSync, rmSync } from 'fs'
+import { createWriteStream, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'fs'
 import { createServer } from 'net'
+import { tmpdir } from 'os'
 import { join, resolve } from 'path'
 import type { TestProject } from 'vitest/node'
 
@@ -15,7 +16,7 @@ declare module 'vitest' {
 }
 
 const ROOT = resolve(__dirname, '../..')
-const STANDALONE = join(ROOT, '.next/standalone')
+const BUILT = join(ROOT, '.next/standalone')
 const LOG_FILE = join(ROOT, 'test-results/http-server.log')
 
 function freePort(): Promise<number> {
@@ -59,7 +60,7 @@ export default async function setup(project: TestProject) {
   if (!/test/i.test(dbName)) {
     throw new Error(`refusing to reset "${dbName}": the HTTP suite drops its database, whose name must contain "test"`)
   }
-  if (!existsSync(join(STANDALONE, 'server.js'))) {
+  if (!existsSync(join(BUILT, 'server.js'))) {
     throw new Error('.next/standalone/server.js not found — run `npm run build` first')
   }
 
@@ -69,10 +70,12 @@ export default async function setup(project: TestProject) {
   const prismaCli = join(ROOT, 'node_modules/prisma/build/index.js')
   execFileSync(process.execPath, [prismaCli, 'migrate', 'reset', '--force', '--skip-seed', '--skip-generate', '--schema', 'prisma/schema.prisma'], { cwd: ROOT, env: prismaEnv, stdio: 'pipe' })
 
-  execFileSync(process.execPath, [join(ROOT, 'scripts/assemble-standalone.mjs')], { cwd: ROOT, stdio: 'pipe' })
-  const storage = join(STANDALONE, 'storage')
-  rmSync(storage, { recursive: true, force: true })
-  mkdirSync(join(storage, 'case-documents'), { recursive: true })
+  // Assembled into a directory OUTSIDE the repo, like /app in the image: a
+  // package missing from the bundle must fail here, not be silently
+  // resolved from the repo's node_modules by Node's parent-dir lookup.
+  const runDir = mkdtempSync(join(tmpdir(), 'dostoori-http-'))
+  execFileSync(process.execPath, [join(ROOT, 'scripts/assemble-standalone.mjs'), runDir], { cwd: ROOT, stdio: 'pipe' })
+  mkdirSync(join(runDir, 'storage', 'case-documents'), { recursive: true })
 
   const port = await freePort()
   const baseUrl = `http://127.0.0.1:${port}`
@@ -81,7 +84,7 @@ export default async function setup(project: TestProject) {
 
   // A clean, explicit environment — nothing inherited from a developer's .env.
   const server = spawn(process.execPath, ['server.js'], {
-    cwd: STANDALONE,
+    cwd: runDir,
     env: {
       PATH: process.env.PATH,
       NODE_ENV: 'production',
@@ -110,6 +113,6 @@ export default async function setup(project: TestProject) {
     server.kill('SIGTERM')
     await new Promise((r) => (server.exitCode !== null ? r(null) : server.once('exit', r)))
     log.end()
-    rmSync(storage, { recursive: true, force: true })
+    rmSync(runDir, { recursive: true, force: true })
   }
 }

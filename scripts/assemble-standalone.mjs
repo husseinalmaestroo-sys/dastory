@@ -27,8 +27,8 @@
 //   suites use one OUTSIDE the repo, so Node can't quietly resolve a missing
 //   package from the repo's own node_modules (which is how the pdf-parse gap
 //   above once went unnoticed).
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync } from 'fs'
-import { dirname, join, resolve } from 'path'
+import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync } from 'fs'
+import { dirname, join, relative, resolve, isAbsolute } from 'path'
 
 const root = resolve(dirname(new URL(import.meta.url).pathname), '..')
 const built = join(root, '.next/standalone')
@@ -38,9 +38,14 @@ if (!existsSync(join(built, 'server.js'))) {
   console.error(`[assemble-standalone] ${built}/server.js not found — run \`next build\` first`)
   process.exit(1)
 }
+// Symlinks are copied verbatim, like Docker's COPY: Turbopack links
+// .next/node_modules/<pkg>-<hash> -> ../../node_modules/<pkg>, and Node's
+// default cpSync would rewrite that to an ABSOLUTE path back into the build
+// directory — the copy would then quietly load packages from there.
+const COPY_OPTS = { recursive: true, verbatimSymlinks: true }
 if (target !== built) {
   rmSync(target, { recursive: true, force: true })
-  cpSync(built, target, { recursive: true, dereference: true })
+  cpSync(built, target, COPY_OPTS)
 }
 
 function copy(from, to, opts = {}) {
@@ -52,7 +57,7 @@ function copy(from, to, opts = {}) {
   const dest = join(target, to ?? from)
   rmSync(dest, { recursive: true, force: true })
   mkdirSync(dirname(dest), { recursive: true })
-  cpSync(src, dest, { recursive: true, dereference: true, ...opts })
+  cpSync(src, dest, { ...COPY_OPTS, ...opts })
 }
 
 copy('.next/static')
@@ -92,5 +97,25 @@ function copyPackage(name, optional = false) {
   for (const dep of Object.keys(pkg.optionalDependencies ?? {})) copyPackage(dep, true)
 }
 RUNTIME_PACKAGES.forEach((name) => copyPackage(name))
+
+// The result must be self-contained: every symlink resolves inside it.
+function checkLinks(dir) {
+  for (const name of readdirSync(dir)) {
+    const full = join(dir, name)
+    const st = lstatSync(full)
+    if (st.isSymbolicLink()) {
+      let real
+      try { real = realpathSync(full) } catch { console.error(`[assemble-standalone] dangling symlink ${full}`); process.exit(1) }
+      const rel = relative(target, real)
+      if (rel.startsWith('..') || isAbsolute(rel)) {
+        console.error(`[assemble-standalone] ${full} resolves outside the bundle (${real})`)
+        process.exit(1)
+      }
+    } else if (st.isDirectory()) {
+      checkLinks(full)
+    }
+  }
+}
+checkLinks(target)
 
 console.log(`[assemble-standalone] ${target} ready (${seen.size} runtime packages)`)

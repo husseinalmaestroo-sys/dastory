@@ -1,12 +1,6 @@
 import type { Metadata } from 'next'
-import { Cairo } from 'next/font/google'
+import './fonts.css'
 import './globals.css'
-
-const cairo = Cairo({
-  subsets: ['arabic'],
-  weight: ['300', '400', '500', '600', '700', '800', '900'],
-  variable: '--font-cairo',
-})
 
 export const metadata: Metadata = {
   title: 'دُسْتُورِي — المنصة القانونية السحابية الأولى في الأردن',
@@ -23,7 +17,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ar" dir="rtl">
-      <body className={cairo.className}>{children}</body>
+      <head>
+        <link rel="preload" href="/fonts/cairo/cairo-arabic-wght-normal.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
+      </head>
+      <body>{children}</body>
     </html>
   )
 }

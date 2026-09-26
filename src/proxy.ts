@@ -14,8 +14,8 @@ import { isHttpsRequest } from '@/lib/api-security'
 //   'unsafe-inline' as a deliberate, scoped exception; script-src does not.
 // - Images: same-origin assets plus the data: URI favicon (src/app/layout.tsx)
 //   and blob: (canvas-generated signature image before upload).
-// - Fonts: next/font (Cairo) self-hosts Google Fonts at build time — no
-//   external font host is ever requested.
+// - Fonts: Cairo is self-hosted from public/fonts (src/app/fonts.css) — no
+//   external font host is ever requested, at build time or at runtime.
 // - Frames: YouTube embeds for the admin-configurable hero video
 //   (src/components/landing/Hero.tsx, src/app/admin/page.tsx).
 // - Connections: same-origin API calls only.

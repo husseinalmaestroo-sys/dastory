@@ -33,6 +33,19 @@ test('anonymous visitors are sent to the login page', async ({ page }) => {
   expect(api.status()).toBe(401)
 })
 
+test('the self-hosted Cairo font loads (served, allowed by the CSP, parseable) for Arabic and Latin', async ({ page }) => {
+  await page.goto('/login')
+  const loaded = await page.evaluate(async () => {
+    const faces = [
+      ...(await document.fonts.load('700 16px Cairo', 'دستوري')),
+      ...(await document.fonts.load('400 16px Cairo', 'Dastoori')),
+    ]
+    return faces.map((f) => ({ family: f.family.replace(/["']/g, ''), status: f.status }))
+  })
+  expect(loaded.length).toBeGreaterThanOrEqual(2)
+  for (const face of loaded) expect(face).toEqual({ family: 'Cairo', status: 'loaded' })
+})
+
 test('core office workflow', async ({ page, browser }) => {
   // ---- signup (creates a new office) --------------------------------------
   await page.goto('/login')

@@ -116,15 +116,9 @@ export const env = {
   },
 
   /**
-   * Shared secret for trusted server-to-server callers (e.g. Dostoori's
-   * backend, calling on behalf of one of its own authenticated, tenant-scoped
-   * users). Deliberately optional and unset by default — this app is fully
-   * usable standalone with no caller ever able to present it. When a caller
-   * presents X-Internal-Service-Key matching this value (see lawyer-auth.ts's
-   * requireLawyer), it is trusted to have already done its OWN auth/tenant/
-   * rate-limit checks upstream; every check below that point (per-caller rate
-   * limit, site/per-caller cost cap, guard.ts, self-verify.ts) still runs
-   * exactly as it does for a lawyer signed in through the normal cookie flow.
+   * HMAC key for signed service assertions from Dostoori (service-auth.ts).
+   * Never sent on the wire. Optional: unset, no service caller can
+   * authenticate and the app is standalone-only.
    */
   get internalServiceKey() {
     return process.env.INTERNAL_SERVICE_KEY ?? null;

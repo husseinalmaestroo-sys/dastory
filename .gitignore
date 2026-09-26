@@ -36,3 +36,4 @@ Thumbs.db
 # Claude Code local session state — machine/session-specific, not meant to
 # be shared (mirrors the same exclusion in the parent dastory repo).
 .claude/settings.local.json
+storage-test/

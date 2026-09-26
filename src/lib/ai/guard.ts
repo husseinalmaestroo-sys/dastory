@@ -140,7 +140,26 @@ export function stripInvalidCitations(text: string, maxRef: number): { text: str
 }
 
 /** What verifyCitedNumbers needs from a retrieved chunk — nothing DB-shaped. */
-export type CitableChunk = { article_number: string | null; decision_number: string | null };
+export type CitableChunk = { article_number: string | null; decision_number: string | null; chunk_text?: string | null };
+
+/**
+ * Whether the cited chunk's own TEXT mentions this article/decision number —
+ * a cross-reference ("مع مراعاة أحكام المادة 25 من هذا القانون") that the
+ * answer legitimately repeats. Phase 2: such numbers used to be redacted
+ * because they differ from the chunk's own article_number, which punished a
+ * correct, verbatim-sourced reference.
+ */
+function mentionedInChunkText(chunk: CitableChunk, kind: "article" | "decision", number: string): boolean {
+  if (!chunk.chunk_text) return false;
+  const text = normalizeDigits(chunk.chunk_text);
+  const n = normalizeCitedNumber(number);
+  if (!n) return false;
+  const re =
+    kind === "article"
+      ? new RegExp(`(?:ال)?ماد[ةه]\\s*[({[]?\\s*0*${n}(?!\\d)`)
+      : new RegExp(`(?<!\\d)0*${n}\\s*[/\\-]\\s*\\d{4}`);
+  return re.test(text);
+}
 
 // Same shapes as citation-verify.ts's ARTICLE_RE/DECISION_RE (captures the
 // number instead of just matching it), reused here for a DIFFERENT reason —
@@ -243,7 +262,9 @@ export function verifyCitedNumbers(rawText: string, chunks: CitableChunk[]): { t
 
     const chunk = nearestN !== null ? chunks[nearestN - 1] : undefined;
     const actual = chunk ? (mention.kind === "article" ? chunk.article_number : chunk.decision_number) : null;
-    const matches = actual != null && normalizeCitedNumber(actual) === normalizeCitedNumber(mention.number);
+    const matches =
+      (actual != null && normalizeCitedNumber(actual) === normalizeCitedNumber(mention.number)) ||
+      (chunk !== undefined && mentionedInChunkText(chunk, mention.kind, mention.number));
 
     if (matches) verifiedCount++;
     else badSpans.push({ start: mention.start, end: mention.end });

@@ -9,6 +9,7 @@ import { getCachedEmbedding, setCachedEmbedding } from "./embedding-cache";
 import { stemArabicText } from "./arabic-stem";
 import { localRerank } from "./local-rerank";
 import { parseIntent, resolveVersionScope } from "./intent";
+import { extractLawReference, resolveLawSourceIds } from "./law-reference";
 import { getRerankProvider } from "../ai/rerank";
 import { resolveThresholds, gateChunk, computeConfidence, type ConfidenceResult } from "./confidence";
 import type { QueryType } from "./query-understanding";
@@ -93,6 +94,13 @@ type Row = {
   legal_topics: string[] | null;
   source_title: string;
   source_type: string;
+  chunk_index: number;
+  is_current_version: boolean | null;
+  effective_date: string | null;
+  jurisdiction: string | null;
+  provenance: string | null;
+  is_synthetic: boolean | null;
+  source_url: string | null;
   vector_score: number | null;
   keyword_score: number | null;
   vector_rank: number | null;
@@ -126,6 +134,13 @@ type FullRow = {
   legal_topics: string[] | null;
   source_title: string;
   source_type: string;
+  chunk_index: number;
+  is_current_version: boolean | null;
+  effective_date: string | null;
+  jurisdiction: string | null;
+  provenance: string | null;
+  is_synthetic: boolean | null;
+  source_url: string | null;
 };
 
 export type SearchResult = {
@@ -135,6 +150,24 @@ export type SearchResult = {
   rerankTrace?: RerankTrace | null;
   /** Backend-computed answer confidence. Never model-reported. */
   confidence: ConfidenceResult;
+  /**
+   * The law the question named ("قانون العمل"), when one was recognised —
+   * the exact-article arm was scoped to it. Null when none was named.
+   */
+  lawReference?: { display: string; matchedSources: number } | null;
+  /**
+   * Set when the question names a law that is NOT in the corpus. The chat
+   * pipeline answers "that law is not in the database" instead of letting
+   * another law's article of the same number stand in for it.
+   */
+  requestedLawMissing?: string | null;
+  /**
+   * Set when an article number was asked for without naming a law, several
+   * laws in the corpus have that article, and nothing else in the question
+   * singled one out. The pipeline asks which law is meant (deterministic, no
+   * model call) rather than answering from an arbitrary one.
+   */
+  articleAmbiguity?: { article: string; laws: string[] } | null;
 };
 
 export async function hybridSearch(
@@ -190,6 +223,12 @@ export async function hybridSearch(
   // from terms the expansion added.
   const intent = parseIntent(question);
 
+  // Which law, if any, the question names — scopes the exact-article arm and
+  // detects a request for a law the corpus does not hold (law-reference.ts).
+  const lawRef = env.lawScopedExact ? extractLawReference(question) : null;
+  const lawSourceIds = lawRef ? await resolveLawSourceIds(lawRef) : null;
+  const requestedLawMissing = lawRef && lawSourceIds && lawSourceIds.length === 0 ? lawRef.display : null;
+
   const searchText = expansion?.searchText?.trim() || question;
   const orGroup = expansion?.orGroup ?? "";
 
@@ -213,7 +252,7 @@ export async function hybridSearch(
   // round-trip entirely — see embedding-cache.ts's header for why this is
   // safe with no invalidation logic: the cache key is the literal model
   // input, and a fixed text's embedding never goes stale.
-  const cachedEmbedding = getCachedEmbedding(searchText);
+  const cachedEmbedding = getCachedEmbedding(searchText, provider.model);
   let tokens = 0;
   let embeddingVector: number[];
   if (cachedEmbedding) {
@@ -222,7 +261,7 @@ export async function hybridSearch(
     const embedResult = await provider.embed([searchText], "query");
     embeddingVector = embedResult.embeddings[0];
     tokens = embedResult.tokens;
-    setCachedEmbedding(searchText, embeddingVector);
+    setCachedEmbedding(searchText, embeddingVector, provider.model);
   }
   const queryVector = toVector(embeddingVector);
   const folded = foldForSearch(question);
@@ -275,6 +314,10 @@ export async function hybridSearch(
     explicitCategory, explicitCourt, explicitYear,     // $8-$10
     inferredCategory, inferredCourt, inferredYear,     // $11-$13
     sourceType, currentOnly, asOfDate,                 // $14-$16
+    lawSourceIds,                                      // $17 exact arm scope (null = unscoped)
+    env.allowSyntheticCorpus,                          // $18 synthetic fixtures allowed?
+    env.legacyEmbeddingModel,                          // $19 model assumed for untagged vectors
+    provider.model,                                    // $20 model of the query vector
   ]);
 
   // Rank within each arm from the score it returned — a plain ORDER BY...LIMIT
@@ -298,7 +341,7 @@ export async function hybridSearch(
   // Every arm came back empty — nothing to fetch, and nothing for the
   // relevance gate below to work with either.
   const fullRows = allIds.size
-    ? await query<FullRow>(FULL_ROW_SQL, [[...allIds]])
+    ? await query<FullRow>(FULL_ROW_SQL, [[...allIds], env.allowSyntheticCorpus])
     : [];
   const fullById = new Map(fullRows.map((r) => [r.id, r]));
 
@@ -329,6 +372,13 @@ export async function hybridSearch(
       legal_topics: full.legal_topics,
       source_title: full.source_title,
       source_type: full.source_type,
+      chunk_index: full.chunk_index,
+      is_current_version: full.is_current_version,
+      effective_date: full.effective_date,
+      jurisdiction: full.jurisdiction,
+      provenance: full.provenance,
+      is_synthetic: full.is_synthetic,
+      source_url: full.source_url,
       vector_score: vec?.score ?? null,
       keyword_score: kw?.score ?? null,
       vector_rank: vec?.rank ?? null,
@@ -343,6 +393,25 @@ export async function hybridSearch(
       topic_hit: !!(topicHints && full.legal_topics && full.legal_topics.some((t) => topicHints.includes(t))),
     }];
   });
+
+  // An article number with no named law: when several laws have that article
+  // and none of those rows was also found by a ranked arm (nothing else in
+  // the question pointed at one of them), the question is ambiguous — the
+  // old code boosted up to 30 arbitrary laws' copies to the top. Boost only
+  // an exact row something else also supports, or the only law with that
+  // article; report the ambiguity otherwise.
+  const exactRows = rows.filter((r) => r.exact_hit);
+  const exactLaws = new Set(exactRows.map((r) => r.source_id));
+  const isRanked = (r: Row) => r.vector_rank !== null || r.keyword_rank !== null || r.stem_rank !== null;
+  const lawScoped = !!(lawSourceIds && lawSourceIds.length > 0);
+  const boostExact = (r: Row) => r.exact_hit && (lawScoped || exactLaws.size <= 1 || isRanked(r));
+  const articleAmbiguity =
+    !lawScoped && intent.articleNumbers.length > 0 && exactLaws.size >= 2 && !exactRows.some(isRanked)
+      ? {
+          article: intent.articleNumbers[0],
+          laws: [...new Map(exactRows.map((r) => [r.source_id, r.source_title])).values()].slice(0, 12),
+        }
+      : null;
 
   const fused = rows
     .map((r) => {
@@ -361,7 +430,7 @@ export async function hybridSearch(
       // An exact article/decision number match is not a ranking signal, it is
       // the answer. When a lawyer asks for المادة 202 they want المادة 202 at
       // the top, even if a semantically richer chunk exists.
-      if (r.exact_hit) score += 1;
+      if (boostExact(r)) score += 1;
 
       // Soft topic-match bonus: the query-understanding layer already tags a
       // question's legal area for free, and legal_topics was sitting in the
@@ -406,12 +475,19 @@ export async function hybridSearch(
         category: r.category,
         keywords: r.keywords,
         legal_topics: r.legal_topics,
+        chunk_index: r.chunk_index,
+        is_current_version: r.is_current_version,
+        effective_date: r.effective_date,
+        jurisdiction: r.jurisdiction,
+        provenance: r.provenance,
+        is_synthetic: r.is_synthetic,
+        source_url: r.source_url,
         vector_score: r.vector_score,
         keyword_score: r.keyword_score,
         stem_score: r.stem_score,
         score,
         matched_by,
-        _exact: r.exact_hit,
+        _exact: boostExact(r),
       };
     })
     .sort((a, b) => b.score - a.score);
@@ -439,17 +515,31 @@ export async function hybridSearch(
   const confidenceFor = (chunks: RetrievedChunk[], reranked: boolean) =>
     computeConfidence(chunks, { queryType: expansion?.queryType, exactHit, reranked });
 
+  const lawInfo = {
+    lawReference: lawRef ? { display: lawRef.display, matchedSources: lawSourceIds?.length ?? 0 } : null,
+    requestedLawMissing,
+    articleAmbiguity,
+  };
+  // Confidence is computed on the retrieved chunks as ranked; article parts
+  // are merged afterwards (a presentation step — it changes the text each
+  // [n] carries, not which sources were found or how they scored).
+  const finish = async (chunks: RetrievedChunk[], reranked: boolean, rerankTrace: RerankTrace | null): Promise<SearchResult> => ({
+    chunks: env.mergeArticleParts ? await mergeArticleParts(chunks) : chunks,
+    embeddingTokens: tokens,
+    rerankTrace,
+    confidence: confidenceFor(chunks, reranked),
+    ...lawInfo,
+  });
+
   // ---- plain RRF path (default) ----
   if (!reranker && !useLocalRerank) {
-    const chunks = applyScoreGapCutoff(ranked, (c) => c.score).slice(0, topK);
-    return { chunks, embeddingTokens: tokens, rerankTrace: null, confidence: confidenceFor(chunks, false) };
+    return finish(applyScoreGapCutoff(ranked, (c) => c.score).slice(0, topK), false, null);
   }
 
   // ---- rerank path: wide candidates → (cross-encoder | local composite) → topK ----
   const candidates = ranked.slice(0, env.rerankCandidates);
   if (candidates.length <= 1) {
-    const chunks = candidates.slice(0, topK);
-    return { chunks, embeddingTokens: tokens, rerankTrace: null, confidence: confidenceFor(chunks, false) };
+    return finish(candidates.slice(0, topK), false, null);
   }
 
   const rerankerName = useLocalRerank ? "local" : (reranker?.name ?? "unknown");
@@ -500,16 +590,14 @@ export async function hybridSearch(
     // just re-sorted this list by rerank_score, so that is the scale a
     // discontinuity has to be measured on.
     const trimmed = applyScoreGapCutoff(reordered, (c) => c.rerank_score ?? 0);
-    const chunks = trimmed.slice(0, topK).map(({ _from, ...c }) => c);
-    return { chunks, embeddingTokens: tokens, rerankTrace: trace, confidence: confidenceFor(chunks, true) };
+    return finish(trimmed.slice(0, topK).map(({ _from, ...c }) => c), true, trace);
   } catch (err) {
     // Reranking is a refinement, never a dependency. A failed call must not
     // cost the lawyer their answer — fall back to the RRF order and say so.
     // Confidence is computed as UN-reranked, because it was: reporting a
     // cross-encoder's endorsement that never happened would overstate it.
     logError(`[rerank] ${rerankerName} failed, falling back to RRF order:`, err);
-    const chunks = applyScoreGapCutoff(candidates, (c) => c.score).slice(0, topK);
-    return { chunks, embeddingTokens: tokens, rerankTrace: null, confidence: confidenceFor(chunks, false) };
+    return finish(applyScoreGapCutoff(candidates, (c) => c.score).slice(0, topK), false, null);
   }
 }
 
@@ -533,6 +621,11 @@ const FILTER_FRAGMENT = `
      AND d.source_id IN (
        SELECT id FROM legal_sources
         WHERE status = 'ready'
+          -- Phase 2: Jordanian sources only, and synthetic evaluation
+          -- fixtures only when ALLOW_SYNTHETIC_CORPUS=true — a fixture loaded
+          -- into production by mistake can never be quoted as law.
+          AND jurisdiction = 'JO'
+          AND (is_synthetic = false OR $18::boolean)
           AND ($14::text IS NULL OR source_type = $14)
           AND ($15::boolean IS NOT TRUE OR is_current_version = TRUE)
           AND ($16::date IS NULL OR effective_date IS NULL OR effective_date <= $16::date)
@@ -577,6 +670,10 @@ const ARMS_SQL = `
   (SELECT 'vec'::text AS arm, d.id, (1 - (d.embedding <=> $1::vector))::real AS score
      FROM legal_documents d
     WHERE d.embedding IS NOT NULL
+      -- Only vectors from the model that embedded the query: two models of
+      -- the same width would otherwise mix silently after a model change.
+      -- Untagged (pre-Phase-2) rows count as LEGACY_EMBEDDING_MODEL.
+      AND COALESCE(d.embedding_model, $19::text) = $20::text
       ${FILTER_FRAGMENT}
     ORDER BY d.embedding <=> $1::vector
     LIMIT $5)
@@ -619,11 +716,16 @@ const ARMS_SQL = `
   -- Citation lookups: fetched regardless of what the ranked arms found. Score
   -- is meaningless here (always 0) — fusion only ever checks arm === 'exact'
   -- membership, never this column, for this branch.
+  -- Phase 2: when the question names a law, the article match is scoped to
+  -- that law's sources ($17); ordered so the LIMIT is deterministic instead
+  -- of an arbitrary 30 of the corpus's same-numbered articles.
   (SELECT 'exact'::text AS arm, d.id, 0::real AS score
      FROM legal_documents d
-    WHERE (($6::text[] IS NOT NULL AND d.article_number  = ANY($6))
+    WHERE (($6::text[] IS NOT NULL AND d.article_number  = ANY($6)
+             AND ($17::bigint[] IS NULL OR d.source_id = ANY($17::bigint[])))
         OR ($7::text[] IS NOT NULL AND d.decision_number = ANY($7)))
       ${FILTER_FRAGMENT}
+    ORDER BY d.source_id, d.chunk_index
     LIMIT $5)
 `;
 
@@ -633,10 +735,16 @@ const ARMS_SQL = `
 const FULL_ROW_SQL = `
   SELECT d.id, d.source_id, d.chunk_text, d.article_number, d.law_name, d.law_number,
          d.part, d.chapter, d.section, d.court, d.decision_number, d.year, d.category,
-         d.keywords, d.legal_topics, s.title AS source_title, s.source_type
+         d.keywords, d.legal_topics, s.title AS source_title, s.source_type, d.chunk_index,
+         s.is_current_version, s.effective_date::text AS effective_date, s.jurisdiction,
+         s.provenance, s.is_synthetic, s.source_url
     FROM legal_documents d
     JOIN legal_sources s ON s.id = d.source_id
    WHERE d.id = ANY($1::bigint[])
+     -- Same served-corpus rule as the arms: also guards getChunksByIds,
+     -- whose ids come from a client (draft refine).
+     AND s.jurisdiction = 'JO'
+     AND (s.is_synthetic = false OR $2::boolean)
 `;
 
 /** Reorders `rows` to match `ids` exactly; silently drops any id with no
@@ -657,7 +765,7 @@ export function orderChunksByIds<T extends { id: number }>(rows: T[], ids: numbe
  */
 export async function getChunksByIds(ids: number[]): Promise<RetrievedChunk[]> {
   if (ids.length === 0) return [];
-  const fullRows = await query<FullRow>(FULL_ROW_SQL, [ids]);
+  const fullRows = await query<FullRow>(FULL_ROW_SQL, [ids, env.allowSyntheticCorpus]);
   const chunks: RetrievedChunk[] = fullRows.map((full) => ({
     ...full,
     vector_score: null,
@@ -667,4 +775,101 @@ export async function getChunksByIds(ids: number[]): Promise<RetrievedChunk[]> {
     matched_by: "keyword" as const,
   }));
   return orderChunksByIds(chunks, ids);
+}
+
+// ---------------------------------------------------------------- article parts
+
+/** Cap on a merged article's text: long enough for any ordinary article with its provisos, short enough that eight sources still fit a prompt. */
+const MAX_MERGED_CHARS = 6000;
+
+type PartRow = { id: number; source_id: number; chunk_index: number; article_number: string; chunk_text: string };
+
+/**
+ * Joins `b` onto `a`, dropping the overlap the chunker's sliding window
+ * repeats at the start of each continuation part (chunk.ts's OVERLAP_CHARS,
+ * snapped to a word boundary — so the exact overlap length varies; the
+ * longest suffix of `a` that prefixes `b`, up to 400 chars, is removed).
+ */
+export function joinWithOverlap(a: string, b: string): string {
+  const max = Math.min(400, a.length, b.length);
+  for (let len = max; len >= 20; len--) {
+    if (a.endsWith(b.slice(0, len))) return `${a}${b.slice(len)}`;
+  }
+  return `${a}\n${b}`;
+}
+
+/**
+ * Re-joins an article the chunker split into sliding-window parts (chunk.ts:
+ * articles over MAX_CHARS). Retrieval scores the parts separately — the part
+ * that matched the question wins — but a part can hold a rule while its
+ * exception, proviso or penalty sits in the next part. Handing the model one
+ * part detached the condition from the rule it modifies. Each retrieved part
+ * is therefore replaced by its whole article (all contiguous parts of the
+ * same source + article number, in order, overlap removed), and a second
+ * retrieved part of an article already present is dropped, so [n] still
+ * denotes one source. Pure text assembly: no scores change.
+ */
+export async function mergeArticleParts(chunks: RetrievedChunk[]): Promise<RetrievedChunk[]> {
+  const keyed = chunks.filter((c) => c.article_number);
+  if (keyed.length === 0) return chunks;
+  const parts = await query<PartRow>(
+    `SELECT id, source_id, chunk_index, article_number, chunk_text
+       FROM legal_documents
+      WHERE source_id = ANY($1::bigint[]) AND article_number = ANY($2::text[])
+      ORDER BY source_id, chunk_index`,
+    [[...new Set(keyed.map((c) => c.source_id))], [...new Set(keyed.map((c) => c.article_number!))]]
+  );
+  return mergeArticlePartsFrom(chunks, parts);
+}
+
+/** The pure half of mergeArticleParts (unit-tested without a database). */
+export function mergeArticlePartsFrom(chunks: RetrievedChunk[], parts: PartRow[]): RetrievedChunk[] {
+  const groups = new Map<string, PartRow[]>();
+  for (const p of parts) {
+    const k = `${Number(p.source_id)}|${p.article_number}`;
+    const list = groups.get(k) ?? [];
+    list.push({ ...p, id: Number(p.id), source_id: Number(p.source_id), chunk_index: Number(p.chunk_index) });
+    groups.set(k, list);
+  }
+
+  const seenArticles = new Set<string>();
+  const out: RetrievedChunk[] = [];
+  for (const c of chunks) {
+    if (!c.article_number) {
+      out.push(c);
+      continue;
+    }
+    const k = `${Number(c.source_id)}|${c.article_number}`;
+    if (seenArticles.has(k)) continue; // another part of an article already included
+    seenArticles.add(k);
+
+    const group = (groups.get(k) ?? []).sort((a, b) => a.chunk_index - b.chunk_index);
+    const at = group.findIndex((p) => p.id === Number(c.id));
+    if (group.length <= 1 || at === -1) {
+      out.push(c);
+      continue;
+    }
+    // Only the contiguous run around the retrieved part: the same article
+    // number appearing again later in the source (a repeated number in a
+    // badly numbered text) is a different article.
+    let lo = at;
+    let hi = at;
+    while (lo > 0 && group[lo - 1].chunk_index === group[lo].chunk_index - 1) lo--;
+    while (hi < group.length - 1 && group[hi + 1].chunk_index === group[hi].chunk_index + 1) hi++;
+    if (lo === hi) {
+      out.push(c);
+      continue;
+    }
+    let text = group[lo].chunk_text;
+    for (let i = lo + 1; i <= hi; i++) text = joinWithOverlap(text, group[i].chunk_text);
+    if (text.length > MAX_MERGED_CHARS) {
+      // Too long to carry whole: keep the retrieved part with as much of its
+      // neighbours as fits, marked as an excerpt.
+      const own = group[at].chunk_text;
+      const start = Math.max(0, text.indexOf(own.slice(0, 200)) - Math.floor((MAX_MERGED_CHARS - own.length) / 2));
+      text = `…${text.slice(start, start + MAX_MERGED_CHARS)}…`;
+    }
+    out.push({ ...c, chunk_text: text, merged_parts: hi - lo + 1 });
+  }
+  return out;
 }

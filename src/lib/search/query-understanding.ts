@@ -1,4 +1,5 @@
 import "server-only";
+import { fenced, newFence, withSecurityRules } from "../ai/untrusted";
 import { foldForSearch } from "../ingest/clean";
 import { containsTerm } from "../ingest/legal-topics";
 import { parseIntent } from "./intent";
@@ -237,8 +238,11 @@ export function analyzeQueryRules(question: string): QueryAnalysis {
 const LLM_TIMEOUT_MS = 4000;
 
 function buildClassifierPrompt(question: string) {
+  // The question is fenced as data (untrusted.ts) — a question cannot rewrite
+  // the classifier's instructions; the worst it can do is be misclassified,
+  // which only changes retrieval weighting.
   return {
-    system: `أنت مصنّف أسئلة قانونية أردنية. صنّف سؤال المحامي وأعد JSON فقط بلا أي نص آخر بهذا الشكل:
+    system: withSecurityRules(`أنت مصنّف أسئلة قانونية أردنية. صنّف سؤال المحامي وأعد JSON فقط بلا أي نص آخر بهذا الشكل:
 {"queryType": "...", "legalArea": "...", "expectedLaw": "...", "legalConcepts": ["..."]}
 
 قيم queryType المسموحة حصراً:
@@ -252,8 +256,8 @@ function buildClassifierPrompt(question: string) {
 legalArea أحد: جزائي، مدني، تجاري، عمالي، شركات، أحوال شخصية، إجرائي، أو null.
 expectedLaw اسم القانون الأردني الأرجح (مثل: قانون العقوبات) أو null.
 legalConcepts مصطلحات قانونية وردت في السؤال (قائمة قد تكون فارغة).
-لا تخترع أرقام مواد. أعد JSON صالحاً فقط.`,
-    user: question,
+لا تخترع أرقام مواد. أعد JSON صالحاً فقط.`),
+    user: fenced(newFence(), "QUESTION", "1", question),
   };
 }
 
@@ -300,10 +304,14 @@ export async function analyzeQuery(question: string, opts?: { allowLLM?: boolean
   try {
     const { system, user } = buildClassifierPrompt(question);
     const provider = getChatProvider();
-    const result = await Promise.race([
-      provider.chat([{ role: "system", content: system }, { role: "user", content: user }], { maxTokens: 200 }),
-      new Promise<never>((_, rej) => setTimeout(() => rej(new Error("classifier timeout")), LLM_TIMEOUT_MS)),
-    ]);
+    // A provider-level deadline (aborts the HTTP call) instead of the old
+    // Promise.race, which left a timed-out call running — and billing —
+    // after the request had moved on.
+    const result = await provider.chat([{ role: "system", content: system }, { role: "user", content: user }], {
+      maxTokens: 200,
+      purpose: "classify",
+      timeoutMs: LLM_TIMEOUT_MS,
+    });
 
     const parsed = parseClassifierJson(result.text);
     if (!parsed?.queryType) return rules;

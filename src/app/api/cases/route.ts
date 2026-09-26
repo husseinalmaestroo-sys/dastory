@@ -1,17 +1,14 @@
 import { NextRequest } from "next/server";
-import { getSession, touchSession, hashIp } from "@/lib/session";
-import { requireLawyer } from "@/lib/lawyer-auth";
-import { rateLimit, LIMITS } from "@/lib/ratelimit";
-import { costToday, siteWideCostToday } from "@/lib/costcap";
-import { env } from "@/lib/env";
+import { z } from "zod";
+import { getSession, touchSession } from "@/lib/session";
+import { requireCaller } from "@/lib/caller";
+import { readBodyLimited, parseJsonBytes } from "@/lib/http";
+import { admit, failureResponse, runAiRequest } from "@/lib/ai/request";
+import { runCaseAnalysis } from "@/lib/ai/pipelines/documents";
 import { savePdf } from "@/lib/storage";
 import { extractPdfText } from "@/lib/ingest/extract";
 import { cleanText } from "@/lib/ingest/clean";
-import { query, queryOne } from "@/lib/db";
-import { hybridSearch } from "@/lib/search/hybrid";
-import { getChatProvider } from "@/lib/ai";
-import { buildCaseAnalysisPrompt } from "@/lib/ai/prompts";
-import { stripInvalidCitations } from "@/lib/ai/guard";
+import { query } from "@/lib/db";
 import { recordUsage } from "@/lib/analytics";
 import { logError } from "@/lib/error-log";
 
@@ -20,19 +17,23 @@ export const dynamic = "force-dynamic";
 // OCR on a scanned case file is slow; the default 30s would kill it mid-page.
 export const maxDuration = 300;
 
-// The retrieval query is built from the case text. Sending all of it would
-// blow the embedding model's input limit on a long file, and the first pages
-// (parties, subject, claim) carry the signal anyway.
-const QUERY_TEXT_CHARS = 3000;
-// What the analysis model actually reads. A 40-page case at full length is
-// ~30k tokens per request — the cap keeps a single upload from costing more
-// than a hundred chat questions.
-const ANALYSIS_TEXT_CHARS = 24_000;
+const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+const MAX_CASE_TEXT_CHARS = 400_000;
 
-// Thin wrapper so anything thrown before a response is returned — a dropped
-// DB connection during requireLawyer/getSession/hybridSearch chief among them
-// — turns into the app's own Arabic error response instead of Next.js's
-// default error page. Same pattern as chat/route.ts's POST/handlePost split.
+/**
+ * Two input forms:
+ *   • JSON { caseText, fileName? } — text already extracted by the caller
+ *     (Dostoori extracts with its own pipeline, OCR included). Nothing but the
+ *     text leaves Dostoori, and nothing is stored here.
+ *   • multipart { file } — a PDF, for the standalone app, extracted here.
+ *     Only a standalone user's upload is retained (uploaded_cases + the PDF),
+ *     and only for CONTENT_RETENTION_DAYS (scripts/purge-content.ts).
+ */
+const JsonBody = z.object({
+  caseText: z.string().min(100, "نص الملف قصير جداً").max(MAX_CASE_TEXT_CHARS),
+  fileName: z.string().max(200).optional(),
+});
+
 export async function POST(req: NextRequest): Promise<Response> {
   try {
     return await handlePost(req);
@@ -43,198 +44,96 @@ export async function POST(req: NextRequest): Promise<Response> {
 }
 
 async function handlePost(req: NextRequest): Promise<Response> {
-  const started = Date.now();
+  const body = await readBodyLimited(req, MAX_UPLOAD_BYTES);
+  if (!body.ok) return body.response;
 
-  const { response: authError, lawyer } = await requireLawyer();
-  if (authError) return authError;
+  const auth = await requireCaller(req, body.bytes);
+  if (auth.response) return auth.response;
+  const caller = auth.caller;
 
-  const { sessionId } = await getSession();
+  const isMultipart = (req.headers.get("content-type") ?? "").includes("multipart/form-data");
+  let caseText: string;
+  let fileName = "ملف قضية";
+  let pdf: File | null = null;
+  let extraction: { pages: number; method: string } = { pages: 0, method: "provided-text" };
 
-  const rl = await rateLimit(`upload:lawyer:${lawyer!.id}`, LIMITS.upload.limit, LIMITS.upload.windowSec);
-  if (!rl.ok) {
-    return Response.json(
-      { error: `تجاوزت حد رفع الملفات. حاول بعد ${Math.ceil(rl.retryAfterSec / 60)} دقيقة.` },
-      { status: 429 }
-    );
-  }
-
-  // Per-IP daily ceiling + cost circuit breakers — see costcap.ts and
-  // ratelimit.ts's LIMITS.uploadDailyIp for why this keys on IP rather than
-  // the session cookie above.
-  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
-  const ipKey = hashIp(ip) ?? "unknown";
-
-  const rlDailyIp = await rateLimit(`upload-daily-ip:${ipKey}`, LIMITS.uploadDailyIp.limit, LIMITS.uploadDailyIp.windowSec);
-  if (!rlDailyIp.ok) {
-    return Response.json({ error: "تجاوزت الحد اليومي المسموح به لرفع الملفات. حاول غداً." }, { status: 429 });
-  }
-  if ((await siteWideCostToday()) >= env.costCapSiteUsd) {
-    return Response.json({ error: "الخدمة متوقفة مؤقتاً بسبب بلوغ حد الإنفاق اليومي للموقع. حاول لاحقاً." }, { status: 503 });
-  }
-  if ((await costToday(ipKey)) >= env.costCapPerUserUsd) {
-    return Response.json({ error: "تجاوزت الحد اليومي المسموح للإنفاق من هذا الاتصال. حاول غداً." }, { status: 429 });
-  }
-
-  const form = await req.formData().catch(() => null);
-  const file = form?.get("file");
-  if (!(file instanceof File)) {
-    return Response.json({ error: "لم يتم إرفاق ملف." }, { status: 400 });
-  }
-
-  await touchSession(sessionId);
-
-  let caseId: number | null = null;
-  try {
-    const saved = await savePdf(file, "cases");
-
-    const row = await queryOne<{ id: number }>(
-      `INSERT INTO uploaded_cases (session_id, file_name, file_path, status)
-       VALUES ($1,$2,$3,'processing') RETURNING id`,
-      [sessionId, saved.name, saved.path]
-    );
-    caseId = row!.id;
-
-    const extracted = await extractPdfText(await readBack(saved.path));
-    const text = cleanText(extracted.text);
-
-    if (text.length < 100) {
-      throw new Error("تعذّر استخراج نص كافٍ من الملف. تأكد من وضوح المستند.");
+  if (isMultipart) {
+    const form = await new Request(req.url, { method: "POST", headers: req.headers, body: Buffer.from(body.bytes) }).formData().catch(() => null);
+    const file = form?.get("file");
+    if (!(file instanceof File)) return Response.json({ error: "لم يتم إرفاق ملف." }, { status: 400 });
+    pdf = file;
+    fileName = file.name.slice(0, 200);
+    try {
+      const extracted = await extractPdfText(Buffer.from(await file.arrayBuffer()));
+      caseText = cleanText(extracted.text);
+      extraction = { pages: extracted.pages, method: extracted.method };
+    } catch {
+      return Response.json({ error: "تعذّر قراءة الملف. تأكد أنه ملف PDF سليم." }, { status: 400 });
     }
+  } else {
+    const parsed = JsonBody.safeParse(parseJsonBytes(body.bytes));
+    if (!parsed.success) return Response.json({ error: parsed.error.issues[0]?.message ?? "طلب غير صالح" }, { status: 400 });
+    caseText = cleanText(parsed.data.caseText);
+    fileName = parsed.data.fileName ?? fileName;
+  }
+  if (caseText.length < 100) {
+    return Response.json({ error: "تعذّر استخراج نص كافٍ من الملف. تأكد من وضوح المستند." }, { status: 400 });
+  }
 
-    await query(`UPDATE uploaded_cases SET extracted_text = $2 WHERE id = $1`, [caseId, text]);
+  const refused = await admit(caller, "case_analysis");
+  if (refused) return refused;
 
-    // Ground the analysis in the shared knowledge base — the uploaded file is
-    // evidence to be analysed, never an authority to cite.
-    const { chunks, embeddingTokens } = await hybridSearch(text.slice(0, QUERY_TEXT_CHARS), {}, 10);
+  const r = await runAiRequest(caller, "case_analysis", req.signal, () => runCaseAnalysis(caseText, caller));
+  if (!r.ok) return failureResponse(r);
+  const v = r.value;
+  if ("invalid" in v) {
+    return Response.json({ error: "تعذّر الحصول على تحليل صالح لهذا الملف. حاول مرة أخرى.", requestId: r.usage.requestId }, { status: 502 });
+  }
 
-    const { system, user } = buildCaseAnalysisPrompt(text.slice(0, ANALYSIS_TEXT_CHARS), chunks);
-    const provider = getChatProvider();
-    const result = await provider.chat(
-      [
-        { role: "system", content: system },
-        { role: "user", content: user },
-      ],
-      { maxTokens: 2500 }
-    );
-
-    const analysis = parseJsonAnalysis(result.text);
-
-    // Same check chat/route.ts and draft/route.ts run on inline [n] markers —
-    // legal_basis/possible_defenses/strengths/weaknesses each carry a
-    // `citation: "[n]"` pointing into this same retrieved `chunks` array, but
-    // unlike those two routes nothing here verified the ref was in range. A
-    // `[7]` with only 3 sources retrieved is a fabricated citation in a
-    // document meant to inform litigation strategy, not a cosmetic slip.
-    const strippedCount = cleanCitationRefs(analysis, chunks.length);
-    if (strippedCount > 0) {
-      console.warn(
-        `[cases] stripped ${strippedCount} out-of-range citation ref(s) — only ${chunks.length} source(s) were retrieved`
+  let id: number | null = null;
+  if (caller.retainContent && pdf) {
+    // Standalone users only: their own upload history (retention-limited).
+    const { sessionId } = await getSession();
+    void touchSession(sessionId);
+    try {
+      const saved = await savePdf(pdf, "cases");
+      const row = await query<{ id: number }>(
+        `INSERT INTO uploaded_cases (session_id, file_name, file_path, extracted_text, analysis, status)
+         VALUES ($1,$2,$3,$4,$5,'ready') RETURNING id`,
+        [sessionId, saved.name, saved.path, caseText, JSON.stringify({ ...v.analysis, sources: v.sources })]
       );
-    }
-
-    const sources = chunks.map((c, i) => ({
-      ref: i + 1,
-      id: c.id,
-      title: c.source_title,
-      articleNumber: c.article_number,
-      lawName: c.law_name,
-      court: c.court,
-      decisionNumber: c.decision_number,
-      year: c.year,
-      excerpt: c.chunk_text.slice(0, 400),
-    }));
-
-    await query(`UPDATE uploaded_cases SET analysis = $2, status = 'ready' WHERE id = $1`, [
-      caseId,
-      JSON.stringify({ ...analysis, sources }),
-    ]);
-
-    void recordUsage({
-      sessionId,
-      costKey: ipKey,
-      question: `[تحليل ملف قضية] ${saved.name}`,
-      answer: JSON.stringify(analysis).slice(0, 4000),
-      sourcesUsed: sources,
-      grounded: chunks.length > 0,
-      tokensIn: result.tokensIn,
-      tokensOut: result.tokensOut,
-      embeddingTokens,
-      latencyMs: Date.now() - started,
-      category: analysis.case_type ?? null,
-      hitCount: chunks.length,
-    });
-
-    return Response.json({
-      id: caseId,
-      fileName: saved.name,
-      pages: extracted.pages,
-      extractionMethod: extracted.method,
-      analysis,
-      sources,
-    });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "فشل تحليل الملف.";
-    if (caseId) {
-      await query(`UPDATE uploaded_cases SET status = 'failed', error = $2 WHERE id = $1`, [
-        caseId,
-        message.slice(0, 500),
-      ]).catch(() => {});
-    }
-    logError("[cases] analysis failed:", err);
-    return Response.json({ error: message }, { status: 400 });
-  }
-}
-
-async function readBack(path: string): Promise<Buffer> {
-  const { readFile } = await import("node:fs/promises");
-  return readFile(path);
-}
-
-/**
- * The prompt demands bare JSON, but models still wrap it in ```json fences
- * often enough that failing the whole upload over it is not acceptable.
- */
-function parseJsonAnalysis(raw: string): Record<string, any> {
-  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
-  const candidate = (fenced ? fenced[1] : raw).trim();
-
-  try {
-    return JSON.parse(candidate);
-  } catch {
-    const start = candidate.indexOf("{");
-    const end = candidate.lastIndexOf("}");
-    if (start !== -1 && end > start) {
-      try {
-        return JSON.parse(candidate.slice(start, end + 1));
-      } catch {
-        /* fall through */
-      }
+      id = row[0]?.id ?? null;
+      void recordUsage({
+        sessionId,
+        question: `[تحليل ملف قضية] ${saved.name}`,
+        answer: JSON.stringify(v.analysis).slice(0, 4000),
+        sourcesUsed: v.sources.filter((s) => s.cited),
+        grounded: v.groundingLevel !== "none",
+        mode: v.groundingLevel,
+        tokensIn: r.usage.tokensIn,
+        tokensOut: r.usage.tokensOut,
+        embeddingTokens: r.usage.embeddingTokens,
+        latencyMs: 0,
+        category: v.analysis.case_type,
+        hitCount: v.sources.length,
+        costUsd: r.usage.estimatedCostUsd,
+      });
+    } catch (err) {
+      logError("[cases] failed to store the standalone upload:", err);
     }
   }
-  // Surface the model's prose rather than throwing away a paid call.
-  return { summary: raw.slice(0, 2000), parse_error: true };
-}
 
-/**
- * Validates the `citation: "[n]"` field on every legal_basis/possible_
- * defenses/strengths/weaknesses entry against the retrieved `chunks` array —
- * reusing guard.ts's stripInvalidCitations rather than a second regex, since
- * a ref pointing past the source list is exactly as invalid here as it is in
- * chat/route.ts's or draft/route.ts's inline [n] markers. `cited_articles` is
- * deliberately left untouched: per buildCaseAnalysisPrompt, it describes
- * articles as they appeared in the *uploaded* case file, not a DB reference.
- */
-function cleanCitationRefs(analysis: Record<string, any>, maxRef: number): number {
-  let strippedCount = 0;
-  for (const key of ["legal_basis", "possible_defenses", "strengths", "weaknesses"]) {
-    const items = analysis[key];
-    if (!Array.isArray(items)) continue;
-    for (const item of items) {
-      if (!item || typeof item.citation !== "string") continue;
-      const { text, strippedCount: n } = stripInvalidCitations(item.citation, maxRef);
-      strippedCount += n;
-      item.citation = text || undefined;
-    }
-  }
-  return strippedCount;
+  return Response.json({
+    id,
+    fileName,
+    pages: extraction.pages,
+    extractionMethod: extraction.method,
+    analysis: v.analysis,
+    validation: v.validation,
+    coverage: v.coverage,
+    groundingLevel: v.groundingLevel,
+    sources: v.sources,
+    usage: r.usage,
+    provenance: r.provenance,
+  });
 }

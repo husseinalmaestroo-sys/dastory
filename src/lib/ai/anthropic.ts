@@ -1,7 +1,7 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { env } from "../env";
-import { withDeadline, withIdleTimeout } from "./deadline";
+import { linkSignal, withDeadline, withIdleTimeout } from "./deadline";
 import type { ChatProvider, ChatMessage, ChatResult } from "./provider";
 
 // Lazy for the same reason the DB pool is: `next build` imports this module,
@@ -45,10 +45,11 @@ export const anthropicProvider: ChatProvider = {
     const { system, turns } = split(messages);
     const model = opts.model ?? env.anthropicModel;
     const ctrl = new AbortController();
+    linkSignal(ctrl, opts.signal);
 
     const res = await withDeadline(
       "anthropic message",
-      env.chatTimeoutMs,
+      opts.timeoutMs ?? env.chatTimeoutMs,
       ctrl,
       client().messages.create(
         {
@@ -86,6 +87,7 @@ export const anthropicProvider: ChatProvider = {
     const { system, turns } = split(messages);
     const model = opts.model ?? env.anthropicModel;
     const ctrl = new AbortController();
+    linkSignal(ctrl, opts.signal);
 
     const stream = client().messages.stream(
       {

@@ -1170,12 +1170,17 @@ console.log("\n[false-refusal recovery]");
   check("highlighted source repeats its citation identity (bookended, not shown once)", identityHits >= 2, identityHits);
   check("highlighted source is visually distinct from the plain rendering", highlighted.includes("━"), highlighted);
 
-  // ---- buildStrongGroundingPrompt: the "stronger grounding prompt" + "direct answer" requirements ----
+  // ---- buildStrongGroundingPrompt: the careful re-read ----
+  // Phase 2 changed this deliberately: the re-read used to BAN the refusal
+  // ("لا ترفض الإجابة") — ordering an answer from sources the model had just
+  // judged insufficient, i.e. hallucination pressure. It now asks for a
+  // source-by-source re-read and keeps the right to conclude "insufficient".
   const { system: fgSystem, user: fgUser } = buildStrongGroundingPrompt("ما حقوق العامل؟", [src()]);
-  check("forced-grounding prompt explicitly bans the refusal sentence", fgSystem.includes(NO_BASIS_ANSWER) && fgSystem.includes("ممنوع"), fgSystem);
-  check("forced-grounding prompt still forbids inventing an article number", fgSystem.includes("اختراع"), fgSystem);
-  check("forced-grounding prompt demands a direct answer, not a refusal", fgUser.includes("لا ترفض الإجابة"), fgUser);
-  check("forced-grounding prompt carries the highlighted sources, not the plain ones", fgUser.includes("━"), fgUser);
+  check("re-read prompt asks for a careful source-by-source reading", fgSystem.includes("قراءة ثانية متأنية"), fgSystem);
+  check("re-read prompt keeps the right to conclude the sources are insufficient", fgSystem.includes("هذا جواب صحيح ومقبول"), fgSystem);
+  check("re-read prompt no longer bans the refusal outright", !fgUser.includes("لا ترفض الإجابة") && !fgSystem.includes("الرفض الكامل للإجابة غير مسموح"), fgUser);
+  check("re-read prompt still forbids inventing an article number", fgSystem.includes("اختراع"), fgSystem);
+  check("re-read prompt carries the highlighted sources, not the plain ones", fgUser.includes("━"), fgUser);
 }
 
 // ---------------------------------------------------------------- embedding cache

@@ -101,8 +101,8 @@ export async function ingestSource(input: IngestInput): Promise<IngestResult> {
              (source_id, chunk_index, chunk_text, folded_text, stemmed_text, extracted_text, embedding,
               article_number, law_name, law_number, part, chapter, section,
               court, decision_number, year, category, keywords, legal_topics,
-              decision_section, proves_chunk_index, metadata)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`,
+              decision_section, proves_chunk_index, metadata, embedding_model)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)`,
           [
             input.sourceId,
             i,
@@ -138,6 +138,9 @@ export async function ingestSource(input: IngestInput): Promise<IngestResult> {
               // by search or shown as a citation.
               ...(trustNumbers ? {} : { article_number_ocr_unverified: c.articleNumber }),
             }),
+            // Which model produced this vector (Phase 2 embedding versioning):
+            // retrieval only compares a query with vectors of its own model.
+            provider.model,
           ]
         );
       }

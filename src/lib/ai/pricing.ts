@@ -31,6 +31,10 @@ const PRICES: Record<string, { in: number; out: number }> = {
   "voyage-3-large": { in: 0.18, out: 0 },
   "voyage-3.5": { in: 0.06, out: 0 },
   "voyage-3.5-lite": { in: 0.02, out: 0 },
+
+  // --- deterministic offline test providers (ai/test-provider.ts): free ---
+  "test-extractive-v1": { in: 0, out: 0 },
+  "test-hash-embed-v1": { in: 0, out: 0 },
 };
 
 const FALLBACK = { in: 0.15, out: 0.6 };

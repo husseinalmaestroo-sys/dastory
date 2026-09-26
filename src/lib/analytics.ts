@@ -1,8 +1,5 @@
 import "server-only";
 import { query } from "./db";
-import { estimateCost } from "./ai/pricing";
-import { getChatProvider, getEmbeddingProvider } from "./ai";
-import { addCost } from "./costcap";
 import { logError } from "./error-log";
 
 export type UsageEvent = {
@@ -27,12 +24,11 @@ export type UsageEvent = {
   category?: string | null;
   hitCount: number;
   /**
-   * Key for costcap.ts's daily circuit breakers — an IP hash from the calling
-   * route, NOT sessionId. sessionId is free for a caller to mint fresh (see
-   * ratelimit.ts), so a cost cap keyed on it would reset right along with the
-   * cookie; IP hash is the identity that survives that.
+   * The request's real estimated cost (usage meter, per-model pricing). The
+   * cost ledger itself is charged by ai/request.ts — this is only the
+   * standalone dashboard's per-session tally.
    */
-  costKey: string;
+  costUsd: number;
   /**
    * Phase 6 self-verification (self-verify.ts) result, for monitoring. `null`
    * fields mean the verifier didn't run at all (usedDirectSourceFallback, or
@@ -49,28 +45,19 @@ export type UsageEvent = {
 
 /**
  * Records one answered question across chat_history, anonymous_usage and
- * search_log.
+ * search_log — CONTENT retention for the standalone app's own users only.
+ *
+ * Phase 2: never called for service (Dostoori) requests — Dostoori is the
+ * system of record for its offices' questions and documents, and this service
+ * keeps only content-free accounting for them (ai_requests, ai/request.ts).
+ * Standalone rows are deleted after CONTENT_RETENTION_DAYS (scripts/purge-content.ts).
  *
  * Never throws: analytics is a side effect of answering, and losing a counter
  * row must not turn a good answer into a 500 for the lawyer waiting on it.
  */
 export async function recordUsage(e: UsageEvent): Promise<void> {
   try {
-    // Price against the models that actually served the request, not against
-    // OPENAI_CHAT_MODEL. Reading the OpenAI setting directly would bill a
-    // Claude answer at gpt-4o-mini's rate — a ~40x under-report, and silent.
-    const cost =
-      estimateCost(getChatProvider().model, e.tokensIn, e.tokensOut) +
-      estimateCost(getEmbeddingProvider().model, e.embeddingTokens, 0);
-
-    // Before the DB writes below, deliberately: if a later write in this
-    // function throws, the caller's actual OpenAI/Anthropic spend already
-    // happened regardless, so the cost ledger must still count it. Safe to
-    // over-count on a rare partial failure; unsafe to under-count a real
-    // dollar. addCost has its own internal try/catch (costcap.ts) so a
-    // failure here logs its own specific message rather than being folded
-    // into this function's generic catch below.
-    await addCost(e.costKey, cost);
+    const cost = e.costUsd;
 
     await query(
       `INSERT INTO chat_history

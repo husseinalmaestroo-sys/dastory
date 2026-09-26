@@ -1,7 +1,8 @@
 import "server-only";
 import OpenAI from "openai";
 import { env } from "../env";
-import { isRetryableStatus, withDeadline, withIdleTimeout } from "./deadline";
+import { isRetryableStatus, linkSignal, withDeadline, withIdleTimeout } from "./deadline";
+import { currentSignal } from "./usage-meter";
 import type { ChatProvider, EmbeddingProvider, ChatMessage, ChatResult, EmbedResult } from "./provider";
 
 // maxRetries: 0 — the SDK's default (2 retries, 10-minute timeout) silently
@@ -21,6 +22,7 @@ const EMBED_BATCH_SIZE = 96;
 async function embedBatch(batch: string[]): Promise<{ vectors: number[][]; tokens: number }> {
   for (let attempt = 0; ; attempt++) {
     const ctrl = new AbortController();
+    linkSignal(ctrl, currentSignal());
     try {
       const res = await withDeadline(
         "embeddings",
@@ -70,10 +72,11 @@ export const openaiChatProvider: ChatProvider = {
 
   async chat(messages: ChatMessage[], opts = {}): Promise<ChatResult> {
     const ctrl = new AbortController();
+    linkSignal(ctrl, opts.signal);
     const model = opts.model ?? env.chatModel;
     const res = await withDeadline(
       "chat completion",
-      env.chatTimeoutMs,
+      opts.timeoutMs ?? env.chatTimeoutMs,
       ctrl,
       client().chat.completions.create(
         { model, messages, temperature: 0.1, max_tokens: opts.maxTokens ?? 1500 },
@@ -91,10 +94,11 @@ export const openaiChatProvider: ChatProvider = {
 
   async *chatStream(messages: ChatMessage[], opts = {}) {
     const ctrl = new AbortController();
+    linkSignal(ctrl, opts.signal);
     const model = opts.model ?? env.chatModel;
     const stream = await withDeadline(
       "chat stream start",
-      env.chatTimeoutMs,
+      opts.timeoutMs ?? env.chatTimeoutMs,
       ctrl,
       client().chat.completions.create(
         {

@@ -1,6 +1,7 @@
 import "server-only";
 import { env } from "../env";
-import { isRetryableStatus } from "./deadline";
+import { isRetryableStatus, linkSignal } from "./deadline";
+import { currentSignal } from "./usage-meter";
 import type { EmbeddingProvider, EmbedResult } from "./provider";
 
 /**
@@ -31,6 +32,7 @@ type VoyageResponse = {
 async function postBatch(batch: string[], kind: "document" | "query"): Promise<VoyageResponse> {
   for (let attempt = 0; ; attempt++) {
     const ctrl = new AbortController();
+    linkSignal(ctrl, currentSignal());
     const timer = setTimeout(() => ctrl.abort(), env.embedTimeoutMs);
     let status: number | undefined;
     try {

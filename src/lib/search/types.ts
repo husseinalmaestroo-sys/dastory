@@ -40,6 +40,22 @@ export type RetrievedChunk = {
    * compared or blended.
    */
   rerank_score?: number | null;
+
+  // ---- provenance / version of the source this chunk belongs to (Phase 2) ----
+  // Optional so fixtures and older call sites that build a RetrievedChunk by
+  // hand stay valid; hybridSearch and getChunksByIds always populate them.
+  /** False for a superseded / repealed version. The prompt labels it and grounding.ts flags an unlabelled use. */
+  is_current_version?: boolean | null;
+  /** ISO date the version took effect, when recorded. */
+  effective_date?: string | null;
+  /** ISO country code of the source (retrieval only serves JO). */
+  jurisdiction?: string | null;
+  /** official | secondary | synthetic | null (not recorded). */
+  provenance?: string | null;
+  is_synthetic?: boolean | null;
+  source_url?: string | null;
+  /** Number of stored chunks merged into this one (a long article split by the chunker, re-joined at retrieval). */
+  merged_parts?: number;
 };
 
 /** Before/after record of a rerank pass, for logging and benchmarking. */

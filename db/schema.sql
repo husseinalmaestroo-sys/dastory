@@ -581,3 +581,11 @@ CREATE TABLE IF NOT EXISTS ai_requests (
 );
 CREATE INDEX IF NOT EXISTS idx_ai_requests_office  ON ai_requests (office_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_ai_requests_created ON ai_requests (created_at DESC);
+
+-- ---- retired synthetic Dostoori identities ------------------------------------
+-- Dostoori calls used to run as a synthetic lawyer per office
+-- ("dostoori-office-<id>") that anyone could log in as by typing the name.
+-- Service calls now authenticate with signed assertions and are never lawyer
+-- rows; the leftovers are removed (rate-limit buckets keyed on them expire on
+-- their own). Idempotent.
+DELETE FROM users WHERE name_key LIKE 'dostoori-office-%' OR office_name = 'Dostoori (integration)';

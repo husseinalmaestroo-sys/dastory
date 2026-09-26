@@ -1,12 +1,9 @@
 import "server-only";
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { cookies, headers } from "next/headers";
+import { cookies } from "next/headers";
 import { env } from "./env";
 import { query, queryOne } from "./db";
 import { foldForSearch } from "./ingest/clean";
-
-const INTERNAL_KEY_HEADER = "x-internal-service-key";
-const INTERNAL_CALLER_HEADER = "x-dostoori-office-id";
 
 const LAWYER_COOKIE = "als_lawyer";
 const TTL_MS = 1000 * 60 * 60 * 24 * 180; // 180 days — a lawyer re-enters only their name, so there is little reason to force it sooner.
@@ -94,71 +91,29 @@ export async function getLawyer(): Promise<Lawyer | null> {
 }
 
 /**
- * One stable row per calling office, not per Dostoori end-user: a Dostoori
- * office's many lawyers all share this app's rate limit / cost bucket /
- * chat_history the same way a single real lawyer using this app directly
- * would. That's a deliberate, coarser grain than Dostoori's own per-user
- * limits (which already ran, upstream, before this was ever called) — the
- * purpose here is only to keep one Dostoori office's usage from bucketing
- * together with another's, or with a real walk-in lawyer's, inside THIS
- * app's own limits. Idempotent: a second call for the same officeId finds
- * the row idx_users_name_key already guarantees is unique, rather than
- * risking a duplicate insert.
- */
-async function getOrCreateInternalLawyer(officeId: string): Promise<Lawyer> {
-  const nameKey = normalizeLawyerName(`dostoori-office-${officeId}`);
-  const existing = await queryOne<{ id: number; name: string; phone: string | null; office_name: string | null }>(
-    `SELECT id, name, phone, office_name FROM users WHERE name_key = $1`,
-    [nameKey]
-  );
-  if (existing) return { id: existing.id, name: existing.name, phone: existing.phone, officeName: existing.office_name };
-
-  const displayName = `Dostoori — office ${officeId}`;
-  try {
-    const row = await queryOne<{ id: number }>(
-      `INSERT INTO users (name, name_key, office_name, role) VALUES ($1, $2, $3, 'lawyer') RETURNING id`,
-      [displayName, nameKey, "Dostoori (integration)"]
-    );
-    return { id: row!.id, name: displayName, phone: null, officeName: "Dostoori (integration)" };
-  } catch {
-    // Lost a race with a concurrent first request for the same office against
-    // idx_users_name_key's unique constraint — the row now exists, read it.
-    const row = await queryOne<{ id: number; name: string; phone: string | null; office_name: string | null }>(
-      `SELECT id, name, phone, office_name FROM users WHERE name_key = $1`,
-      [nameKey]
-    );
-    if (row) return { id: row.id, name: row.name, phone: row.phone, officeName: row.office_name };
-    throw new Error(`getOrCreateInternalLawyer: insert failed and no row found for office ${officeId}`);
-  }
-}
-
-/**
- * Guard for API routes that require a signed-in lawyer. Mirrors
- * admin-auth.ts's requireAdmin().
+ * Guard for routes that require a signed-in standalone lawyer (cookie).
  *
- * Checks the trusted-service header first: env.internalServiceKey is unset
- * by default (this app is fully usable standalone with no caller ever able
- * to present it), and the comparison is constant-time either way. A caller
- * that passes this check skips only the *individual-lawyer* cookie gate —
- * every check that runs after requireLawyer() returns (rate limit, cost
- * caps, guard.ts, self-verify.ts) still runs exactly as it does for a
- * cookie-authenticated lawyer, keyed on the synthetic per-office identity
- * below instead of a cookie-holder's.
+ * Phase 2: the old trusted-service path (a shared key + a free-form
+ * X-Dostoori-Office-Id header, mapped to a synthetic "dostoori-office-<id>"
+ * lawyer) is gone. Service callers authenticate with signed request-bound
+ * assertions (service-auth.ts) through requireCaller (caller.ts) and are
+ * never lawyers here.
  */
 export async function requireLawyer(): Promise<{ response: Response | null; lawyer: Lawyer | null }> {
-  const configuredKey = env.internalServiceKey;
-  if (configuredKey) {
-    const hdrs = await headers();
-    const presented = hdrs.get(INTERNAL_KEY_HEADER);
-    const officeId = hdrs.get(INTERNAL_CALLER_HEADER);
-    if (presented && officeId && safeEqual(presented, configuredKey)) {
-      return { response: null, lawyer: await getOrCreateInternalLawyer(officeId) };
-    }
-  }
-
   const lawyer = await getLawyer();
   if (!lawyer) return { response: Response.json({ error: "الرجاء تسجيل الدخول أولاً." }, { status: 401 }), lawyer: null };
   return { response: null, lawyer };
+}
+
+/**
+ * Names reserved for the retired synthetic Dostoori identities. Login by
+ * name only (this app's deliberate low-friction gate) used to let anyone sign
+ * in AS an office's synthetic lawyer — sharing its limits — by typing
+ * "dostoori-office-<id>". Those rows are deleted by the migration, and the
+ * names can no longer be registered or used to log in.
+ */
+function isReservedName(nameKey: string): boolean {
+  return /^dostoori|^dostoori-office|^dostouri|^دستوري/i.test(nameKey.replace(/\s+/g, ""));
 }
 
 export type RegisterInput = { name: string; phone: string; officeName: string };
@@ -173,6 +128,7 @@ export async function registerLawyer(input: RegisterInput): Promise<RegisterResu
   if (phone.length < 7) return { ok: false, error: "رقم الهاتف غير صالح." };
 
   const nameKey = normalizeLawyerName(name);
+  if (isReservedName(nameKey)) return { ok: false, error: "هذا الاسم محجوز. اختر اسماً آخر." };
   const existing = await queryOne<{ id: number }>(`SELECT id FROM users WHERE name_key = $1`, [nameKey]);
   if (existing) {
     return { ok: false, error: "هذا الاسم مسجّل مسبقاً. إذا كان الحساب لك، استخدم تسجيل الدخول بدلاً من إنشاء حساب جديد." };
@@ -194,6 +150,9 @@ export type LoginResult = { ok: true; lawyer: Lawyer } | { ok: false; error: str
 /** Looks a lawyer up by name only (the returning-visit flow) and signs them in if found. */
 export async function loginLawyer(name: string): Promise<LoginResult> {
   const nameKey = normalizeLawyerName(name);
+  if (isReservedName(nameKey)) {
+    return { ok: false, error: "لا يوجد حساب بهذا الاسم. إذا كانت زيارتك الأولى، أنشئ حساباً جديداً." };
+  }
   const row = await queryOne<{ id: number; name: string; phone: string | null; office_name: string | null }>(
     `SELECT id, name, phone, office_name FROM users WHERE name_key = $1 AND role = 'lawyer'`,
     [nameKey]

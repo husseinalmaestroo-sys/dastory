@@ -1,4 +1,5 @@
 import "server-only";
+import { fenced, newFence, withSecurityRules } from "../ai/untrusted";
 import { foldForSearch } from "../ingest/clean";
 import { expandWithOntology, type OntologyMatch } from "./legal-ontology";
 import type { QueryAnalysis } from "./query-understanding";
@@ -79,7 +80,7 @@ export function toOrTsQuery(terms: string[]): string {
 
 function buildExpansionPrompt(question: string) {
   return {
-    system: `أنت مساعد بحث قانوني أردني. قد يصف المحامي وقائع بلغة عامية أو وصفية، أو
+    system: withSecurityRules(`أنت مساعد بحث قانوني أردني. قد يصف المحامي وقائع بلغة عامية أو وصفية، أو
 يطرح سؤالاً مفاهيمياً/مقارناً بمصطلح قانوني أكاديمي متعارف عليه في الفقه —
 وكلا النوعين قد يستخدم كلمات لا يستخدمها نص القانون نفسه حرفياً (مثال: مصطلح
 فقهي شائع مثل "البطلان النسبي" لا يرد بهذا اللفظ في القانون المدني الأردني،
@@ -96,8 +97,8 @@ function buildExpansionPrompt(question: string) {
 - من 3 إلى 6 مصطلحات كحد أقصى.
 - مصطلحات تشريعية فقط (مثل: "مال مسلم على وجه الأمانة"، "الفعل الضار").
 - ممنوع منعاً قطعياً ذكر رقم مادة أو رقم قانون أو رقم قرار — هذه تُسترجع من قاعدة البيانات ولا تُخمَّن.
-- لا تُجب عن السؤال، ولا تشرح. مصطلحات البحث فقط.`,
-    user: question,
+- لا تُجب عن السؤال، ولا تشرح. مصطلحات البحث فقط.`),
+    user: fenced(newFence(), "QUESTION", "1", question),
   };
 }
 
@@ -154,10 +155,11 @@ export async function expandQuery(
     try {
       const { system, user } = buildExpansionPrompt(question);
       const provider = getChatProvider();
-      const result = await Promise.race([
-        provider.chat([{ role: "system", content: system }, { role: "user", content: user }], { maxTokens: 200 }),
-        new Promise<never>((_, rej) => setTimeout(() => rej(new Error("expansion timeout")), LLM_TIMEOUT_MS)),
-      ]);
+      const result = await provider.chat([{ role: "system", content: system }, { role: "user", content: user }], {
+        maxTokens: 200,
+        purpose: "expand",
+        timeoutMs: LLM_TIMEOUT_MS,
+      });
       llmTerms = parseTerms(result.text);
     } catch {
       // Expansion is an optimisation, never a dependency: on timeout or bad

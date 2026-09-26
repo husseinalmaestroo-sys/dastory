@@ -72,6 +72,13 @@ export async function* withIdleTimeout<T>(
   }
 }
 
+/** Aborts `ctrl` when `signal` fires (immediately if it already has). */
+export function linkSignal(ctrl: AbortController, signal: AbortSignal | undefined): void {
+  if (!signal) return;
+  if (signal.aborted) ctrl.abort();
+  else signal.addEventListener("abort", () => ctrl.abort(), { once: true });
+}
+
 /** HTTP statuses worth one retry for an idempotent call. */
 export function isRetryableStatus(status: number | undefined): boolean {
   return status === 429 || (status !== undefined && status >= 500 && status < 600);

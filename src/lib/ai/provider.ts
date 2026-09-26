@@ -32,6 +32,21 @@ export type EmbedResult = {
   tokens: number;
 };
 
+export type ChatOptions = {
+  maxTokens?: number;
+  model?: string;
+  /**
+   * What this call is for ("answer", "condense", "judge", "repair", ...) —
+   * recorded by the usage meter (usage-meter.ts) so cost can be attributed
+   * per pipeline stage. Not sent to the provider.
+   */
+  purpose?: string;
+  /** Deadline for this call, overriding env.chatTimeoutMs (e.g. the 8 s self-verification judge). */
+  timeoutMs?: number;
+  /** Aborts the call (request deadline / client gone). Set by the metering wrapper from the request scope. */
+  signal?: AbortSignal;
+};
+
 export interface ChatProvider {
   readonly name: string;
   readonly model: string;
@@ -45,11 +60,8 @@ export interface ChatProvider {
    * cost/quality bar. Only on `chat()`, not `chatStream()` — nothing that
    * streams the visible answer needs a second model to switch to.
    */
-  chat(messages: ChatMessage[], opts?: { maxTokens?: number; model?: string }): Promise<ChatResult>;
-  chatStream(
-    messages: ChatMessage[],
-    opts?: { maxTokens?: number; model?: string }
-  ): AsyncGenerator<string, ChatResult, void>;
+  chat(messages: ChatMessage[], opts?: ChatOptions): Promise<ChatResult>;
+  chatStream(messages: ChatMessage[], opts?: ChatOptions): AsyncGenerator<string, ChatResult, void>;
 }
 
 export interface EmbeddingProvider {

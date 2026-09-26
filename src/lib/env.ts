@@ -55,6 +55,7 @@ export const env = {
   get verifierModel() {
     const override = process.env.VERIFIER_MODEL;
     if (override) return override;
+    if (this.chatProvider === "test") return "test-extractive-v1";
     return this.chatProvider === "anthropic" ? "claude-haiku-4-5" : "gpt-4o-mini";
   },
   get anthropicApiKey() {
@@ -212,9 +213,7 @@ export const env = {
    * lawyer but can never hand them a citation to rely on. It is labelled and
    * rendered as ungrounded in the UI, and recorded with grounded=false.
    *
-   * Defaults ON — a lawyer with no answer at all gets nothing; a lawyer with a
-   * clearly-marked, citation-free orientation gets a starting point. Set to
-   * false to restore refusal-only behaviour.
+   * (Historical default was ON; see the Phase 2 note below.)
    */
   get allowGeneralFallback() {
     // Phase 2: default OFF. An ungrounded "general knowledge" answer — even
@@ -272,7 +271,61 @@ export const env = {
    * supplement, as before.
    */
   get hybridFallback() {
-    return (process.env.GPT_HYBRID_FALLBACK ?? "true") !== "false";
+    // Phase 2: default OFF, and never used for service (Dostoori) callers —
+    // the supplement is model-memory legal reasoning shown next to a cited
+    // answer. Opt in with GPT_HYBRID_FALLBACK=true for the standalone app.
+    return (process.env.GPT_HYBRID_FALLBACK ?? "false") === "true";
+  },
+
+  /**
+   * Gap-fill supplement: a general-knowledge paragraph for each [فجوة: …] a
+   * grounded answer left open. Phase 2: default OFF (the gap is stated
+   * plainly instead), never used for service callers. GAP_FILL_ENABLED=true
+   * restores it for the standalone app.
+   */
+  get gapFillEnabled() {
+    return (process.env.GAP_FILL_ENABLED ?? "false") === "true";
+  },
+
+  /**
+   * Scope the exact-article arm to the law the question names, and answer
+   * "that law is not in the database" when it names one the corpus lacks
+   * (search/law-reference.ts). Default ON; LAW_SCOPED_EXACT=false restores
+   * the unscoped behaviour for before/after measurement.
+   */
+  get lawScopedExact() {
+    return (process.env.LAW_SCOPED_EXACT ?? "true") !== "false";
+  },
+
+  /**
+   * Re-join an article the chunker split into several parts before it is
+   * shown to the model (search/hybrid.ts mergeArticleParts), so a rule is
+   * never read without the exception in its next part. Default ON;
+   * MERGE_ARTICLE_PARTS=false for before/after measurement.
+   */
+  get mergeArticleParts() {
+    return (process.env.MERGE_ARTICLE_PARTS ?? "true") !== "false";
+  },
+
+  /**
+   * The embedding model that produced vectors stored before Phase 2 began
+   * recording legal_documents.embedding_model. Untagged rows are treated as
+   * this model; retrieval compares a query vector only with rows of the same
+   * model. The production corpus was built with text-embedding-3-small
+   * (deploy docs); change this only together with a full re-index.
+   */
+  get legacyEmbeddingModel() {
+    return process.env.LEGACY_EMBEDDING_MODEL ?? "text-embedding-3-small";
+  },
+
+  /** Hard deadline for one whole AI request inside this service (all model calls + retrieval). */
+  get requestDeadlineMs() {
+    return num("AI_REQUEST_DEADLINE_MS", 90_000);
+  },
+
+  /** Days standalone-app content (chat_history, uploaded_cases, stored PDFs) is kept before the purge deletes it. */
+  get retentionDays() {
+    return num("CONTENT_RETENTION_DAYS", 90);
   },
 
   /**

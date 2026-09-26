@@ -1,4 +1,5 @@
 import "server-only";
+import { createHash } from "node:crypto";
 
 /**
  * In-memory cache for query embeddings, keyed by the exact text that was
@@ -24,18 +25,41 @@ import "server-only";
 const MAX_ENTRIES = 500;
 const cache = new Map<string, number[]>();
 
-export function getCachedEmbedding(searchText: string): number[] | null {
-  const hit = cache.get(searchText);
+/**
+ * Phase 2: the key is a SHA-256 of (model, text), not the text itself.
+ *   • model — a vector is only valid for the model that produced it; after an
+ *     EMBEDDING_MODEL change a text-keyed cache would hand the new model's
+ *     query a stale old-model vector for every cached question.
+ *   • hashed — the searched text can be a slice of a confidential contract or
+ *     case file (contract/case retrieval queries are built from the document).
+ *     Keeping the plaintext as a long-lived Map key retained client content in
+ *     process memory with no owner; a digest keeps the cache's function and
+ *     drops the content. Values are vectors only, never text, so the cache
+ *     cannot hand one caller another caller's words.
+ */
+function keyOf(searchText: string, model: string): string {
+  return createHash("sha256").update(model).update("\u0000").update(searchText).digest("base64url");
+}
+
+export function getCachedEmbedding(searchText: string, model = ""): number[] | null {
+  const key = keyOf(searchText, model);
+  const hit = cache.get(key);
   if (!hit) return null;
-  cache.delete(searchText);
-  cache.set(searchText, hit);
+  cache.delete(key);
+  cache.set(key, hit);
   return hit;
 }
 
-export function setCachedEmbedding(searchText: string, embedding: number[]): void {
-  if (!cache.has(searchText) && cache.size >= MAX_ENTRIES) {
+export function setCachedEmbedding(searchText: string, embedding: number[], model = ""): void {
+  const key = keyOf(searchText, model);
+  if (!cache.has(key) && cache.size >= MAX_ENTRIES) {
     const oldest = cache.keys().next().value;
     if (oldest !== undefined) cache.delete(oldest);
   }
-  cache.set(searchText, embedding);
+  cache.set(key, embedding);
+}
+
+/** Test/eval hook: forget everything (e.g. between evaluation runs with different models). */
+export function clearEmbeddingCache(): void {
+  cache.clear();
 }

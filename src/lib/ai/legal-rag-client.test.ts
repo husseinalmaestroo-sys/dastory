@@ -1,39 +1,51 @@
-// Proves Dostoori's server genuinely talks to ailegal_hussein's real HTTP
-// contract (URL, headers, SSE event names) rather than some other or fake
-// implementation — fetch is mocked here so this runs with no live service
-// and no network, but the mock is shaped exactly like ailegal_hussein's own
-// src/app/api/chat/route.ts (event: sources/delta/done, done.content
-// overriding accumulated delta text) — see that file for the source of truth.
+// Dostoori's side of the Phase 2 AI boundary: every call to ailegal_hussein
+// is signed with a request-bound assertion (never the key itself, never a
+// free-form office header), and every response is validated before use.
+// fetch is mocked; the assertion is verified here with the same algorithm the
+// engine uses (ailegal_hussein/src/lib/service-auth.ts checkAssertion).
+import { createHash, createHmac } from 'crypto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-function sseResponse(body: string, status = 200, headers: Record<string, string> = {}) {
-  const stream = new ReadableStream<Uint8Array>({
-    start(controller) {
-      controller.enqueue(new TextEncoder().encode(body))
-      controller.close()
-    },
-  })
-  return new Response(status === 204 ? null : stream, { status, headers })
+const KEY = 'test-shared-secret'
+const ACTOR = { id: 'user-42', officeId: 'office-123' }
+
+function verify(token: string, req: { method: string; path: string; body: string }) {
+  const [v, payloadPart, sig] = token.split('.')
+  expect(v).toBe('v1')
+  const expected = createHmac('sha256', KEY).update(`v1.${payloadPart}`).digest('base64url')
+  expect(sig).toBe(expected)
+  const p = JSON.parse(Buffer.from(payloadPart, 'base64url').toString())
+  expect(p.iss).toBe('dostoori')
+  expect(p.aud).toBe('ailegal_hussein')
+  expect(p.m).toBe(req.method)
+  expect(p.p).toBe(req.path)
+  expect(p.bh).toBe(createHash('sha256').update(req.body).digest('base64url'))
+  expect(p.exp - p.iat).toBeLessThanOrEqual(120)
+  expect(p.jti).toMatch(/^[A-Za-z0-9_-]{16,64}$/)
+  return p as { off: string; usr: string; jti: string }
 }
 
-describe('askLegalRag — the real ailegal_hussein HTTP contract', () => {
-  beforeEach(() => {
-    vi.stubEnv('AI_LEGAL_SERVICE_URL', 'http://localhost:3001')
-    vi.stubEnv('AI_LEGAL_SERVICE_KEY', 'test-shared-secret')
-  })
-  afterEach(() => {
-    vi.unstubAllEnvs()
-    vi.unstubAllGlobals()
-    vi.resetModules()
-  })
+function jsonResponse(body: unknown, status = 200, headers: Record<string, string> = {}) {
+  return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...headers } })
+}
 
-  it('is not configured when the env vars are absent', async () => {
-    vi.unstubAllEnvs()
-    const { isLegalRagConfigured } = await import('./legal-rag-client')
-    expect(isLegalRagConfigured()).toBe(false)
-  })
+const usage = { requestId: 'req-1', llmCalls: 2, failedCalls: 0, tokensIn: 1200, tokensOut: 150, embeddingTokens: 20, estimatedCostUsd: 0.00027, byPurpose: { answer: 1 } }
+const provenance = { promptVersion: 'p2-abc', corpusVersion: 'c-def', chatModels: ['gpt-4o-mini'], embeddingModel: 'text-embedding-3-small' }
+const source = { ref: 1, id: 7, sourceId: 3, title: 'قانون العمل', sourceType: 'law', articleNumber: '17', lawName: 'قانون العمل', court: null, decisionNumber: null, year: 1996, category: null, excerpt: 'نص', isCurrentVersion: true, effectiveDate: null, provenance: 'official', cited: true }
+const chatOk = { answer: 'الخلاصة: … [1].', mode: 'grounded', groundingLevel: 'full', grounded: true, sources: [source], notices: [], disclaimer: 'تنبيه', confidence: { label: 'عالية', score: 0.8 }, usage, provenance }
 
-  it('reflects the environment live, not a value snapshotted at import time', async () => {
+beforeEach(() => {
+  vi.stubEnv('AI_LEGAL_SERVICE_URL', 'http://localhost:3001')
+  vi.stubEnv('AI_LEGAL_SERVICE_KEY', KEY)
+})
+afterEach(() => {
+  vi.unstubAllEnvs()
+  vi.unstubAllGlobals()
+  vi.resetModules()
+})
+
+describe('configuration', () => {
+  it('is not configured when the env vars are absent, and reads them live', async () => {
     vi.unstubAllEnvs()
     const { isLegalRagConfigured } = await import('./legal-rag-client')
     expect(isLegalRagConfigured()).toBe(false)
@@ -41,302 +53,141 @@ describe('askLegalRag — the real ailegal_hussein HTTP contract', () => {
     vi.stubEnv('AI_LEGAL_SERVICE_KEY', 'k')
     expect(isLegalRagConfigured()).toBe(true)
   })
+})
 
-  it('POSTs to <service url>/api/chat with the internal-service auth headers and the question as JSON', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      sseResponse(
-        'event: sources\ndata: []\n\n' +
-          'event: delta\ndata: {"text":"إجابة"}\n\n' +
-          'event: done\ndata: {"grounded":false,"mode":"refused","sources":[]}\n\n',
-        200,
-        { 'Content-Type': 'text/event-stream' }
-      )
-    )
+describe('askLegalRag — signed request, validated JSON response', () => {
+  it('POSTs JSON to /api/chat with a request-bound assertion for the session\'s office and user — never the key, never the retired headers', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(chatOk))
     vi.stubGlobal('fetch', fetchMock)
-
     const { askLegalRag } = await import('./legal-rag-client')
-    await askLegalRag('هل يجوز كذا؟', { category: 'عمل' }, 'office-123')
+    const result = await askLegalRag('هل يجوز كذا؟', { category: 'عمل' }, ACTOR, [{ role: 'user', content: 'سؤال سابق' }])
 
-    expect(fetchMock).toHaveBeenCalledTimes(1)
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toBe('http://localhost:3001/api/chat')
-    expect(init.method).toBe('POST')
-    expect(init.headers['X-Internal-Service-Key']).toBe('test-shared-secret')
-    expect(init.headers['X-Dostoori-Office-Id']).toBe('office-123')
-    expect(JSON.parse(init.body)).toEqual({ question: 'هل يجوز كذا؟', filters: { category: 'عمل' } })
+    expect(init.headers.Accept).toBe('application/json')
+    expect(init.headers['X-Internal-Service-Key']).toBeUndefined()
+    expect(init.headers['X-Dostoori-Office-Id']).toBeUndefined()
+    expect(JSON.stringify(init.headers)).not.toContain(KEY)
+    const claims = verify(init.headers['X-Dostoori-Assertion'], { method: 'POST', path: '/api/chat', body: init.body })
+    expect(claims.off).toBe('office-123')
+    expect(claims.usr).toBe('user-42')
+    expect(JSON.parse(init.body)).toEqual({ question: 'هل يجوز كذا؟', filters: { category: 'عمل' }, history: [{ role: 'user', content: 'سؤال سابق' }] })
+    expect(result.groundingLevel).toBe('full')
+    expect(result.usage.tokensIn).toBe(1200)
+    expect(result.provenance.corpusVersion).toBe('c-def')
   })
 
-  it('forwards prior turns as `history` when given, and omits the key entirely when not', async () => {
-    // A fresh Response per call — the SSE body is a one-shot stream.
-    const fetchMock = vi.fn().mockImplementation(async () =>
-      sseResponse('event: done\ndata: {"grounded":false,"mode":"refused","sources":[]}\n\n', 200, {
-        'Content-Type': 'text/event-stream',
-      })
-    )
+  it('mints a fresh single-use id for every request', async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => jsonResponse(chatOk))
     vi.stubGlobal('fetch', fetchMock)
     const { askLegalRag } = await import('./legal-rag-client')
-
-    await askLegalRag('وهل ينطبق على الموظف المؤقت؟', undefined, 'office-9', [
-      { role: 'user', content: 'هل يجوز فصل الموظف أثناء الإجازة المرضية؟' },
-      { role: 'assistant', content: 'لا يجوز، مع استثناءات...' },
-    ])
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body).history).toEqual([
-      { role: 'user', content: 'هل يجوز فصل الموظف أثناء الإجازة المرضية؟' },
-      { role: 'assistant', content: 'لا يجوز، مع استثناءات...' },
-    ])
-
-    await askLegalRag('سؤال مستقل', undefined, 'office-9', [])
-    expect('history' in JSON.parse(fetchMock.mock.calls[1][1].body)).toBe(false)
+    await askLegalRag('س1', undefined, ACTOR)
+    await askLegalRag('س1', undefined, ACTOR)
+    const jtis = fetchMock.mock.calls.map(([, init]) => verify(init.headers['X-Dostoori-Assertion'], { method: 'POST', path: '/api/chat', body: init.body }).jti)
+    expect(new Set(jtis).size).toBe(2)
   })
 
-  it('accumulates delta events into the answer when done has no content override', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      sseResponse(
-        'event: sources\ndata: [{"ref":1,"id":9,"title":"القانون المدني","sourceType":"law","articleNumber":"5","lawName":"القانون المدني الأردني","court":null,"decisionNumber":null,"year":1976,"category":null,"excerpt":"نص المادة"}]\n\n' +
-          'event: delta\ndata: {"text":"الجزء الأول. "}\n\n' +
-          'event: delta\ndata: {"text":"الجزء الثاني."}\n\n' +
-          'event: done\ndata: {"grounded":true,"mode":"grounded","sources":[{"ref":1,"id":9,"title":"القانون المدني","sourceType":"law","articleNumber":"5","lawName":"القانون المدني الأردني","court":null,"decisionNumber":null,"year":1976,"category":null,"excerpt":"نص المادة"}],"disclaimer":"تنويه","confidence":"عالية"}\n\n'
-      )
-    )
-    vi.stubGlobal('fetch', fetchMock)
-
-    const { askLegalRag } = await import('./legal-rag-client')
-    const result = await askLegalRag('سؤال', undefined, 'office-1')
-
-    expect(result.answer).toBe('الجزء الأول. الجزء الثاني.')
-    expect(result.grounded).toBe(true)
-    expect(result.mode).toBe('grounded')
-    expect(result.sources).toHaveLength(1)
-    expect(result.sources[0].lawName).toBe('القانون المدني الأردني')
-    expect(result.disclaimer).toBe('تنويه')
-    expect(result.confidence).toBe('عالية')
-  })
-
-  it('lets done.content override the accumulated delta text — matches ailegal_hussein\'s own client-rendering contract', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      sseResponse(
-        'event: delta\ndata: {"text":"نص أولي سيُستبدل"}\n\n' +
-          'event: done\ndata: {"grounded":true,"mode":"grounded_retry","content":"النص النهائي بعد الإصلاح","sources":[]}\n\n'
-      )
-    )
-    vi.stubGlobal('fetch', fetchMock)
-
-    const { askLegalRag } = await import('./legal-rag-client')
-    const result = await askLegalRag('سؤال', undefined, 'office-1')
-    expect(result.answer).toBe('النص النهائي بعد الإصلاح')
-  })
-
-  it('correctly parses SSE frames split arbitrarily across stream chunks', async () => {
-    const full =
-      'event: delta\ndata: {"text":"أ"}\n\n' + 'event: done\ndata: {"grounded":false,"mode":"refused","sources":[]}\n\n'
-    const bytes = new TextEncoder().encode(full)
-    // Split mid-frame — a real TCP stream gives no guarantee frames arrive whole.
-    const splitAt = 10
-    const stream = new ReadableStream<Uint8Array>({
-      start(controller) {
-        controller.enqueue(bytes.slice(0, splitAt))
-        controller.enqueue(bytes.slice(splitAt))
-        controller.close()
-      },
-    })
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(stream, { status: 200 })))
-
-    const { askLegalRag } = await import('./legal-rag-client')
-    const result = await askLegalRag('سؤال', undefined, 'office-1')
-    expect(result.answer).toBe('أ')
-  })
-
-  it('maps a 429 from ailegal_hussein to a 429 LegalRagError, not a generic failure', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 429, headers: { 'retry-after': '30' } })))
+  it.each([
+    ['a grounded flag that contradicts the mode', { ...chatOk, mode: 'no_evidence' }],
+    ['a citation marker past the source list', { ...chatOk, answer: 'ادعاء [4].' }],
+    ['a missing usage report', { ...chatOk, usage: undefined }],
+    ['an unknown mode', { ...chatOk, mode: 'freestyle' }],
+    ['a non-string answer', { ...chatOk, answer: 42 }],
+  ])('rejects a malformed engine response (%s) — nothing unvalidated reaches the user', async (_label, body) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(body)))
     const { askLegalRag, LegalRagError } = await import('./legal-rag-client')
-    await expect(askLegalRag('سؤال', undefined, 'office-1')).rejects.toSatisfy(
-      (e: unknown) => e instanceof LegalRagError && e.status === 429
-    )
+    await expect(askLegalRag('س', undefined, ACTOR)).rejects.toSatisfy((e: unknown) => e instanceof LegalRagError && e.status === 502 && e.code === 'malformed_output')
   })
 
-  it('maps ailegal_hussein\'s own 503 (site-wide daily cost cap hit) to a 503, not a 500', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 503 })))
+  it('maps upstream statuses: 401 (bad signature) → 502 auth_rejected, 429 with Retry-After, 503, 504, 4xx message relayed', async () => {
     const { askLegalRag, LegalRagError } = await import('./legal-rag-client')
-    await expect(askLegalRag('سؤال', undefined, 'office-1')).rejects.toSatisfy(
-      (e: unknown) => e instanceof LegalRagError && e.status === 503
-    )
+    const cases: [Response, number, string][] = [
+      [jsonResponse({ error: 'x' }, 401), 502, 'auth_rejected'],
+      [jsonResponse({ error: 'x' }, 429, { 'Retry-After': '30' }), 429, 'upstream_rate_limited'],
+      [jsonResponse({ error: 'x' }, 503), 503, 'upstream_paused'],
+      [jsonResponse({ error: 'انتهت مهلة معالجة الطلب' }, 504), 504, 'upstream_504'],
+      [jsonResponse({ error: 'السؤال قصير جداً' }, 400), 400, 'upstream_400'],
+    ]
+    for (const [res, status, code] of cases) {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(res))
+      await expect(askLegalRag('س', undefined, ACTOR)).rejects.toSatisfy((e: unknown) => e instanceof LegalRagError && e.status === status && e.code === code)
+    }
   })
 
-  it('surfaces an in-stream "error" event as a LegalRagError instead of returning a partial result silently', async () => {
+  it('an upstream that sends headers and then stalls ends in a 504 within the deadline', async () => {
+    vi.stubEnv('AI_LEGAL_SERVICE_TIMEOUT_MS', '200')
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue(sseResponse('event: error\ndata: {"message":"تعذّر توليد الإجابة"}\n\n'))
+      vi.fn().mockImplementation(async (_url: string, init: RequestInit) => {
+        const stream = new ReadableStream({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode('{"answer":'))
+            init.signal?.addEventListener('abort', () => controller.error(new Error('aborted')))
+          },
+        })
+        return new Response(stream, { status: 200 })
+      })
     )
     const { askLegalRag, LegalRagError } = await import('./legal-rag-client')
-    await expect(askLegalRag('سؤال', undefined, 'office-1')).rejects.toSatisfy(
-      (e: unknown) => e instanceof LegalRagError && e.message === 'تعذّر توليد الإجابة'
-    )
+    const started = Date.now()
+    await expect(askLegalRag('س', undefined, ACTOR)).rejects.toSatisfy((e: unknown) => e instanceof LegalRagError && e.status === 504)
+    expect(Date.now() - started).toBeLessThan(3000)
   })
 })
 
-function jsonResponse(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
-}
+describe('document features sign their own paths and validate their shapes', () => {
+  const coverage = { totalChars: 100, analyzedChars: 100, partial: false, segments: 1, notAnalyzed: [] }
 
-describe('analyzeCaseFile — real /api/cases contract (multipart, plain JSON, not SSE)', () => {
-  beforeEach(() => {
-    vi.stubEnv('AI_LEGAL_SERVICE_URL', 'http://localhost:3001')
-    vi.stubEnv('AI_LEGAL_SERVICE_KEY', 'test-shared-secret')
-  })
-  afterEach(() => {
-    vi.unstubAllEnvs()
-    vi.unstubAllGlobals()
-    vi.resetModules()
-  })
-
-  it('POSTs the file as multipart/form-data to /api/cases with the internal-auth headers', async () => {
+  it('analyzeContract → /api/contract-review, coverage passed through', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
-      jsonResponse({ id: 9, fileName: 'case.pdf', pages: 3, extractionMethod: 'pdf-text', analysis: { summary: 'ملخص' }, sources: [] })
+      jsonResponse({ summary: 'ملخص', parties: ['أ'], keyTerms: [], risks: [{ severity: 'high', title: 'غرامة', excerpt: '', explanation: 'شرح [1]' }], coverage: { ...coverage, partial: true, notAnalyzed: [{ fromChar: 50, toChar: 100, startsWith: 'البند' }] }, sources: [source], usage, provenance })
     )
     vi.stubGlobal('fetch', fetchMock)
-
-    const { analyzeCaseFile } = await import('./legal-rag-client')
-    const result = await analyzeCaseFile(Buffer.from('%PDF-1 fake'), 'case.pdf', 'office-7')
-
-    expect(fetchMock).toHaveBeenCalledTimes(1)
-    const [url, init] = fetchMock.mock.calls[0]
-    expect(url).toBe('http://localhost:3001/api/cases')
-    expect(init.headers['X-Internal-Service-Key']).toBe('test-shared-secret')
-    expect(init.headers['X-Dostoori-Office-Id']).toBe('office-7')
-    expect(init.body).toBeInstanceOf(FormData)
-    expect((init.body as FormData).get('file')).toBeInstanceOf(Blob)
-    expect(result.fileName).toBe('case.pdf')
-    expect(result.pages).toBe(3)
-  })
-
-  it('surfaces the upstream error message and status on a non-2xx response, not a generic failure', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ error: 'تعذّر استخراج نص كافٍ من الملف' }, 400)))
-    const { analyzeCaseFile, LegalRagError } = await import('./legal-rag-client')
-    await expect(analyzeCaseFile(Buffer.from('x'), 'x.pdf', 'office-1')).rejects.toSatisfy(
-      (e: unknown) => e instanceof LegalRagError && e.status === 400 && e.message === 'تعذّر استخراج نص كافٍ من الملف'
-    )
-  })
-})
-
-describe('generateDraft — real /api/draft contract', () => {
-  beforeEach(() => {
-    vi.stubEnv('AI_LEGAL_SERVICE_URL', 'http://localhost:3001')
-    vi.stubEnv('AI_LEGAL_SERVICE_KEY', 'test-shared-secret')
-  })
-  afterEach(() => {
-    vi.unstubAllEnvs()
-    vi.unstubAllGlobals()
-    vi.resetModules()
-  })
-
-  it('POSTs {kind, fields, notes} as JSON and returns the draft/grounded/sources shape', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      jsonResponse({ draft: 'نص العقد الكامل', grounded: true, sources: [{ ref: 1, id: 5, title: 'القانون المدني' }] })
-    )
-    vi.stubGlobal('fetch', fetchMock)
-
-    const { generateDraft } = await import('./legal-rag-client')
-    const result = await generateDraft('contract', { contract_type: 'إيجار', party_one_name: 'أ', party_two_name: 'ب', subject: 'شقة' }, '', 'office-3')
-
-    const [url, init] = fetchMock.mock.calls[0]
-    expect(url).toBe('http://localhost:3001/api/draft')
-    expect(JSON.parse(init.body)).toEqual({
-      kind: 'contract',
-      fields: { contract_type: 'إيجار', party_one_name: 'أ', party_two_name: 'ب', subject: 'شقة' },
-      notes: '',
-    })
-    expect(result.draft).toBe('نص العقد الكامل')
-    expect(result.grounded).toBe(true)
-  })
-
-  it('returns the honest ungrounded result when ailegal_hussein finds no basis at all (no sources, 200 OK)', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ draft: 'لم أجد سنداً كافياً لهذا الطلب', grounded: false, sources: [] })))
-    const { generateDraft } = await import('./legal-rag-client')
-    const result = await generateDraft('contract', { contract_type: 'x', party_one_name: 'x', party_two_name: 'x', subject: 'x' }, '', 'office-1')
-    expect(result.grounded).toBe(false)
-    expect(result.sources).toEqual([])
-  })
-})
-
-describe('exportDraft — real /api/draft/export contract (binary response)', () => {
-  beforeEach(() => {
-    vi.stubEnv('AI_LEGAL_SERVICE_URL', 'http://localhost:3001')
-    vi.stubEnv('AI_LEGAL_SERVICE_KEY', 'test-shared-secret')
-  })
-  afterEach(() => {
-    vi.unstubAllEnvs()
-    vi.unstubAllGlobals()
-    vi.resetModules()
-  })
-
-  it('returns real file bytes with the right content type, not a JSON wrapper', async () => {
-    const docxBytes = new Uint8Array([0x50, 0x4b, 0x03, 0x04]) // real DOCX/zip magic bytes
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(docxBytes, {
-        status: 200,
-        headers: { 'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' },
-      })
-    )
-    vi.stubGlobal('fetch', fetchMock)
-
-    const { exportDraft } = await import('./legal-rag-client')
-    const file = await exportDraft('نص العقد', 'عقد الإيجار', 'docx', 'office-1')
-
-    expect(file.contentType).toBe('application/vnd.openxmlformats-officedocument.wordprocessingml.document')
-    expect(Buffer.from(file.buffer)).toEqual(Buffer.from(docxBytes))
-    const [, init] = fetchMock.mock.calls[0]
-    expect(JSON.parse(init.body)).toEqual({ draft: 'نص العقد', filename: 'عقد الإيجار', format: 'docx' })
-  })
-
-  it('reads the JSON error body on failure instead of trying to treat it as file bytes', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ error: 'طلب غير صالح' }, 400)))
-    const { exportDraft, LegalRagError } = await import('./legal-rag-client')
-    await expect(exportDraft('', 'x', 'docx', 'office-1')).rejects.toSatisfy(
-      (e: unknown) => e instanceof LegalRagError && e.message === 'طلب غير صالح'
-    )
-  })
-})
-
-describe('analyzeContract — real /api/contract-review contract (JSON, not the litigation-shaped /api/cases)', () => {
-  beforeEach(() => {
-    vi.stubEnv('AI_LEGAL_SERVICE_URL', 'http://localhost:3001')
-    vi.stubEnv('AI_LEGAL_SERVICE_KEY', 'test-shared-secret')
-  })
-  afterEach(() => {
-    vi.unstubAllEnvs()
-    vi.unstubAllGlobals()
-    vi.resetModules()
-  })
-
-  it('POSTs {contractText} as JSON to /api/contract-review, not /api/cases', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      jsonResponse({
-        summary: 'عقد إيجار شقة',
-        parties: ['أحمد', 'سالم'],
-        keyTerms: [{ label: 'المدة', value: 'سنة واحدة' }],
-        risks: [{ severity: 'medium', title: 'بند غير واضح', excerpt: 'المستأجر يدفع', explanation: 'صياغة عامة' }],
-        sources: [],
-      })
-    )
-    vi.stubGlobal('fetch', fetchMock)
-
     const { analyzeContract } = await import('./legal-rag-client')
-    const result = await analyzeContract('نص عقد الإيجار الكامل هنا...', 'office-4')
-
+    const r = await analyzeContract('نص العقد', ACTOR)
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toBe('http://localhost:3001/api/contract-review')
-    expect(init.headers['X-Internal-Service-Key']).toBe('test-shared-secret')
-    expect(JSON.parse(init.body)).toEqual({ contractText: 'نص عقد الإيجار الكامل هنا...' })
-    expect(result.summary).toBe('عقد إيجار شقة')
-    expect(result.parties).toEqual(['أحمد', 'سالم'])
-    expect(result.risks[0].severity).toBe('medium')
+    verify(init.headers['X-Dostoori-Assertion'], { method: 'POST', path: '/api/contract-review', body: init.body })
+    expect(r.coverage.partial).toBe(true)
+    expect(r.coverage.notAnalyzed[0].fromChar).toBe(50)
   })
 
-  it('surfaces the upstream error message and status, not a generic failure', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ error: 'نص العقد قصير جداً' }, 400)))
-    const { analyzeContract, LegalRagError } = await import('./legal-rag-client')
-    await expect(analyzeContract('x', 'office-1')).rejects.toSatisfy(
-      (e: unknown) => e instanceof LegalRagError && e.status === 400 && e.message === 'نص العقد قصير جداً'
+  it('analyzeCaseText sends extracted TEXT (not the file) to /api/cases', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({ analysis: { summary: 's', parties: [], facts: [], case_type: 'أخرى', cited_articles: [], legal_basis: [], possible_defenses: [], strengths: [], weaknesses: [], gaps: [] }, groundingLevel: 'none', coverage, sources: [], usage, provenance })
     )
+    vi.stubGlobal('fetch', fetchMock)
+    const { analyzeCaseText } = await import('./legal-rag-client')
+    await analyzeCaseText('نص القضية', 'case.pdf', ACTOR)
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('http://localhost:3001/api/cases')
+    expect(JSON.parse(init.body)).toEqual({ caseText: 'نص القضية', fileName: 'case.pdf' })
+    verify(init.headers['X-Dostoori-Assertion'], { method: 'POST', path: '/api/cases', body: init.body })
+  })
+
+  it('a case-analysis item citing a source that was not returned is rejected', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse({ analysis: { summary: 's', parties: [], facts: [], case_type: 'أخرى', cited_articles: [], legal_basis: [{ point: 'تكييف', citation: '[3]' }], possible_defenses: [], strengths: [], weaknesses: [], gaps: [] }, groundingLevel: 'full', coverage, sources: [source], usage, provenance })
+      )
+    )
+    const { analyzeCaseText, LegalRagError } = await import('./legal-rag-client')
+    await expect(analyzeCaseText('نص', 'f', ACTOR)).rejects.toSatisfy((e: unknown) => e instanceof LegalRagError && e.code === 'malformed_output')
+  })
+
+  it('generateDraft → /api/draft; exportDraft refuses bytes that are not the requested format', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ draft: '# عقد\nنص [1]', grounded: true, groundingLevel: 'full', mode: 'drafted', validation: { unverifiedFacts: [{ kind: 'date', value: '1/1/2099' }] }, sources: [source], usage, provenance }))
+    vi.stubGlobal('fetch', fetchMock)
+    const { generateDraft, exportDraft, LegalRagError } = await import('./legal-rag-client')
+    const d = await generateDraft('contract', { contract_type: 'إيجار' }, '', ACTOR)
+    expect(d.unverifiedFacts).toBe(1)
+    verify(fetchMock.mock.calls[0][1].headers['X-Dostoori-Assertion'], { method: 'POST', path: '/api/draft', body: fetchMock.mock.calls[0][1].body })
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('<html>not a pdf</html>', { status: 200 })))
+    await expect(exportDraft('# عقد', 'عقد', 'pdf', ACTOR)).rejects.toSatisfy((e: unknown) => e instanceof LegalRagError && e.code === 'malformed_output')
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(Buffer.from('%PDF-1.7 ...'), { status: 200 })))
+    const file = await exportDraft('# عقد', 'عقد', 'pdf', ACTOR)
+    expect(file.contentType).toBe('application/pdf')
   })
 })

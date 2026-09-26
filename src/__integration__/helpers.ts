@@ -200,6 +200,8 @@ export async function cleanupOffice(officeId: string) {
   await prisma.idempotencyKey.deleteMany({ where: { userId: { in: userIds } } })
   await prisma.emailVerificationToken.deleteMany({ where: { userId: { in: userIds } } })
   await prisma.aiUsageLog.deleteMany({ where: { officeId } })
+  // AI conversations (messages cascade) — FK to Office/User.
+  await prisma.aiConversation.deleteMany({ where: { officeId } })
   await prisma.notification.deleteMany({ where: { officeId } })
   await prisma.calendarEvent.deleteMany({ where: { officeId } })
   await prisma.auditLog.deleteMany({ where: { officeId } })

@@ -10,33 +10,11 @@ import { extractText, ExtractionError } from '@/lib/ai/extract-text'
 import { readDocumentFile } from '@/lib/document-storage'
 import { analyzeContract, isLegalRagConfigured, LegalRagError } from '@/lib/ai/legal-rag-client'
 
-// Real documents run through real extraction and are genuinely capped, not
-// silently truncated without telling the model/user — ~40k chars keeps a
-// large contract well within a reasonable request cost while covering
-// realistically-sized agreements.
-const MAX_CONTRACT_CHARS = 40_000
-
-interface ContractReviewResult {
-  summary: string
-  parties: string[]
-  keyTerms: { label: string; value: string }[]
-  risks: { severity: 'high' | 'medium' | 'low' | 'info'; title: string; excerpt: string; explanation: string }[]
-}
-
-function isValidResult(value: unknown): value is ContractReviewResult {
-  if (!value || typeof value !== 'object') return false
-  const v = value as Record<string, unknown>
-  return (
-    typeof v.summary === 'string' &&
-    Array.isArray(v.parties) && v.parties.every((p) => typeof p === 'string') &&
-    Array.isArray(v.keyTerms) && v.keyTerms.every((t) => t && typeof t === 'object' && typeof (t as any).label === 'string' && typeof (t as any).value === 'string') &&
-    Array.isArray(v.risks) && v.risks.every((r) =>
-      r && typeof r === 'object' &&
-      ['high', 'medium', 'low', 'info'].includes((r as any).severity) &&
-      typeof (r as any).title === 'string' && typeof (r as any).explanation === 'string'
-    )
-  )
-}
+// Sent in full up to the engine's own input limit; the engine reviews long
+// contracts in segments and reports exactly which ranges it analysed. Beyond
+// this limit Dostoori cuts the text itself — and the response says so. A
+// review is never presented as complete when any part was not analysed.
+const MAX_CONTRACT_CHARS = 200_000
 
 // Order unchanged from the previous (Claude-direct) version: auth -> rate
 // limit -> input shape -> tenant-scoped lookup (a cross-office documentId
@@ -86,23 +64,18 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
   }
 
   const contractText = extracted.text.slice(0, MAX_CONTRACT_CHARS)
-  const truncated = extracted.text.length > MAX_CONTRACT_CHARS
+  const cutLocally = extracted.text.length > MAX_CONTRACT_CHARS
 
   // Reserved only now: a document that can't even be read never counts
   // against the office's monthly AI cap.
   const reservation = await reserveAiCall(auth.user, 'contract_review')
-  if (!reservation) {
-    return NextResponse.json({ error: 'تم بلوغ الحد الشهري لاستخدام أدوات الذكاء الاصطناعي لهذا المكتب' }, { status: 429 })
-  }
+  if (!reservation.ok) return NextResponse.json({ error: reservation.message, code: reservation.reason }, { status: 429 })
 
   const start = Date.now()
   try {
-    const result = await analyzeContract(contractText, auth.user.officeId)
-
-    if (!isValidResult(result)) {
-      await completeAiCall(reservation, { success: false, latencyMs: Date.now() - start, errorCode: 'malformed_output' })
-      return NextResponse.json({ error: 'تعذّر تحليل استجابة الذكاء الاصطناعي — حاول مرة أخرى' }, { status: 502 })
-    }
+    // Shape and citation markers already validated (engine-schema.ts); a
+    // malformed response throws and is recorded as a failed call.
+    const result = await analyzeContract(contractText, auth.user)
 
     // Enforce the "no invented quotes" rule server-side too, not just via
     // the prompt: drop any excerpt that doesn't actually appear in the
@@ -117,11 +90,30 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
     // rather than throwing on .length here.
     const sources = Array.isArray(result.sources) ? result.sources : []
 
+    // Coverage against the WHOLE extracted document: the engine's own
+    // not-analysed ranges plus anything Dostoori cut before sending.
+    const notAnalyzed = [...result.coverage.notAnalyzed]
+    if (cutLocally) {
+      notAnalyzed.push({ fromChar: MAX_CONTRACT_CHARS + 1, toChar: extracted.text.length, startsWith: extracted.text.slice(MAX_CONTRACT_CHARS, MAX_CONTRACT_CHARS + 120).split('\n')[0].trim() })
+    }
+    const coverage = {
+      totalChars: extracted.text.length,
+      analyzedChars: result.coverage.analyzedChars,
+      partial: result.coverage.partial || cutLocally,
+      segments: result.coverage.segments,
+      notAnalyzed,
+    }
+
     await auditLog(req, auth.user, 'ai.contract_reviewed', {
       entityType: 'document', entityId: doc.id,
-      metadata: { extractionMethod: extracted.method, truncated, riskCount: verifiedRisks.length, sourceCount: sources.length },
+      metadata: { extractionMethod: extracted.method, partial: coverage.partial, riskCount: verifiedRisks.length, sourceCount: sources.length },
     })
-    await completeAiCall(reservation, { success: true, latencyMs: Date.now() - start })
+    await completeAiCall(reservation.id, {
+      success: true,
+      latencyMs: Date.now() - start,
+      usage: result.usage,
+      model: result.provenance.chatModels.join(',') || undefined,
+    })
 
     return NextResponse.json({
       summary: result.summary,
@@ -130,15 +122,16 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
       risks: verifiedRisks,
       sources,
       extractionMethod: extracted.method,
-      truncated,
-      disclaimer: 'تحليل آلي أولي بالذكاء الاصطناعي — لا يغني عن مراجعة محامٍ مرخّص، وقد يفوّت بنوداً أو يسيء تفسيرها.',
+      coverage,
+      // Kept for older clients: true whenever ANY part was not analysed.
+      truncated: coverage.partial,
+      disclaimer: coverage.partial
+        ? 'مراجعة جزئية: لم يُحلَّل جزء من العقد (انظر الأجزاء غير المحلَّلة). تحليل آلي أولي لا يغني عن مراجعة محامٍ مرخّص.'
+        : 'تحليل آلي أولي بالذكاء الاصطناعي — لا يغني عن مراجعة محامٍ مرخّص، وقد يفوّت بنوداً أو يسيء تفسيرها.',
     })
   } catch (err) {
     const ragError = err instanceof LegalRagError ? err : null
-    await completeAiCall(reservation, {
-      success: false, latencyMs: Date.now() - start,
-      errorCode: ragError ? String(ragError.status) : 'unknown_error',
-    })
+    await completeAiCall(reservation.id, { success: false, latencyMs: Date.now() - start, errorCode: ragError ? ragError.code : 'unknown_error' })
     if (ragError) return NextResponse.json({ error: ragError.message }, { status: ragError.status })
     console.error('[ai/contract-review] unexpected failure', err)
     return NextResponse.json({ error: 'تعذّر تحليل العقد حالياً' }, { status: 502 })

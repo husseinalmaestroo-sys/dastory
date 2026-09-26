@@ -1,80 +1,123 @@
 import { prisma } from '@/lib/prisma'
+import type { EngineUsage } from './engine-schema'
 
 type UsageActor = { id: string; officeId: string }
 
 export type AiFeature = 'assistant' | 'contract_review' | 'legal_search' | 'case_analysis' | 'contract_draft'
 
 /**
- * Monthly per-office call cap — the cost backstop beyond per-request rate
- * limiting (which only bounds *burst* rate). One fixed value for every
- * office: Plan.aiCallsPerMonth exists in the schema but no office can change
- * plan until billing exists (Phase 3), so enforcing per-plan values now would
- * permanently cap everyone at the trial plan's number.
+ * AI QUOTA ARCHITECTURE (Phase 2) — three independent limits, all enforced
+ * atomically in one reservation, all counting only successful calls plus
+ * reservations still in flight:
+ *
+ *  1. Office, per month, in CALLS — tenant-aware and plan-aware:
+ *       ACTIVE subscription whose plan sets aiCallsPerMonth → that value;
+ *       otherwise (trial / no subscription / before billing exists) →
+ *       AI_DEFAULT_MONTHLY_CAP (500, the previous fixed cap).
+ *     Plan limits apply once a subscription is ACTIVE — i.e. once billing
+ *     (Phase 3, not built here) marks it so. Enforcing the trial plan's
+ *     value today would cap every office at the entry plan, since no office
+ *     can change plan yet; the trial allowance is a product decision, kept
+ *     as configuration.
+ *  2. User, per day, in CALLS — AI_USER_DAILY_CAP (default 50): one user
+ *     cannot exhaust the office's month in an afternoon.
+ *  3. Office, per month, in TOKENS — AI_OFFICE_MONTHLY_TOKEN_BUDGET (default
+ *     5,000,000 input+output+embedding tokens, as reported by the engine).
+ *     Calls are not equal: a segmented review of a long contract costs many
+ *     chats. The budget is checked at reservation time against recorded
+ *     usage, so it can be overshot by at most the calls already in flight.
+ *
+ * Failed calls (upstream down, timeout, invalid output, bad document) are
+ * recorded with their error but do not consume any limit. Records metadata
+ * only — never the question, the document or the answer.
  */
 export const DEFAULT_MONTHLY_CAP = 500
+const DEFAULT_USER_DAILY_CAP = 50
+const DEFAULT_OFFICE_MONTHLY_TOKENS = 5_000_000
 
 // A reservation whose call never completed (process crash) stops counting
-// against the cap after this long.
+// against the caps after this long.
 const PENDING_TTL_MS = 10 * 60_000
 const PENDING = 'pending'
 
-/** Start of the current month, UTC — the cap window. */
+function envInt(name: string, fallback: number): number {
+  const v = Number(process.env[name])
+  return Number.isFinite(v) && v >= 0 ? Math.floor(v) : fallback
+}
+
+/** Start of the current month, UTC — the office cap window. */
 function monthStartUtc(now = new Date()): Date {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
 }
+function dayStartUtc(now = new Date()): Date {
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+}
+
+const counted = () => ({
+  OR: [{ success: true }, { errorCode: PENDING, createdAt: { gte: new Date(Date.now() - PENDING_TTL_MS) } }],
+})
+
+type Tx = Parameters<Parameters<typeof prisma.$transaction>[0]>[0]
+
+/** The office's monthly call cap (see the header). */
+export async function officeMonthlyCap(officeId: string, tx: Tx | typeof prisma = prisma): Promise<number> {
+  const sub = await tx.subscription.findUnique({ where: { officeId }, select: { status: true, plan: { select: { aiCallsPerMonth: true } } } })
+  if (sub?.status === 'ACTIVE' && sub.plan.aiCallsPerMonth != null) return sub.plan.aiCallsPerMonth
+  return envInt('AI_DEFAULT_MONTHLY_CAP', DEFAULT_MONTHLY_CAP)
+}
+
+export type Reservation = { ok: true; id: string } | { ok: false; reason: 'office_monthly_cap' | 'user_daily_cap' | 'office_token_budget'; message: string }
+
+const REFUSALS = {
+  office_monthly_cap: 'تم بلوغ الحد الشهري لاستخدام أدوات الذكاء الاصطناعي لهذا المكتب',
+  user_daily_cap: 'تم بلوغ حدك اليومي لاستخدام أدوات الذكاء الاصطناعي، حاول غداً',
+  office_token_budget: 'تم بلوغ الحد الشهري لحجم معالجة الذكاء الاصطناعي لهذا المكتب',
+} as const
 
 /**
- * Atomically claims one AI call against the office's monthly cap and returns
- * the usage row id, or null when the cap is reached. Replaces a plain
- * count-then-call check, under which N concurrent requests could all see
- * "499 < 500" and all proceed. Reservations for the same office are
- * serialized by locking that office's row for the length of the
- * count-and-insert.
- *
- * What counts: successful calls, and reservations still in flight. Failed
- * calls (upstream down, timeout, bad document) are recorded but no longer
- * eat into the office's quota.
- *
- * Records metadata only — never the question, document, or answer.
+ * Atomically claims one AI call against all three limits. Reservations for
+ * the same office are serialized by locking that office's row for the length
+ * of the count-and-insert, so N concurrent requests cannot all see "499 <
+ * 500" and all proceed.
  */
-export async function reserveAiCall(actor: UsageActor, feature: AiFeature): Promise<string | null> {
+export async function reserveAiCall(actor: UsageActor, feature: AiFeature): Promise<Reservation> {
   return prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT \`id\` FROM \`Office\` WHERE \`id\` = ${actor.officeId} FOR UPDATE`
-    const used = await tx.aiUsageLog.count({
-      where: {
-        officeId: actor.officeId,
-        createdAt: { gte: monthStartUtc() },
-        OR: [
-          { success: true },
-          { errorCode: PENDING, createdAt: { gte: new Date(Date.now() - PENDING_TTL_MS) } },
-        ],
-      },
+
+    const monthly = await tx.aiUsageLog.count({ where: { officeId: actor.officeId, createdAt: { gte: monthStartUtc() }, ...counted() } })
+    if (monthly >= (await officeMonthlyCap(actor.officeId, tx))) return { ok: false, reason: 'office_monthly_cap', message: REFUSALS.office_monthly_cap } as const
+
+    const daily = await tx.aiUsageLog.count({ where: { userId: actor.id, createdAt: { gte: dayStartUtc() }, ...counted() } })
+    if (daily >= envInt('AI_USER_DAILY_CAP', DEFAULT_USER_DAILY_CAP)) return { ok: false, reason: 'user_daily_cap', message: REFUSALS.user_daily_cap } as const
+
+    const tokens = await tx.aiUsageLog.aggregate({
+      where: { officeId: actor.officeId, createdAt: { gte: monthStartUtc() }, success: true },
+      _sum: { inputTokens: true, outputTokens: true, embeddingTokens: true },
     })
-    if (used >= DEFAULT_MONTHLY_CAP) return null
+    const used = (tokens._sum.inputTokens ?? 0) + (tokens._sum.outputTokens ?? 0) + (tokens._sum.embeddingTokens ?? 0)
+    if (used >= envInt('AI_OFFICE_MONTHLY_TOKEN_BUDGET', DEFAULT_OFFICE_MONTHLY_TOKENS)) {
+      return { ok: false, reason: 'office_token_budget', message: REFUSALS.office_token_budget } as const
+    }
+
     const row = await tx.aiUsageLog.create({
-      data: {
-        officeId: actor.officeId,
-        userId: actor.id,
-        feature,
-        model: 'ailegal_hussein',
-        latencyMs: 0,
-        success: false,
-        errorCode: PENDING,
-      },
+      data: { officeId: actor.officeId, userId: actor.id, feature, model: 'ailegal_hussein', latencyMs: 0, success: false, errorCode: PENDING },
       select: { id: true },
     })
-    return row.id
+    return { ok: true, id: row.id } as const
   })
 }
 
 /**
- * Finalizes a reservation. ailegal_hussein doesn't report token counts over
- * its HTTP contract, so tokens stay 0 rather than a fabricated estimate.
+ * Finalizes a reservation with what the engine actually reported: every
+ * token of every model call it made for this request (retrieval, answer,
+ * verification…), the models, the estimated cost. A failed call keeps
+ * success=false and so never counts against the limits.
  */
 export async function completeAiCall(
   reservationId: string,
-  outcome: { success: boolean; latencyMs: number; errorCode?: string }
+  outcome: { success: boolean; latencyMs: number; errorCode?: string; usage?: EngineUsage; model?: string; groundingLevel?: string | null }
 ): Promise<void> {
+  const u = outcome.usage
   try {
     await prisma.aiUsageLog.update({
       where: { id: reservationId },
@@ -82,6 +125,18 @@ export async function completeAiCall(
         success: outcome.success,
         latencyMs: Math.max(0, Math.round(outcome.latencyMs)),
         errorCode: outcome.success ? null : (outcome.errorCode ?? 'unknown_error'),
+        ...(outcome.model ? { model: outcome.model.slice(0, 190) } : {}),
+        ...(u
+          ? {
+              inputTokens: Math.max(0, Math.round(u.tokensIn)),
+              outputTokens: Math.max(0, Math.round(u.tokensOut)),
+              embeddingTokens: Math.max(0, Math.round(u.embeddingTokens)),
+              llmCalls: Math.max(0, Math.round(u.llmCalls)),
+              costMicroUsd: Math.max(0, Math.round(u.estimatedCostUsd * 1_000_000)),
+              engineRequestId: u.requestId.slice(0, 190),
+            }
+          : {}),
+        ...(outcome.groundingLevel ? { groundingLevel: outcome.groundingLevel } : {}),
       },
     })
   } catch (error) {
@@ -93,11 +148,5 @@ export async function completeAiCall(
 
 /** Current month's counted usage for an office (successful + in-flight). */
 export async function monthlyAiUsage(officeId: string): Promise<number> {
-  return prisma.aiUsageLog.count({
-    where: {
-      officeId,
-      createdAt: { gte: monthStartUtc() },
-      OR: [{ success: true }, { errorCode: PENDING, createdAt: { gte: new Date(Date.now() - PENDING_TTL_MS) } }],
-    },
-  })
+  return prisma.aiUsageLog.count({ where: { officeId, createdAt: { gte: monthStartUtc() }, ...counted() } })
 }

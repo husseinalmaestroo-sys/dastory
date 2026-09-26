@@ -23,6 +23,12 @@ type ReviewResult = {
   extractionMethod: string
   truncated: boolean
   disclaimer: string
+  coverage?: {
+    totalChars: number
+    analyzedChars: number
+    partial: boolean
+    notAnalyzed: { fromChar: number; toChar: number; startsWith: string }[]
+  }
 }
 
 const SEVERITY_BADGE: Record<Risk['severity'], 'ur' | 'pe' | 'bl' | 'ac'> = { high: 'ur', medium: 'pe', low: 'bl', info: 'ac' }
@@ -101,8 +107,18 @@ export default function AiContractPage() {
           </div>
           {result && (
             <div className="card">
-              <div className="ct">📋 ملخص التحليل <Badge type="ac">مكتمل</Badge></div>
-              <div style={{ fontSize: '.78rem', color: '#64748B', marginBottom: 10 }}>{METHOD_LABEL[result.extractionMethod] ?? result.extractionMethod}{result.truncated ? ' — تم اقتصاص النص لطوله الزائد' : ''}</div>
+              <div className="ct">📋 ملخص التحليل {result.coverage?.partial || result.truncated ? <Badge type="ur">مراجعة جزئية — PARTIAL REVIEW</Badge> : <Badge type="ac">مكتمل</Badge>}</div>
+              <div style={{ fontSize: '.78rem', color: '#64748B', marginBottom: 10 }}>{METHOD_LABEL[result.extractionMethod] ?? result.extractionMethod}</div>
+              {(result.coverage?.partial || result.truncated) && (
+                <div role="alert" style={{ background: 'rgba(248,113,113,.08)', border: '1px solid rgba(248,113,113,.3)', borderRadius: 10, padding: '10px 14px', marginBottom: 12, fontSize: '.8rem', color: '#FCA5A5', lineHeight: 1.8 }}>
+                  ⚠️ مراجعة جزئية: لم يُحلَّل كامل العقد
+                  {result.coverage ? ` (حُلِّل ${result.coverage.analyzedChars.toLocaleString('ar')} من ${result.coverage.totalChars.toLocaleString('ar')} حرفاً)` : ''}.
+                  لا تعتمد هذه المراجعة لبنود الأجزاء غير المحلَّلة:
+                  {result.coverage?.notAnalyzed.map((r, i) => (
+                    <div key={i} style={{ fontSize: '.76rem' }}>• الأحرف {r.fromChar.toLocaleString('ar')}–{r.toChar.toLocaleString('ar')}{r.startsWith ? ` (تبدأ بـ: «${r.startsWith.slice(0, 60)}»)` : ''}</div>
+                  ))}
+                </div>
+              )}
               <p style={{ fontSize: '.84rem', color: '#E2E8F0', lineHeight: 1.8, marginBottom: 12 }}>{result.summary}</p>
               {result.parties.length > 0 && (
                 <div className="ar">

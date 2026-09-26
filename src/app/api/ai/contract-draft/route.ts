@@ -47,26 +47,36 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
     return NextResponse.json({ error: 'خدمة صياغة العقود بالذكاء الاصطناعي غير مُفعّلة على هذا الخادم حالياً' }, { status: 503 })
   }
   const reservation = await reserveAiCall(auth.user, 'contract_draft')
-  if (!reservation) {
-    return NextResponse.json({ error: 'تم بلوغ الحد الشهري لاستخدام أدوات الذكاء الاصطناعي لهذا المكتب' }, { status: 429 })
-  }
+  if (!reservation.ok) return NextResponse.json({ error: reservation.message, code: reservation.reason }, { status: 429 })
 
   const start = Date.now()
   try {
-    const result = await generateDraft('contract', fields, notes, auth.user.officeId)
+    const result = await generateDraft('contract', fields, notes, auth.user)
 
     await auditLog(req, auth.user, 'ai.contract_drafted', {
-      metadata: { grounded: result.grounded, sourceCount: result.sources.length, contractType: fields.contract_type },
+      metadata: { grounded: result.grounded, groundingLevel: result.groundingLevel, sourceCount: result.sources.length, contractType: fields.contract_type },
     })
-    await completeAiCall(reservation, { success: true, latencyMs: Date.now() - start })
+    await completeAiCall(reservation.id, {
+      success: true,
+      latencyMs: Date.now() - start,
+      usage: result.usage,
+      model: result.provenance.chatModels.join(',') || undefined,
+      groundingLevel: result.groundingLevel,
+    })
 
-    return NextResponse.json(result)
+    return NextResponse.json({
+      draft: result.draft,
+      grounded: result.grounded,
+      groundingLevel: result.groundingLevel,
+      mode: result.mode,
+      // Dates / amounts / ids the model wrote that the lawyer never supplied
+      // were replaced with "[يُستكمل: …]" by the engine; this is their count.
+      unverifiedFacts: result.unverifiedFacts,
+      sources: result.sources,
+    })
   } catch (err) {
     const ragError = err instanceof LegalRagError ? err : null
-    await completeAiCall(reservation, {
-      success: false, latencyMs: Date.now() - start,
-      errorCode: ragError ? String(ragError.status) : 'unknown_error',
-    })
+    await completeAiCall(reservation.id, { success: false, latencyMs: Date.now() - start, errorCode: ragError ? ragError.code : 'unknown_error' })
     if (ragError) return NextResponse.json({ error: ragError.message }, { status: ragError.status })
     console.error('[ai/contract-draft] unexpected failure', err)
     return NextResponse.json({ error: 'تعذّر توليد مسودة العقد حالياً' }, { status: 502 })

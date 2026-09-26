@@ -11,6 +11,7 @@
     "test:integration": "vitest run --config vitest.integration.config.mts",
     "test:http": "vitest run --config vitest.http.config.mts",
     "test:e2e": "playwright test",
+    "test:staging": "vitest run --config vitest.staging.config.mts",
     "postinstall": "prisma generate && node scripts/prepare-ocr-models.mjs"
   },
   "engines": {

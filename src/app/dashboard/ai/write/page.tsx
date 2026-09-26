@@ -55,7 +55,7 @@ const ADDITIONAL_GROUP: Group = {
 }
 
 type Source = { ref: number; title: string; lawName: string | null; articleNumber: string | number | null; excerpt: string }
-type DraftState = { draft: string; grounded: boolean; sources: Source[] }
+type DraftState = { draft: string; grounded: boolean; sources: Source[]; groundingLevel?: 'full' | 'partial' | 'none'; unverifiedFacts?: number }
 
 export default function AiWritePage() {
   const [fields, setFields] = useState<Record<string, string>>({})
@@ -177,6 +177,12 @@ export default function AiWritePage() {
               {!result.grounded && (
                 <div style={{ fontSize: '.76rem', color: '#B45309', background: 'rgba(245,158,11,.12)', borderRadius: 8, padding: '8px 12px', marginBottom: 10 }}>
                   ⚠️ لم يُعثر على سند قانوني كافٍ لنوع هذا العقد في القاعدة — راجع النص أدناه بعناية خاصة قبل الاستخدام.
+                </div>
+              )}
+              {(result.groundingLevel === 'partial' || (result.unverifiedFacts ?? 0) > 0) && (
+                <div style={{ fontSize: '.76rem', color: '#B45309', background: 'rgba(245,158,11,.12)', borderRadius: 8, padding: '8px 12px', marginBottom: 10 }}>
+                  ⚠️ تحقّق النظام من المسودة آلياً: حُجبت إسنادات لم تطابق مصادرها
+                  {(result.unverifiedFacts ?? 0) > 0 ? `، واستُبدل ${result.unverifiedFacts} من التواريخ/المبالغ/الأرقام التي لم تُدخلها بعلامة [يُستكمل]` : ''}. أكمِلها بنفسك قبل الاستخدام.
                 </div>
               )}
               <div style={{ fontSize: '.82rem', lineHeight: 1.9, whiteSpace: 'pre-wrap' }}>{result.draft}</div>

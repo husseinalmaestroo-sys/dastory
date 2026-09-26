@@ -15,10 +15,10 @@ type Analysis = {
   strengths: ({ point: string } & NamedCitation)[]
   weaknesses: ({ point: string } & NamedCitation)[]
   gaps: string[]
-  parse_error?: boolean
 }
 type Source = { ref: number; title: string; lawName: string | null; articleNumber: string | number | null; court: string | null; decisionNumber: string | null; year: number | null; excerpt: string }
-type CaseResult = { fileName: string; pages: number; extractionMethod: string; analysis: Analysis; sources: Source[] }
+type Coverage = { totalChars: number; analyzedChars: number; partial: boolean; notAnalyzed: { fromChar: number; toChar: number; startsWith: string }[] }
+type CaseResult = { fileName: string; extractionMethod: string; analysis: Analysis; sources: Source[]; groundingLevel?: 'full' | 'partial' | 'none'; coverage?: Coverage }
 
 const TAB_LABELS = { strategy: 'الاستراتيجية', strength: 'نقاط القوة/الضعف', witnesses: 'الوقائع', docs: 'المصادر' } as const
 
@@ -96,14 +96,19 @@ export default function AiCasePage() {
           </div>
           {a && (
             <div className="card">
-              <div className="ct">📊 ملخص القضية <Badge type="ac">مكتمل</Badge></div>
+              <div className="ct">📊 ملخص القضية {result?.coverage?.partial ? <Badge type="ur">تحليل جزئي</Badge> : <Badge type="ac">مكتمل</Badge>}</div>
+              {result?.coverage?.partial && (
+                <div role="alert" style={{ background: 'rgba(248,113,113,.08)', border: '1px solid rgba(248,113,113,.3)', borderRadius: 10, padding: '10px 14px', marginBottom: 10, fontSize: '.8rem', color: '#FCA5A5', lineHeight: 1.8 }}>
+                  ⚠️ تحليل جزئي: حُلِّل {result.coverage.analyzedChars.toLocaleString('ar')} من {result.coverage.totalChars.toLocaleString('ar')} حرفاً من الملف فقط، ولم تُقرأ بقيته.
+                </div>
+              )}
               <p style={{ fontSize: '.84rem', color: '#E2E8F0', lineHeight: 1.8, marginBottom: 10 }}>{a.summary}</p>
               <div className="arr"><span className="lb">نوع القضية</span><span className="vl">{a.case_type || 'غير محدد'}</span></div>
               {a.parties.map((p, i) => (
                 <div className="arr" key={i}><span className="lb">{p.role}</span><span className="vl">{p.name}</span></div>
               ))}
-              {a.parse_error && (
-                <div style={{ marginTop: 8, fontSize: '.76rem', color: '#F59E0B' }}>⚠️ تعذّر تنسيق التحليل بالكامل — المعروض أعلاه نص خام من النموذج.</div>
+              {result?.groundingLevel === 'none' && (
+                <div style={{ marginTop: 8, fontSize: '.76rem', color: '#F59E0B' }}>⚠️ لم يُعثر على سند قانوني مُتحقَّق منه لأيٍّ من التكييفات أو الدفوع؛ الأطراف والوقائع المعروضة مأخوذة من الملف نفسه.</div>
               )}
             </div>
           )}

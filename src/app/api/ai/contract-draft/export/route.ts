@@ -4,12 +4,10 @@ import { rateLimit } from '@/lib/api-security'
 import { withErrorHandling } from '@/lib/api-handler'
 import { exportDraft, LegalRagError } from '@/lib/ai/legal-rag-client'
 
-// No AI provider call here (ailegal_hussein's own export endpoint is pure
-// formatting, not gated behind its lawyer auth either — see its
-// src/app/api/draft/export/route.ts) — still auth+tenant-gated on Dostoori's
-// side like everything else, just no monthly AI cap or isLegalRagConfigured
-// check, since generating the draft (contract-draft/route.ts) already
-// required both before this text existed at all.
+// No AI model call here (ailegal_hussein's export endpoint is pure
+// formatting; since Phase 2 it too requires a signed caller) — auth+tenant-
+// gated on Dostoori's side like everything else, but no monthly AI cap:
+// generating the draft (contract-draft/route.ts) already counted.
 export const POST = withErrorHandling(async (req: NextRequest) => {
   const auth = await requireOfficeUser(req)
   if (!auth.ok) return auth.response
@@ -29,10 +27,11 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
   if (!draft.trim()) return NextResponse.json({ error: 'لا يوجد نص عقد لتصديره' }, { status: 400 })
   // A generated draft is at most a few tens of KB; this bounds what gets
   // relayed to the upstream exporter.
-  if (draft.length > 200_000) return NextResponse.json({ error: 'نص العقد أطول من المسموح للتصدير' }, { status: 413 })
+  // Same cap as the engine's export endpoint (20,000 chars): a clear local 413.
+  if (draft.length > 20_000) return NextResponse.json({ error: 'نص العقد أطول من المسموح للتصدير' }, { status: 413 })
 
   try {
-    const file = await exportDraft(draft, filename, format, auth.user.officeId)
+    const file = await exportDraft(draft, filename, format, auth.user)
     return new NextResponse(new Uint8Array(file.buffer), {
       headers: {
         'Content-Type': file.contentType,

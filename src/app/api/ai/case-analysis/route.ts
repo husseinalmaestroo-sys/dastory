@@ -5,8 +5,9 @@ import { documentVisibilityWhere } from '@/lib/tenant-scope'
 import { rateLimit } from '@/lib/api-security'
 import { auditLog } from '@/lib/audit'
 import { withErrorHandling } from '@/lib/api-handler'
-import { analyzeCaseFile, isLegalRagConfigured, LegalRagError } from '@/lib/ai/legal-rag-client'
+import { analyzeCaseText, isLegalRagConfigured, LegalRagError } from '@/lib/ai/legal-rag-client'
 import { completeAiCall, reserveAiCall } from '@/lib/ai/usage'
+import { extractText, ExtractionError } from '@/lib/ai/extract-text'
 import { readDocumentFile } from '@/lib/document-storage'
 
 // Same order as every other AI route: auth -> rate limit -> input shape ->
@@ -16,6 +17,10 @@ import { readDocumentFile } from '@/lib/document-storage'
 // defendant, possible defenses) via ailegal_hussein's /api/cases — not a
 // bilateral agreement, which contract-review (route.ts next to this one)
 // sends to ailegal_hussein's separate /api/contract-review instead.
+// The engine accepts up to 400k chars of case text and reports exactly how
+// much it analysed (coverage); beyond that Dostoori itself cuts, and says so.
+const MAX_CASE_CHARS = 400_000
+
 export const POST = withErrorHandling(async (req: NextRequest) => {
   const auth = await requireOfficeUser(req)
   if (!auth.ok) return auth.response
@@ -42,28 +47,56 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
     return NextResponse.json({ error: 'تعذّر قراءة الملف من التخزين' }, { status: 404 })
   }
 
-  const reservation = await reserveAiCall(auth.user, 'case_analysis')
-  if (!reservation) {
-    return NextResponse.json({ error: 'تم بلوغ الحد الشهري لاستخدام أدوات الذكاء الاصطناعي لهذا المكتب' }, { status: 429 })
+  // Phase 2: Dostoori extracts the text itself (same pipeline as contract
+  // review, OCR included) and sends only the text — the file never leaves
+  // Dostoori, and the engine stores nothing from the call.
+  let extracted: Awaited<ReturnType<typeof extractText>>
+  try {
+    extracted = await extractText(bytes, doc.type)
+  } catch (err) {
+    if (err instanceof ExtractionError) return NextResponse.json({ error: err.message }, { status: err.status })
+    console.error('[ai/case-analysis] unexpected extraction failure', err)
+    return NextResponse.json({ error: 'تعذّر استخراج نص ملف القضية' }, { status: 422 })
   }
+  const caseText = extracted.text.slice(0, MAX_CASE_CHARS)
+  const cutLocally = extracted.text.length > MAX_CASE_CHARS
+
+  const reservation = await reserveAiCall(auth.user, 'case_analysis')
+  if (!reservation.ok) return NextResponse.json({ error: reservation.message, code: reservation.reason }, { status: 429 })
 
   const start = Date.now()
   try {
-    const result = await analyzeCaseFile(bytes, doc.name, auth.user.officeId)
+    const result = await analyzeCaseText(caseText, doc.name, auth.user)
+    const coverage = {
+      ...result.coverage,
+      // What the engine saw is measured against the whole extracted file.
+      totalChars: extracted.text.length,
+      partial: result.coverage.partial || cutLocally,
+    }
 
     await auditLog(req, auth.user, 'ai.case_analyzed', {
       entityType: 'document', entityId: doc.id,
-      metadata: { extractionMethod: result.extractionMethod, sourceCount: result.sources.length },
+      metadata: { extractionMethod: extracted.method, sourceCount: result.sources.length, groundingLevel: result.groundingLevel, partial: coverage.partial },
     })
-    await completeAiCall(reservation, { success: true, latencyMs: Date.now() - start })
+    await completeAiCall(reservation.id, {
+      success: true,
+      latencyMs: Date.now() - start,
+      usage: result.usage,
+      model: result.provenance.chatModels.join(',') || undefined,
+      groundingLevel: result.groundingLevel,
+    })
 
-    return NextResponse.json(result)
+    return NextResponse.json({
+      fileName: doc.name,
+      extractionMethod: extracted.method,
+      analysis: result.analysis,
+      groundingLevel: result.groundingLevel,
+      coverage,
+      sources: result.sources,
+    })
   } catch (err) {
     const ragError = err instanceof LegalRagError ? err : null
-    await completeAiCall(reservation, {
-      success: false, latencyMs: Date.now() - start,
-      errorCode: ragError ? String(ragError.status) : 'unknown_error',
-    })
+    await completeAiCall(reservation.id, { success: false, latencyMs: Date.now() - start, errorCode: ragError ? ragError.code : 'unknown_error' })
     if (ragError) return NextResponse.json({ error: ragError.message }, { status: ragError.status })
     console.error('[ai/case-analysis] unexpected failure', err)
     return NextResponse.json({ error: 'تعذّر تحليل ملف القضية حالياً' }, { status: 502 })

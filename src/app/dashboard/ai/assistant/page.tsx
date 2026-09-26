@@ -15,19 +15,14 @@ export default function AiAssistantPage() {
   const [error, setError] = useState('')
   const [notConfigured, setNotConfigured] = useState(false)
   const [messages, setMessages] = useState<ChatMessage[]>([WELCOME])
+  // The conversation lives on the server (office + user scoped); the page
+  // only keeps its id. History is never sent from the browser.
+  const [conversationId, setConversationId] = useState<string | null>(null)
 
   const send = async (value = input) => {
     const question = value.trim()
     if (!question || busy) return
     setError('')
-    // Prior turns (everything after the canned welcome), for follow-up
-    // context. ailegal_hussein uses these only to resolve references like
-    // "وهل ينطبق على..." into a standalone question — each answer is still
-    // grounded on its own.
-    const history = messages.slice(1).map((m) => ({
-      role: m.role === 'u' ? 'user' : 'assistant',
-      content: m.text,
-    }))
     setMessages((items) => [...items, { role: 'u', text: question }])
     setInput('')
     setBusy(true)
@@ -35,14 +30,19 @@ export default function AiAssistantPage() {
       const res = await fetch('/api/ai/assistant', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: question, history }),
+        body: JSON.stringify({ message: question, conversationId }),
       })
       const data = await res.json()
       if (res.status === 503) { setNotConfigured(true); setError(data.error); return }
       if (!res.ok) { setError(data.error || 'تعذّر الحصول على رد'); return }
-      const groundNote = data.grounded
-        ? `مُسند لمصدر موثّق${data.sources?.length ? ` (${data.sources.length} مصدر)` : ''} — ${data.disclaimer ?? ''}`
-        : data.disclaimer
+      if (typeof data.conversationId === 'string') setConversationId(data.conversationId)
+      const cited = Array.isArray(data.sources) ? data.sources.filter((s: { cited?: boolean }) => s.cited).length : 0
+      const groundNote =
+        data.groundingLevel === 'full'
+          ? `مُسند بالكامل لمصادر موثّقة (${cited} مصدر) — ${data.disclaimer ?? ''}`
+          : data.groundingLevel === 'partial'
+            ? `مُسند جزئياً — ${data.disclaimer ?? ''}`
+            : data.disclaimer || 'لا توجد إجابة مُسندة لهذا السؤال في قاعدة البيانات.'
       setMessages((items) => [...items, { role: 'a', text: data.answer, citation: groundNote }])
     } catch {
       setError('تعذّر الاتصال بالخادم')

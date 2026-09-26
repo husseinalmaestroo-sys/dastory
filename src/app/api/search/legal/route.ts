@@ -40,28 +40,29 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
     return NextResponse.json({ error: 'خدمة البحث القانوني غير مُفعّلة على هذا الخادم حالياً' }, { status: 503 })
   }
   const reservation = await reserveAiCall(auth.user, 'legal_search')
-  if (!reservation) {
-    return NextResponse.json({ error: 'تم بلوغ الحد الشهري لاستخدام أدوات الذكاء الاصطناعي لهذا المكتب' }, { status: 429 })
-  }
+  if (!reservation.ok) return NextResponse.json({ error: reservation.message, code: reservation.reason }, { status: 429 })
 
   const start = Date.now()
   try {
-    const result = await askLegalRag(question, filters, auth.user.officeId)
+    const result = await askLegalRag(question, filters, auth.user)
 
     await auditLog(req, auth.user, 'ai.legal_search', {
-      metadata: { grounded: result.grounded, mode: result.mode, sourceCount: result.sources.length },
+      metadata: { grounded: result.grounded, mode: result.mode, groundingLevel: result.groundingLevel, sourceCount: result.sources.length },
     })
-    // ailegal_hussein does not return token counts over its SSE contract —
-    // the office cap (reserveAiCall) counts calls, not tokens.
-    await completeAiCall(reservation, { success: true, latencyMs: Date.now() - start })
+    // Real usage as reported by the engine (every model call it made).
+    await completeAiCall(reservation.id, {
+      success: true,
+      latencyMs: Date.now() - start,
+      usage: result.usage,
+      model: result.provenance.chatModels.join(',') || undefined,
+      groundingLevel: result.groundingLevel,
+    })
 
-    return NextResponse.json(result)
+    // Usage is accounting data for Dostoori, not something the browser needs.
+    return NextResponse.json({ ...result, usage: undefined })
   } catch (err) {
     const ragError = err instanceof LegalRagError ? err : null
-    await completeAiCall(reservation, {
-      success: false, latencyMs: Date.now() - start,
-      errorCode: ragError ? String(ragError.status) : 'unknown_error',
-    })
+    await completeAiCall(reservation.id, { success: false, latencyMs: Date.now() - start, errorCode: ragError ? ragError.code : 'unknown_error' })
     if (ragError) return NextResponse.json({ error: ragError.message }, { status: ragError.status })
     console.error('[search/legal] unexpected failure', err)
     return NextResponse.json({ error: 'تعذّر تنفيذ البحث القانوني حالياً' }, { status: 502 })

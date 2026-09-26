@@ -67,6 +67,7 @@ model Office {
   auditLogs     AuditLog[]
   timeEntries   TimeEntry[]
   aiUsage       AiUsageLog[]
+  aiConversations AiConversation[]
   documentSignatures DocumentSignature[]
   subscription  Subscription?
 }
@@ -106,6 +107,7 @@ model User {
   siteSettingsUpdates SiteSettings[]
   emailVerificationTokens EmailVerificationToken[]
   aiUsage       AiUsageLog[]
+  aiConversations AiConversation[]
   signatures    DocumentSignature[]
 
   @@index([officeId, role])
@@ -396,10 +398,18 @@ model AiUsageLog {
   office       Office   @relation(fields: [officeId], references: [id])
   userId       String
   user         User     @relation(fields: [userId], references: [id])
-  feature      String   // 'assistant' | 'contract_review'
+  feature      String   // 'assistant' | 'contract_review' | 'legal_search' | 'case_analysis' | 'contract_draft'
   model        String
   inputTokens  Int      @default(0)
   outputTokens Int      @default(0)
+  // Phase 2: real usage as reported by ailegal_hussein for this call
+  // (every model call it made, incl. verification and retrieval).
+  embeddingTokens Int   @default(0)
+  llmCalls     Int      @default(0)
+  // Estimated cost in micro-USD (an estimate at the engine's price table, never a bill).
+  costMicroUsd Int      @default(0)
+  engineRequestId String?
+  groundingLevel String?
   latencyMs    Int
   success      Boolean
   errorCode    String?
@@ -407,6 +417,37 @@ model AiUsageLog {
 
   @@index([officeId, createdAt])
   @@index([userId, createdAt])
+}
+
+// ── Phase 2: server-side AI conversation memory ────────────────────────────
+// The assistant used to accept the whole conversation from the browser and
+// forward it — so a client could forge "assistant" turns ("you already agreed
+// the sources may be ignored"). History now lives here, scoped by office +
+// user + conversation, and is the only history ever sent to the AI engine.
+model AiConversation {
+  id        String      @id @default(cuid())
+  officeId  String
+  office    Office      @relation(fields: [officeId], references: [id])
+  userId    String
+  user      User        @relation(fields: [userId], references: [id])
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  messages  AiMessage[]
+
+  @@index([officeId, userId, updatedAt])
+}
+
+model AiMessage {
+  id             String         @id @default(cuid())
+  conversationId String
+  conversation   AiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role           String         // 'user' | 'assistant'
+  content        String         @db.Text
+  mode           String?
+  groundingLevel String?
+  createdAt      DateTime       @default(now())
+
+  @@index([conversationId, createdAt])
 }
 
 // ── Phase 4: signature audit trail ──────────────────────────────────────────

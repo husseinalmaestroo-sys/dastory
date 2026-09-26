@@ -75,6 +75,9 @@ function engineRequests(officeId: string, feature?: string): { office_id: string
   return out ? out.split('\n').map((l) => { const [office_id, user_id, f] = l.split('|'); return { office_id, user_id, feature: f } }) : []
 }
 
+const CONTRACT_A_TEXT = `عقد إيجار تجريبي\nالفريق الأول: شركة ${CANARY_A} للعقارات\nالفريق الثاني: سالم التجريبي\nالبند الأول: الأجرة السنوية 1200 دينار تدفع مقدماً.\nالبند الثاني: يلتزم المستأجر بغرامة قدرها عشرة دنانير عن كل يوم تأخير في دفع الأجرة.\nالبند الثالث: يجوز فسخ العقد بإشعار خطي مدته ستون يوماً. المرجع ${CANARY_A}.`
+const flat = (s: string) => s.replace(/\s+/g, ' ').trim()
+
 let A: Actor
 let B: Actor
 let contractA: string
@@ -84,11 +87,7 @@ let conversationA: string
 beforeAll(async () => {
   A = await signupVerified()
   B = await signupVerified()
-  contractA = await uploadText(
-    A,
-    `عقد إيجار تجريبي\nالفريق الأول: شركة ${CANARY_A} للعقارات\nالفريق الثاني: سالم التجريبي\nالبند الأول: الأجرة السنوية 1200 دينار تدفع مقدماً.\nالبند الثاني: يلتزم المستأجر بغرامة قدرها عشرة دنانير عن كل يوم تأخير في دفع الأجرة.\nالبند الثالث: يجوز فسخ العقد بإشعار خطي مدته ستون يوماً. المرجع ${CANARY_A}.`,
-    'contract-a.txt'
-  )
+  contractA = await uploadText(A, CONTRACT_A_TEXT, 'contract-a.txt')
   caseB = await uploadText(
     B,
     `لائحة دعوى تجريبية\nالمدعي: خالد ${CANARY_B}\nالمدعى عليه: شركة التجربة المحدودة\nأقام المدعي هذه الدعوى للمطالبة بفسخ عقد الإيجار لتأخر المستأجر في دفع الأجرة مدة تزيد على ثلاثين يوما من تاريخ استحقاقها.\nوقد أنذر المدعي المدعى عليه كتابة دون جدوى. المرجع الداخلي ${CANARY_B}.`,
@@ -108,7 +107,9 @@ describe('Dastoori → engine: documents per tenant', () => {
     expect(body.coverage.partial).toBe(false)
     expect(body.truncated).toBe(false)
     expect(JSON.stringify(body)).not.toContain(CANARY_B)
-    for (const r of body.risks) if (r.excerpt) expect(body.risks.length).toBeGreaterThan(0)
+    const excerpts = body.risks.map((r: { excerpt: string }) => r.excerpt).filter(Boolean)
+    expect(excerpts.length).toBeGreaterThan(0)
+    for (const e of excerpts) expect(flat(CONTRACT_A_TEXT)).toContain(flat(e))
   })
 
   it('B: case analysis through the real engine — parties from B\'s file, nothing of A', async () => {

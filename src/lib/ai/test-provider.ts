@@ -3,6 +3,8 @@ import { createHash } from "node:crypto";
 import { env } from "../env";
 import { foldForSearch, normalizeDigits } from "../ingest/clean";
 import { stemArabicWord } from "../search/arabic-stem";
+import { articleNumbersIn } from "../search/intent";
+import { matchKeys } from "./legal-semantics";
 import type { ChatMessage, ChatOptions, ChatProvider, ChatResult, EmbeddingProvider, EmbedResult } from "./provider";
 
 /**
@@ -41,8 +43,16 @@ export function testProvidersAllowed(): boolean {
   return process.env.NODE_ENV !== "production" || process.env.ALLOW_TEST_PROVIDERS === "true";
 }
 
-/** Test hook: every message list the test chat model receives (security tests assert on prompts). */
-export const testProviderHooks: { onChat: ((messages: ChatMessage[], opts: ChatOptions) => void) | null } = { onChat: null };
+/**
+ * Test hooks. `onChat` sees every message list the test chat model receives
+ * (security tests assert on prompts; throwing simulates an outage). `respond`
+ * may return a reply to use instead of the built-in one (e.g. a judge ruling a
+ * claim CONTRADICTED); returning undefined keeps the built-in reply.
+ */
+export const testProviderHooks: {
+  onChat: ((messages: ChatMessage[], opts: ChatOptions) => void) | null;
+  respond: ((messages: ChatMessage[], opts: ChatOptions) => string | undefined) | null;
+} = { onChat: null, respond: null };
 
 // ------------------------------------------------------------------ embeddings
 
@@ -142,18 +152,25 @@ function overlap(a: string[], b: Set<string>): number {
   return n;
 }
 
+/** Word overlap that, like a reader, sees "يهدد"/"هدد" and "عيوب"/"عيب" as one word (legal-semantics matchKeys). */
+function formOverlap(a: string[], b: string[]): number {
+  const keys = new Set(b.flatMap((w) => matchKeys(w)));
+  return [...new Set(a)].filter((w) => matchKeys(w).some((k) => keys.has(k))).length;
+}
+
 // ------------------------------------------------------------------ task handlers
 
 const NO_BASIS = "لم أجد سنداً قانونياً كافياً ضمن قاعدة البيانات القانونية المتاحة.";
 
 function answerFromSources(question: string, sources: ParsedSource[]): string {
   const qWords = contentWords(question);
-  const qArticles = [...normalizeDigits(question).matchAll(/ماد[ةه]\s*\(?\s*(\d{1,4})/g)].map((m) => m[1]);
+  // The citation forms the pipeline reads ("م 41", "المادة السابعة عشرة"), as a real model would.
+  const qArticles = articleNumbersIn(question);
   const scored = sources
     .map((s) => {
-      const sWords = new Set(contentWords(`${s.title} ${s.law ?? ""} ${s.text}`));
+      const sWords = contentWords(`${s.title} ${s.law ?? ""} ${s.text}`);
       const articleHit = s.article && qArticles.includes(normalizeDigits(s.article)) ? 3 : 0;
-      return { s, score: overlap(qWords, sWords) + articleHit };
+      return { s, score: formOverlap(qWords, sWords) + articleHit };
     })
     .sort((a, b) => b.score - a.score || a.s.n - b.s.n);
 
@@ -244,7 +261,13 @@ function respond(messages: ChatMessage[]): string {
   const doc = (label: string) => blocks.find((b) => b.kind === "DOCUMENT" && b.label === label)?.content ?? "";
 
   if (system.includes("أداة إعادة صياغة")) return question;
-  if (system.includes("مراجع جودة داخلي")) return JSON.stringify({ issues: [], notes: "مراجعة اختبارية" });
+  if (system.includes("مراجع جودة داخلي")) {
+    // A trusting judge: every numbered claim SUPPORTED. It adds no semantic
+    // judgement of its own — offline, the deterministic checks do the work;
+    // tests that need a verdict inject it through testProviderHooks.respond.
+    const claims = [...doc("الادعاءات").matchAll(/^(\d+)\)/gm)].map((m) => ({ n: Number(m[1]), verdict: "SUPPORTED" }));
+    return JSON.stringify({ issues: [], claims, notes: "مراجعة اختبارية" });
+  }
   if (system.includes("تحليل ملف قضية")) return caseAnalysisJson(doc("ملف القضية"), sources);
   if (system.includes("مراجعة نص عقد")) return contractReviewJson(doc("العقد"));
   if (system.includes("إعداد مسودة")) return draftDocument(system, doc("حقول المحامي"), sources);
@@ -268,7 +291,7 @@ export const testChatProvider: ChatProvider = {
 
   async chat(messages, opts = {}): Promise<ChatResult> {
     testProviderHooks.onChat?.(messages, opts);
-    const text = respond(messages);
+    const text = testProviderHooks.respond?.(messages, opts) ?? respond(messages);
     return {
       text,
       tokensIn: messages.reduce((n, m) => n + approxTokens(m.content), 0),

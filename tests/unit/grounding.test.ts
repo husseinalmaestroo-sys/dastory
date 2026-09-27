@@ -61,7 +61,13 @@ test("an uncited penalty tacked onto a cited sentence is removed, not passed off
 test("a weakly supported penalty claim is removed even with its own citation", () => {
   const r = groundAnswer("ويعاقب المستأجر المتأخر عن الدفع بالحبس [1].", [chunk()]);
   assert.equal(r.claims[0].status, "removed");
-  assert.ok(r.claims[0].issues.includes("weak_support"));
+  // Phase 2.1: caught earlier and more precisely — the cited source states no
+  // penalty at all, so "بالحبس" is a contradiction of it (legal-semantics.ts).
+  assert.ok(r.claims[0].issues.includes("contradiction"), JSON.stringify(r.claims[0]));
+  // Without a penalty type the same weak claim still falls to the support check.
+  const weak = groundAnswer("ويلتزم الطرفان بتوثيق كل مراسلاتهما لدى الكاتب العدل خلال مدة معقولة [1].", [chunk()]);
+  assert.equal(weak.claims[0].status, "removed");
+  assert.ok(weak.claims[0].issues.includes("weak_support"), JSON.stringify(weak.claims[0]));
 });
 
 test("an uncited sentence right after a cited one inherits its source (carry-forward), and is checked against it", () => {
@@ -89,8 +95,13 @@ test("an out-of-range citation is stripped; with no valid source left the claim 
 });
 
 test("a claim with little overlap with its source loses its citation and is labelled as inference (rule 7)", () => {
-  const r = groundAnswer("ويحق للمستأجر المطالبة بتعويض عن الأضرار المعنوية والنفسية الناجمة عن التأخير [1].", [chunk()]);
-  assert.equal(r.claims[0].kind, "inference");
+  // Phase 2.1: a remedy the source does not grant is no longer an "inference" — it is removed.
+  const remedy = groundAnswer("ويحق للمستأجر المطالبة بتعويض عن الأضرار المعنوية والنفسية الناجمة عن التأخير [1].", [chunk()]);
+  assert.equal(remedy.claims[0].status, "removed");
+  assert.ok(remedy.claims[0].issues.includes("contradiction"));
+
+  const r = groundAnswer("ويحق للمستأجر أن يطلب من المؤجر بيان أسباب ذلك كتابةً قبل أي إجراء آخر [1].", [chunk()]);
+  assert.equal(r.claims[0].kind, "inference", JSON.stringify(r.claims[0]));
   assert.ok(r.text.includes(INFERENCE_LABEL.trim()), r.text);
   assert.ok(!r.text.includes("[1]"), "a citation that does not support the claim is removed");
   assert.equal(r.level, "partial");

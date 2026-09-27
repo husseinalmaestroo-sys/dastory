@@ -1,11 +1,21 @@
 import "server-only";
-import { foldForSearch, normalizeDigits } from "../ingest/clean";
-import { stemArabicWord } from "../search/arabic-stem";
+import { normalizeDigits } from "../ingest/clean";
 import { extractAllLawReferences, sourceIsLaw } from "../search/law-reference";
 import type { RetrievedChunk } from "../search/types";
+import {
+  droppedCondition,
+  matchingSentences,
+  meaningConflicts,
+  normText,
+  numberMentions,
+  numberValues,
+  sourceIsRelevant,
+  stems,
+  type MeaningIssue,
+} from "./legal-semantics";
 
 /**
- * CLAIM-LEVEL GROUNDING (Phase 2, steps 17/18/23/24).
+ * CLAIM-LEVEL GROUNDING (Phase 2, steps 17/18/23/24; Phase 2.1 meaning checks).
  *
  * `grounded = true` used to mean "at least one source was retrieved" (case
  * analysis, contract review) or simply "this is a draft" (drafting) — the
@@ -16,35 +26,40 @@ import type { RetrievedChunk } from "../search/types";
  *
  * and decides, per sentence, whether it may be shown as source-backed.
  *
- * WHAT IS VERIFIED DETERMINISTICALLY (citation rules 1-7 of the Phase 2 spec)
+ * VERIFIED DETERMINISTICALLY (citation rules 1-7 of the Phase 2 spec)
  *   1/2/5  a cited [n] must denote a retrieved source (out-of-range markers
  *          are stripped — guard.ts stripInvalidCitations — and an article /
  *          decision number must match the cited source: guard.ts
  *          verifyCitedNumbers, run before this);
- *   3/4    the cited source is in the served corpus (retrieval filters: JO,
- *          non-synthetic, current version unless history was asked for); a
- *          claim citing a superseded version must say so — otherwise it is
- *          labelled here;
+ *   3/4    the cited source is in the served corpus (retrieval filters); a
+ *          claim citing a superseded version must say so — or is labelled;
  *   6      every quotation (≥ 3 words between quote marks) must occur
  *          verbatim (after orthographic folding) in the cited source(s);
  *   7      support: the sentence's content words must overlap the cited
- *          source's text (lexical support score, threshold SUPPORT_MIN);
- *          every number in the sentence must occur in the cited source text
- *          or its citation metadata; a law the sentence names must be the
- *          law of the source it cites.
+ *          source's text (SUPPORT_MIN); every figure — digits and number
+ *          words — must be a figure of the cited source; a law the sentence
+ *          names must be the law of the source it cites;
  *   and    a legal claim with no valid citation is removed.
  *
- * WHAT IT CANNOT VERIFY — stated, not hidden: the support score is lexical,
- * not semantic. A sentence that reuses a source's words while reversing its
- * meaning ("لا يجوز" → "يجوز") can score as supported; numbers written as
- * words ("ثلاثون يوماً") are not number-checked. Semantic support is the
- * self-verification judge's job (self-verify.ts) and the live evaluation's.
+ * PHASE 2.1 — MEANING, NOT JUST WORDS (legal-semantics.ts). Lexical overlap
+ * passed claims that reuse a source's words while changing what it says. Now
+ * also, per claim:
+ *   relevance     a cited source that does not bear on the QUESTION (no shared
+ *                 subject matter; a short-title/commencement article) cannot
+ *                 back an answer to it → removed;
+ *   contradiction a penalty type or mental element the source does not state,
+ *                 or a permission/obligation/penalty verb with reversed
+ *                 polarity → removed;
+ *   conditions    a claim that states a rule without the condition/exception
+ *                 its source sentence attaches → labelled (CONDITION_LABEL).
+ * The semantic judge (self-verify.ts) then rules on every surviving claim;
+ * applyClaimVerdicts applies its verdicts, and the pipeline caps the level at
+ * "partial" when that semantic check did not run.
  *
- * OUTCOMES per sentence: supported | qualified (kept, visibly labelled as an
- * inference / unverified figure / superseded text) | removed. The answer's
- * grounding level is full (every claim supported), partial (something was
- * qualified or removed), or none (no supported claim survived — the pipeline
- * then shows the retrieved sources instead of the answer).
+ * OUTCOMES per sentence: supported | qualified (kept, visibly labelled) |
+ * removed. The answer's level is full (every claim supported), partial
+ * (something qualified or removed), or none (no supported claim survived —
+ * the pipeline then shows the retrieved sources instead).
  */
 
 export type GroundingIssue =
@@ -55,7 +70,12 @@ export type GroundingIssue =
   | "law_mismatch"
   | "weak_support"
   | "historical_unlabelled"
-  | "fabricated_url";
+  | "fabricated_url"
+  | "irrelevant_source"
+  | "contradiction"
+  | "missing_condition"
+  | "semantic_unsupported"
+  | "semantic_contradiction";
 
 export type ClaimKind = "quote" | "source_fact" | "inference" | "limitation";
 export type ClaimStatus = "supported" | "qualified" | "removed";
@@ -71,14 +91,20 @@ export type ClaimCheck = {
   support: number;
   /** The passage of the cited source that best supports the claim. */
   evidence: { ref: number; excerpt: string } | null;
+  /** Meaning-level findings (Phase 2.1), for the report and the logs. */
+  meaning?: MeaningIssue[];
 };
 
 export type GroundingLevel = "full" | "partial" | "none";
+
+/** One piece of the answer in output order; `claim` indexes `claims` when the piece is a checked claim. */
+export type Segment = { paragraph: number; text: string; claim: number | null };
 
 export type GroundingReport = {
   text: string;
   level: GroundingLevel;
   claims: ClaimCheck[];
+  segments: Segment[];
   counts: {
     claims: number;
     supported: number;
@@ -95,6 +121,8 @@ export const SUPPORT_MIN = 0.35;
 export const NUMBER_REDACTION = "[رقم غير مُتحقَّق منه]";
 export const INFERENCE_LABEL = " (استنتاج — لم يُتحقَّق من وروده نصاً في المصادر)";
 export const HISTORICAL_LABEL = " (نص سابق غير نافذ حالياً)";
+/** Pre-registered in eval/dataset.json (_heldout): contains "مع مراعاة الشروط والاستثناءات". */
+export const CONDITION_LABEL = " (مع مراعاة الشروط والاستثناءات الواردة في نص المصدر)";
 
 // Sentences that state a limitation of the sources rather than a legal rule.
 const LIMITATION_RE =
@@ -114,30 +142,6 @@ const HISTORICAL_CUE_RE = /سابق|ملغ|قبل التعديل|لم يعد|غ�
 const REF_RE = /\[(\d{1,2})\]/g;
 const URL_RE = /\bhttps?:\/\/[^\s)\]»"]+|\bwww\.[^\s)\]»"]+/gi;
 const QUOTE_RE = /"([^"\n]{2,1500})"|«([^»\n]{2,1500})»|“([^”\n]{2,1500})”/g;
-
-const STOP = new Set(
-  [
-    "في", "من", "على", "الى", "عن", "ان", "او", "ما", "هل", "هو", "هي", "التي", "الذي", "الذين", "هذا", "هذه", "ذلك",
-    "تلك", "كل", "اي", "مع", "بين", "قد", "لا", "لم", "لن", "ثم", "و", "كان", "كانت", "يكون", "تكون", "به", "بها",
-    "له", "لها", "فيه", "فيها", "عليه", "عليها", "منه", "منها", "وفقا", "وفق", "حسب", "لذلك", "ذلك", "كما", "اذا",
-    "حيث", "انه", "انها", "بان", "يمكن", "عند", "بعد", "قبل", "غير", "ايضا", "اما", "الا", "سوف", "مصدر", "المصدر",
-    "الخلاصه", "الشرح", "النص", "القانوني", "المحامي", "the", "a", "an", "of", "to", "in", "and", "or", "is", "are",
-  ].map((w) => foldForSearch(w))
-);
-
-function norm(text: string): string {
-  return foldForSearch(normalizeDigits(text))
-    .replace(/[^\p{L}\p{N}\s]/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function stems(text: string): string[] {
-  return norm(text)
-    .split(" ")
-    .filter((w) => w.length > 1 && !STOP.has(w) && !/^\d+$/.test(w))
-    .map((w) => stemArabicWord(w) || w);
-}
 
 /**
  * Splits a paragraph into sentences without breaking inside quotations or
@@ -199,22 +203,22 @@ function quotesIn(sentence: string): string[] {
 
 /** A quotation is genuine when each of its segments (split on an ellipsis) occurs verbatim, after folding, in the cited text. */
 export function quoteIsVerbatim(quote: string, sourceText: string): boolean {
-  const hay = ` ${norm(sourceText)} `;
+  const hay = ` ${normText(sourceText)} `;
   const segments = quote
     .split(/\.{3}|…/)
-    .map((s) => norm(s))
+    .map((s) => normText(s))
     .filter((s) => s.split(" ").length >= 3);
   if (segments.length === 0) return true; // nothing substantive to check
   return segments.every((seg) => hay.includes(` ${seg} `) || hay.includes(seg));
 }
 
-function sourceCorpus(c: RetrievedChunk): { text: string; numbers: Set<string> } {
+function sourceCorpus(c: RetrievedChunk): { text: string; numbers: Set<string>; values: Set<number> } {
   const meta = [c.source_title, c.law_name, c.law_number, c.article_number, c.decision_number, c.year, c.court, c.effective_date]
     .filter((x) => x !== null && x !== undefined)
     .join(" ");
   const text = `${meta}\n${c.chunk_text}`;
   const numbers = new Set([...normalizeDigits(text).matchAll(/\d+/g)].map((m) => m[0].replace(/^0+(?=\d)/, "")));
-  return { text, numbers };
+  return { text, numbers, values: numberValues(text) };
 }
 
 function bestEvidence(sentence: string, refs: number[], chunks: RetrievedChunk[]): { ref: number; excerpt: string } | null {
@@ -235,8 +239,13 @@ function bestEvidence(sentence: string, refs: number[], chunks: RetrievedChunk[]
 }
 
 type Options = {
-  /** The question — figures the lawyer wrote may be repeated in a limitation/correction sentence. */
+  /**
+   * The question. Figures the lawyer wrote may be repeated in a limitation
+   * sentence; and (Phase 2.1) every cited source must bear on it.
+   */
   question?: string;
+  /** 1-based refs of sources that are the exact article/decision the question asked for (always relevant). */
+  exactRefs?: Set<number>;
 };
 
 /**
@@ -245,17 +254,27 @@ type Options = {
  */
 export function groundAnswer(answer: string, chunks: RetrievedChunk[], opts: Options = {}): GroundingReport {
   const claims: ClaimCheck[] = [];
+  const segments: Segment[] = [];
   let redactedNumbers = 0;
   let strippedCitations = 0;
   const questionNumbers = new Set([...normalizeDigits(opts.question ?? "").matchAll(/\d+/g)].map((m) => m[0]));
+  const questionValues = numberValues(opts.question ?? "");
   const corpora = chunks.map(sourceCorpus);
+  const relevance = new Map<number, boolean>();
+  const isRelevant = (ref: number) => {
+    if (!opts.question) return true;
+    if (!relevance.has(ref)) {
+      const c = chunks[ref - 1];
+      relevance.set(ref, !!c && sourceIsRelevant(opts.question, c, { exactHit: opts.exactRefs?.has(ref) }));
+    }
+    return relevance.get(ref)!;
+  };
 
   const paragraphs = answer.split(/\n\s*\n|\n/);
-  const outParagraphs: string[] = [];
 
-  for (const paragraph of paragraphs) {
-    const sentencesOut: string[] = [];
+  paragraphs.forEach((paragraph, p) => {
     let previousRefs: number[] = [];
+    const push = (text: string, claim: number | null) => segments.push({ paragraph: p, text, claim });
 
     for (const raw of splitSentences(paragraph)) {
       // 1. Citation markers: drop any that do not denote a retrieved source.
@@ -276,21 +295,21 @@ export function groundAnswer(answer: string, chunks: RetrievedChunk[], opts: Opt
       const ownRefs = [...new Set([...sentence.matchAll(REF_RE)].map((m) => Number(m[1])))];
       const labelMatch = sentence.match(LABEL_RE);
       const body = sentence.replace(LABEL_RE, "").replace(REF_RE, "").trim();
-      const folded = norm(body);
+      const folded = normText(body);
 
       if (!body) {
         // A bare label ("الخلاصة:") — kept only if something follows it.
-        if (labelMatch) sentencesOut.push(sentence.trim());
+        if (labelMatch) push(sentence.trim(), null);
         continue;
       }
 
       const isLimitation = LIMITATION_RE.test(body) || labelMatch?.[1] === "حدود الإجابة";
-      const hasFigure = /\d/.test(normalizeDigits(body));
+      const hasFigure = /\d/.test(normalizeDigits(body)) || numberMentions(body).length > 0;
       const isClaim = !isLimitation && (LEGAL_CUE_RE.test(folded) || hasFigure);
 
       if (!isClaim && !isLimitation) {
         // Connective prose — no legal content to verify.
-        sentencesOut.push(sentence);
+        push(sentence, null);
         continue;
       }
 
@@ -304,59 +323,95 @@ export function groundAnswer(answer: string, chunks: RetrievedChunk[], opts: Opt
       const cited = refs.map((r) => chunks[r - 1]).filter(Boolean);
       const citedText = refs.map((r) => corpora[r - 1]?.text ?? "").join("\n");
       const citedNumbers = new Set(refs.flatMap((r) => [...(corpora[r - 1]?.numbers ?? [])]));
+      const citedValues = new Set(refs.flatMap((r) => [...(corpora[r - 1]?.values ?? [])]));
 
       // Figures: every number outside a quotation must come from the cited
-      // source (or, in a limitation sentence, from the question itself).
+      // source (or, in a limitation sentence, from the question itself) —
+      // digits and, since Phase 2.1, number words.
       const quoted = quotesIn(sentence);
-      let figureChecked = sentence;
-      for (const q of quoted) figureChecked = figureChecked.replace(q, " ");
-      const badNumbers = [...normalizeDigits(figureChecked.replace(REF_RE, " ")).matchAll(/\d+(?:[.,]\d+)?/g)]
+      let outsideQuotes = sentence;
+      for (const q of quoted) outsideQuotes = outsideQuotes.replace(q, " ");
+      const badNumbers = [...normalizeDigits(outsideQuotes.replace(REF_RE, " ")).matchAll(/\d+(?:[.,]\d+)?/g)]
         .map((m) => m[0])
         .filter((n) => {
           const bare = n.replace(/^0+(?=\d)/, "");
           if (citedNumbers.has(bare)) return false;
-          if (isLimitation && questionNumbers.has(bare)) return false;
+          // The source may write the same figure in words ("ثلاثون" for 30).
+          if (citedValues.has(Number(n.replace(",", ".")))) return false;
+          if (isLimitation && (questionNumbers.has(bare) || questionValues.has(Number(n.replace(",", "."))))) return false;
           return true;
         });
+      const badWordNumbers = numberMentions(outsideQuotes.replace(REF_RE, " "))
+        .filter((m) => m.source === "words")
+        .filter((m) => !citedValues.has(m.value) && !(isLimitation && questionValues.has(m.value)));
 
-      if (isLimitation) {
-        let text = normalizeDigits(sentence);
+      const redactFigures = (s: string): string => {
+        let t = normalizeDigits(s);
         for (const n of badNumbers) {
-          text = text.replace(numberPattern(n), NUMBER_REDACTION);
+          t = t.replace(numberPattern(n), NUMBER_REDACTION);
           redactedNumbers++;
         }
-        claims.push({ text, refs, kind: "limitation", status: badNumbers.length ? "qualified" : "supported", issues: badNumbers.length ? ["unsupported_number"] : [], support: 1, evidence: null });
-        sentencesOut.push(text);
+        for (const m of badWordNumbers) {
+          const words = normalizeDigits(outsideQuotes).slice(m.start, m.end);
+          if (words && t.includes(words)) {
+            t = t.replace(words, NUMBER_REDACTION);
+            redactedNumbers++;
+          }
+        }
+        return t;
+      };
+
+      if (isLimitation) {
+        const text = redactFigures(sentence);
+        const flagged = badNumbers.length + badWordNumbers.length > 0;
+        claims.push({ text, refs, kind: "limitation", status: flagged ? "qualified" : "supported", issues: flagged ? ["unsupported_number"] : [], support: 1, evidence: null });
+        push(text, claims.length - 1);
         continue;
       }
 
+      const remove = (kind: ClaimKind, extra: GroundingIssue[], support = 0, meaning?: MeaningIssue[]) => {
+        claims.push({ text: sentence, refs, kind, status: "removed", issues: [...issues, ...extra], support, evidence: null, meaning });
+      };
+
       if (refs.length === 0 || cited.length === 0) {
-        claims.push({ text: sentence, refs: [], kind: "source_fact", status: "removed", issues: [...issues, "no_citation"], support: 0, evidence: null });
+        remove("source_fact", ["no_citation"]);
         continue;
       }
 
       // Quotations must be verbatim.
       if (quoted.some((q) => !quoteIsVerbatim(q, citedText))) {
-        claims.push({ text: sentence, refs, kind: "quote", status: "removed", issues: [...issues, "fabricated_quote"], support: 0, evidence: null });
+        remove("quote", ["fabricated_quote"]);
         continue;
       }
 
       // A law the sentence names must be the law of a source it cites.
       const lawRefs = extractAllLawReferences(body);
       if (lawRefs.some((lr) => !cited.some((c) => sourceIsLaw(lr, { lawName: c.law_name, title: c.source_title })))) {
-        claims.push({ text: sentence, refs, kind: "source_fact", status: "removed", issues: [...issues, "law_mismatch"], support: 0, evidence: null });
+        remove("source_fact", ["law_mismatch"]);
         continue;
       }
 
-      let text = normalizeDigits(sentence);
-      for (const n of badNumbers) {
-        text = text.replace(numberPattern(n), NUMBER_REDACTION);
-        redactedNumbers++;
+      // Phase 2.1 — the cited source must bear on the question.
+      if (!refs.some(isRelevant)) {
+        remove("source_fact", ["irrelevant_source"]);
+        continue;
       }
-      if (badNumbers.length) issues.push("unsupported_number");
+
+      // Phase 2.1 — no contradiction of the source outside quotations: a
+      // penalty type / mental element it does not state, or a reversed
+      // permission/obligation/penalty verb.
+      const outsideBody = quoted.reduce((acc, q) => acc.replace(q, " "), body);
+      const meaning = meaningConflicts(outsideBody, refs.map((r) => chunks[r - 1]?.chunk_text ?? "").join("\n"));
+      if (meaning.length > 0) {
+        remove("source_fact", ["contradiction"], 0, meaning);
+        continue;
+      }
+
+      let text = redactFigures(sentence);
+      if (badNumbers.length + badWordNumbers.length > 0) issues.push("unsupported_number");
 
       // Lexical support of the words outside quotations.
-      const words = stems(quoted.reduce((acc, q) => acc.replace(q, " "), body));
+      const words = stems(outsideBody);
       const sourceWords = new Set(stems(citedText));
       const support = words.length < 3 ? 1 : words.filter((w) => sourceWords.has(w)).length / words.length;
       const labelledInference = INFERENCE_MARK_RE.test(folded);
@@ -386,18 +441,48 @@ export function groundAnswer(answer: string, chunks: RetrievedChunk[], opts: Opt
         text = appendLabel(text, HISTORICAL_LABEL);
       }
 
+      // Phase 2.1 — a rule stated without the condition/exception its source
+      // sentence attaches is labelled (not removed: it is incomplete, not false).
+      if (kind !== "quote" && !issues.includes("weak_support")) {
+        const claimStems = stems(outsideBody);
+        const dropped = refs
+          .map((r) => chunks[r - 1]?.chunk_text ?? "")
+          .flatMap((t) => matchingSentences(outsideBody, t))
+          .filter((m) => m.overlap >= 2 && m.overlap >= 0.4 * claimStems.length)
+          .map((m) => droppedCondition(outsideBody, m.sentence))
+          .find((c) => c !== null);
+        if (dropped) {
+          issues.push("missing_condition");
+          text = appendLabel(text, CONDITION_LABEL);
+        }
+      }
+
       const status: ClaimStatus = issues.some(
-        (i) => i === "unsupported_number" || i === "weak_support" || i === "historical_unlabelled" || i === "fabricated_url"
+        (i) => i === "unsupported_number" || i === "weak_support" || i === "historical_unlabelled" || i === "fabricated_url" || i === "missing_condition"
       )
         ? "qualified"
         : "supported";
       claims.push({ text, refs, kind, status, issues, support: Number(support.toFixed(3)), evidence: bestEvidence(body, refs, chunks) });
-      sentencesOut.push(text);
+      push(text, claims.length - 1);
       previousRefs = refs;
     }
+  });
 
+  return assemble(claims, segments, { redactedNumbers, strippedCitations });
+}
+
+/** Rebuilds text, counts and level from claims + segments (after any change to either). */
+function assemble(claims: ClaimCheck[], segments: Segment[], tallies: { redactedNumbers: number; strippedCitations: number }): GroundingReport {
+  const byParagraph = new Map<number, string[]>();
+  for (const s of segments) {
+    if (s.claim !== null && claims[s.claim]?.status === "removed") continue;
+    const text = s.claim !== null ? claims[s.claim].text : s.text;
+    byParagraph.set(s.paragraph, [...(byParagraph.get(s.paragraph) ?? []), text]);
+  }
+  const outParagraphs: string[] = [];
+  for (const [, pieces] of [...byParagraph].sort((a, b) => a[0] - b[0])) {
+    const joined = pieces.join(" ").trim();
     // Drop a paragraph reduced to a bare label.
-    const joined = sentencesOut.join(" ").trim();
     if (joined.replace(LABEL_RE, "").trim()) outParagraphs.push(joined);
   }
 
@@ -405,16 +490,63 @@ export function groundAnswer(answer: string, chunks: RetrievedChunk[], opts: Opt
   const supported = counted.filter((c) => c.status === "supported").length;
   const qualified = counted.filter((c) => c.status === "qualified").length;
   const removed = counted.filter((c) => c.status === "removed").length;
-  const level: GroundingLevel =
-    supported + qualified === 0 ? "none" : qualified === 0 && removed === 0 ? "full" : "partial";
+  const level: GroundingLevel = supported + qualified === 0 ? "none" : qualified === 0 && removed === 0 ? "full" : "partial";
 
   return {
     text: outParagraphs.join("\n\n").trim(),
     level,
     claims,
-    counts: { claims: counted.length, supported, qualified, removed, redactedNumbers, strippedCitations },
+    segments,
+    counts: { claims: counted.length, supported, qualified, removed, ...tallies },
   };
 }
+
+// ---------------------------------------------------------------- semantic verdicts
+
+export type ClaimVerdict = "SUPPORTED" | "PARTIAL" | "CONTRADICTED" | "UNSUPPORTED" | "IRRELEVANT";
+
+/** The claims the semantic judge rules on: every shown, non-limitation claim, keyed by its index in `claims`. */
+export function claimsForJudge(report: GroundingReport): { index: number; text: string; refs: number[] }[] {
+  return report.claims
+    .map((c, index) => ({ c, index }))
+    .filter(({ c }) => c.kind !== "limitation" && c.status !== "removed")
+    .map(({ c, index }) => ({ index, text: c.text, refs: c.refs }));
+}
+
+/**
+ * Applies the semantic judge's per-claim verdicts: CONTRADICTED / UNSUPPORTED /
+ * IRRELEVANT remove the claim, PARTIAL labels it (a condition or exception is
+ * missing), SUPPORTED leaves it. Returns a new report.
+ */
+export function applyClaimVerdicts(report: GroundingReport, verdicts: Map<number, ClaimVerdict>): GroundingReport {
+  const claims = report.claims.map((c) => ({ ...c, issues: [...c.issues] }));
+  for (const [index, verdict] of verdicts) {
+    const c = claims[index];
+    if (!c || c.kind === "limitation" || c.status === "removed") continue;
+    if (verdict === "CONTRADICTED") {
+      c.status = "removed";
+      c.issues.push("semantic_contradiction");
+    } else if (verdict === "UNSUPPORTED") {
+      c.status = "removed";
+      c.issues.push("semantic_unsupported");
+    } else if (verdict === "IRRELEVANT") {
+      c.status = "removed";
+      c.issues.push("irrelevant_source");
+    } else if (verdict === "PARTIAL" && !c.issues.includes("missing_condition")) {
+      c.status = "qualified";
+      c.issues.push("missing_condition");
+      c.text = appendLabel(c.text, CONDITION_LABEL);
+    }
+  }
+  return assemble(claims, report.segments, { redactedNumbers: report.counts.redactedNumbers, strippedCitations: report.counts.strippedCitations });
+}
+
+/** Caps a report's level ("full" → "partial") without touching its claims. */
+export function capLevel(level: GroundingLevel, cap: "partial"): GroundingLevel {
+  return level === "full" ? cap : level;
+}
+
+// ---------------------------------------------------------------- helpers
 
 /** True when stripping out-of-range markers changed the sentence. */
 function strippedHere(raw: string, sentence: string): boolean {

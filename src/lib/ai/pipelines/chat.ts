@@ -38,7 +38,10 @@ import {
 import { redactCitations, stripInvalidCitations, verifyCitedNumbers } from "../guard";
 import { verifyAndCleanCitations } from "../citation-verify";
 import { verifyAnswer, type VerificationResult } from "../self-verify";
-import { groundAnswer, type ClaimCheck, type GroundingLevel } from "../grounding";
+import { applyClaimVerdicts, capLevel, claimsForJudge, groundAnswer, type ClaimCheck, type ClaimVerdict, type GroundingLevel, type GroundingReport } from "../grounding";
+import { extractPremise, premiseConflicts, questionTopicStems, sourceIsRelevant } from "../legal-semantics";
+import { normalizeDigits } from "../../ingest/clean";
+import { extractAllLawReferences } from "../../search/law-reference";
 import { checkJurisdiction, COMPARISON_NOTICE_AR, isMostlyLatin } from "../jurisdiction";
 import { detectPromptLeak, PROMPT_LEAK_REPLACEMENT } from "../untrusted";
 import type { RequestOutcome } from "../request";
@@ -137,6 +140,36 @@ export type ChatOutcome = {
 };
 
 type Emit = (event: string, data: unknown) => void;
+
+/** Pre-registered marker (eval/dataset.json _heldout) — "تنبيه بشأن مقدمة السؤال". Never echoes what the question asserted. */
+export const PREMISE_NOTICE =
+  "تنبيه بشأن مقدمة السؤال: ما يفترضه السؤال عن مضمون النص لا يتطابق مع النص كما هو محفوظ في قاعدة البيانات (في رقم أو عقوبة أو حكم)؛ الإجابة أدناه مبنية على النص نفسه لا على ما افترضه السؤال.";
+/** Shown when the semantic check (the judge's per-claim verdicts) did not run or did not cover every claim. */
+export const SEMANTIC_UNVERIFIED_NOTICE =
+  "تنبيه: لم يكتمل التحقق الدلالي الآلي من مطابقة كل جملة لمصدرها؛ راجع النصوص المستشهد بها قبل الاعتماد على الإجابة.";
+const LAW_NOT_IN_CORPUS_AR =
+  "القانون الذي يشير إليه السؤال غير موجود في قاعدة البيانات القانونية المتاحة، لذلك لا يمكن تقديم نص المادة المطلوبة من مصدر موثّق، ولن تُستبدل بها مادة من تشريع آخر. راجع النص الرسمي لذلك القانون.";
+const LAW_NOT_IN_CORPUS_EN =
+  "The law this question refers to is not in the available legal database, so the article cannot be quoted from a verified source, and no other law's article is substituted for it. Please consult the official text of that law.";
+const LAW_NOT_IN_CORPUS_CONCEPT_AR =
+  "القانون الذي يشير إليه السؤال غير موجود في قاعدة البيانات القانونية المتاحة، لذلك لا يمكن الإجابة من نصه، ولن تُستخدم نصوص تشريعات أخرى بديلاً عنه. راجع النص الرسمي لذلك القانون.";
+const LAW_NOT_IN_CORPUS_CONCEPT_EN =
+  "The law this question refers to is not in the available legal database, so the question cannot be answered from its text, and other laws are not used in its place. Please consult the official text of that law.";
+/** Phase 2.1: the question cites an article the law does not have, but asks more than its text. */
+export const ARTICLE_MISSING_NOTICE_AR =
+  "تنبيه: رقم المادة المذكور في السؤال غير موجود في نص هذا القانون كما هو محفوظ في قاعدة البيانات؛ الإجابة أدناه من المواد الموجودة فعلاً، ولا يُنسب إلى ذلك الرقم شيء.";
+const ARTICLE_MISSING_NOTICE_EN =
+  "Notice: the article number cited in the question does not exist in that law as held in the database; the answer below is from the articles that do exist, and nothing is attributed to that number.";
+/** Phase 2.1: the question cited a law by a number/year that belongs to a superseded version. */
+export const CITED_SUPERSEDED_AR =
+  "تنبيه: رقم القانون وسنته كما وردا في السؤال يشيران إلى نص سابق غير نافذ حالياً؛ الإجابة من ذلك النص كما طُلب، وهي لا تمثّل النص النافذ.";
+const CITED_SUPERSEDED_EN =
+  "Notice: the law number/year cited in the question belong to a previous text that is no longer in force; the answer is from that text, as asked, and does not state the law in force.";
+/** Phase 2.1: the named law is in the corpus, but no version of it carries the cited number/year. */
+export const CITATION_MISMATCH_AR =
+  "تنبيه: رقم القانون أو سنته كما وردا في السؤال لا يطابقان أي نسخة من هذا القانون في قاعدة البيانات؛ الإجابة من نص القانون المسمّى كما هو محفوظ فيها.";
+const CITATION_MISMATCH_EN =
+  "Notice: the law number or year cited in the question does not match any version of that law in the database; the answer is from the named law's text as held there.";
 
 // ---------------------------------------------------------------- helpers
 
@@ -267,21 +300,70 @@ function trimClaims(claims: ClaimCheck[]): ChatOutcome["claims"] {
   }));
 }
 
-type GroundedText = { text: string; level: GroundingLevel; claims: ClaimCheck[]; stripped: number; redacted: number; verifiedNumbers: number };
+type GroundedText = {
+  text: string;
+  level: GroundingLevel;
+  claims: ClaimCheck[];
+  stripped: number;
+  redacted: number;
+  verifiedNumbers: number;
+  report: GroundingReport;
+};
 
-/** citation range → article/decision numbers vs cited source → claim-level grounding. */
+function fromReport(report: GroundingReport, base: Omit<GroundedText, "text" | "level" | "claims" | "report">): GroundedText {
+  return { ...base, text: report.text, level: report.level, claims: report.claims, report };
+}
+
+/** citation range → article/decision numbers vs cited source → claim-level grounding (incl. relevance to the question). */
 function checkAnswer(text: string, chunks: RetrievedChunk[], question: string): GroundedText {
   const { text: inRange, strippedCount } = stripInvalidCitations(text, chunks.length);
   const numbers = verifyCitedNumbers(inRange, chunks);
-  const g = groundAnswer(numbers.text, chunks, { question });
-  return {
-    text: g.text,
-    level: g.level,
-    claims: g.claims,
+  // Sources relevant by construction: the article asked for, and one a relevant article refers to.
+  const exactRefs = new Set(chunks.flatMap((c, i) => (c.exact_hit || c.companion_of ? [i + 1] : [])));
+  const g = groundAnswer(numbers.text, chunks, { question, exactRefs });
+  return fromReport(g, {
     stripped: strippedCount + g.counts.strippedCitations,
     redacted: numbers.redactedCount + g.counts.redactedNumbers,
     verifiedNumbers: numbers.verifiedCount,
-  };
+  });
+}
+
+/** Numbers the judge's per-claim verdicts refer to ↔ indices of the claims in the report. */
+function judgeClaimsOf(checked: GroundedText): { n: number; index: number; text: string; refs: number[] }[] {
+  return claimsForJudge(checked.report).map((c, i) => ({ ...c, n: i + 1 }));
+}
+
+function withVerdicts(checked: GroundedText, judged: { n: number; index: number }[], v: VerificationResult | null): GroundedText {
+  if (!v || v.status !== "ok" || v.claimVerdicts.size === 0) return checked;
+  const byIndex = new Map<number, ClaimVerdict>();
+  for (const j of judged) {
+    const verdict = v.claimVerdicts.get(j.n);
+    if (verdict) byIndex.set(j.index, verdict);
+  }
+  return fromReport(applyClaimVerdicts(checked.report, byIndex), checked);
+}
+
+/**
+ * What the question asserts about a source ("بما أن المادة 20 … ستين يوماً")
+ * checked against that source: the exact article it names, else the sources
+ * the answer cites. True when every such source contradicts it.
+ */
+function premiseContradicted(question: string, chunks: RetrievedChunk[], citedRefs: Set<number>): boolean {
+  const premise = extractPremise(question);
+  if (!premise) return false;
+  const aboutSource = /ماد[ةه]\s*\(?\s*\d+/.test(normalizeDigits(premise)) || extractAllLawReferences(premise).length > 0;
+  if (!aboutSource) return false; // a statement of the case's facts, not of the law
+  const articles = [...normalizeDigits(premise).matchAll(/ماد[ةه]\s*\(?\s*(\d+)/g)].map((m) => m[1]);
+  let targets = articles.length ? chunks.filter((c) => c.exact_hit && c.article_number && articles.includes(normalizeDigits(c.article_number))) : [];
+  if (targets.length === 0) targets = chunks.filter((_, i) => citedRefs.has(i + 1));
+  if (targets.length === 0) return false;
+  return targets.every((c) => {
+    const meta = new Set(
+      [c.article_number, c.law_number, c.year, c.decision_number]
+        .flatMap((x) => (x === null || x === undefined ? [] : [...normalizeDigits(String(x)).matchAll(/\d+/g)].map((m) => Number(m[0]))))
+    );
+    return premiseConflicts(premise, c.chunk_text, meta).length > 0;
+  });
 }
 
 // ---------------------------------------------------------------- pipeline
@@ -385,21 +467,22 @@ export async function runChatPipeline(input: ChatInput, caller: Caller, emit: Em
   const shortCircuit = (answer: string, mode: ChatMode) =>
     finish({ answer, mode, groundingLevel: "none", grounded: false, sources: [], claims: [], confidence: null, verification: null, gapTopics: [], analysis }, 0);
   if (search?.requestedLawMissing) {
-    return shortCircuit(
-      english
-        ? "The law this question refers to is not in the available legal database, so the article cannot be quoted from a verified source, and no other law's article is substituted for it. Please consult the official text of that law."
-        : "القانون الذي يشير إليه السؤال غير موجود في قاعدة البيانات القانونية المتاحة، لذلك لا يمكن تقديم نص المادة المطلوبة من مصدر موثّق، ولن تُستبدل بها مادة من تشريع آخر. راجع النص الرسمي لذلك القانون.",
-      "law_not_in_corpus"
-    );
+    return shortCircuit(english ? LAW_NOT_IN_CORPUS_EN : LAW_NOT_IN_CORPUS_AR, "law_not_in_corpus");
   }
-  if (search?.requestedArticleMissing) {
-    return shortCircuit(
+  const articleMissing = () =>
+    shortCircuit(
       english
         ? "The requested article number does not appear in the text of that law as held in the database. No other article is offered in its place; please check the article number."
         : "رقم المادة المطلوب غير موجود في نص هذا القانون كما هو محفوظ في قاعدة البيانات، ولن تُعرض مادة أخرى على أنها هي. تحقّق من رقم المادة.",
       "article_not_in_corpus"
     );
-  }
+  // Phase 2.1: a missing article ends a LOOKUP ("ما نص المادة 999 …؟"). A
+  // question that asks more than that ("… استشهد بالمادة 999 عند الإجابة عن
+  // مدة الإشعار لإنهاء الإيجار") is answered from the articles that exist,
+  // with a notice that the cited number is not in the law — nothing is
+  // attributed to it (and the guard redacts it if a model writes it).
+  const missingArticleButAsksMore = !!search?.requestedArticleMissing && questionTopicStems(question).length >= 2;
+  if (search?.requestedArticleMissing && !missingArticleButAsksMore) return articleMissing();
   if (search?.requestedDecisionMissing) {
     return shortCircuit(
       english
@@ -408,10 +491,11 @@ export async function runChatPipeline(input: ChatInput, caller: Caller, emit: Em
       "decision_not_in_corpus"
     );
   }
+  // Phase 2.1: a named law the corpus does not hold is "not in the database"
+  // for conceptual questions too — answering from other laws' text (with a
+  // notice) presented them as if they could stand in for it.
   if (search?.lawNotFound) {
-    notices.push(
-      "تنبيه: لم يُعثر في قاعدة البيانات على التشريع الذي يذكره السؤال بالاسم؛ المصادر المعروضة أدناه من تشريعات أخرى وقد لا تنطبق عليه."
-    );
+    return shortCircuit(english ? LAW_NOT_IN_CORPUS_CONCEPT_EN : LAW_NOT_IN_CORPUS_CONCEPT_AR, "law_not_in_corpus");
   }
   if (search?.articleAmbiguity) {
     const { article, laws } = search.articleAmbiguity;
@@ -430,6 +514,22 @@ export async function runChatPipeline(input: ChatInput, caller: Caller, emit: Em
       },
       chunks.length
     );
+  }
+
+  // Phase 2.1: what the lawyer's own citation of the law's number/year told
+  // retrieval — a superseded version was asked for (and searched), or the
+  // number/year matches no version of the named law.
+  if (search?.citedVersion && !search.citedVersion.current) notices.push(english ? CITED_SUPERSEDED_EN : CITED_SUPERSEDED_AR);
+  if (search?.citationMismatch) notices.push(english ? CITATION_MISMATCH_EN : CITATION_MISMATCH_AR);
+
+  // Phase 2.1: a source that does not bear on the question (no shared subject
+  // matter; a short-title/commencement article) is never handed to the model
+  // as evidence — grounding would reject any answer built on it anyway.
+  // An article carried because a relevant one refers to it (companion_of) is relevant through it.
+  chunks = chunks.filter((c) => sourceIsRelevant(question, c, { exactHit: c.exact_hit || !!c.companion_of }));
+  if (missingArticleButAsksMore) {
+    if (chunks.length === 0) return articleMissing();
+    notices.push(english ? ARTICLE_MISSING_NOTICE_EN : ARTICLE_MISSING_NOTICE_AR);
   }
 
   if (chunks.length === 0) {
@@ -540,6 +640,7 @@ export async function runChatPipeline(input: ChatInput, caller: Caller, emit: Em
   let verification: VerificationResult | null = null;
   let repaired = false;
   if (env.selfVerification && checked.level !== "none") {
+    const judged = judgeClaimsOf(checked);
     verification = await verifyAnswer({
       question,
       chunks,
@@ -547,7 +648,9 @@ export async function runChatPipeline(input: ChatInput, caller: Caller, emit: Em
       citationCheck: { verifiedCount: checked.verifiedNumbers, redactedCount: checked.redacted },
       isRepairAttempt: false,
       knownGaps: gaps,
+      claims: judged.map(({ n, text, refs }) => ({ n, text, refs })),
     });
+    checked = withVerdicts(checked, judged, verification);
     if (verification.action === "regenerate") {
       try {
         const rp = buildRepairPrompt(question, chunks, checked.text, verification.issues);
@@ -560,7 +663,8 @@ export async function runChatPipeline(input: ChatInput, caller: Caller, emit: Em
             { maxTokens: 1200, purpose: "repair" }
           )
         ).text;
-        const repairChecked = checkAnswer(extractGapsAndClean(repairRaw, question).cleaned, chunks, question);
+        let repairChecked = checkAnswer(extractGapsAndClean(repairRaw, question).cleaned, chunks, question);
+        const repairJudged = judgeClaimsOf(repairChecked);
         const second = await verifyAnswer({
           question,
           chunks,
@@ -568,7 +672,9 @@ export async function runChatPipeline(input: ChatInput, caller: Caller, emit: Em
           citationCheck: { verifiedCount: repairChecked.verifiedNumbers, redactedCount: repairChecked.redacted },
           isRepairAttempt: true,
           knownGaps: gaps,
+          claims: repairJudged.map(({ n, text, refs }) => ({ n, text, refs })),
         });
+        repairChecked = withVerdicts(repairChecked, repairJudged, second);
         repaired = true;
         verification = second;
         if (second.action === "return" && repairChecked.level !== "none") {
@@ -583,6 +689,17 @@ export async function runChatPipeline(input: ChatInput, caller: Caller, emit: Em
   }
 
   if (checked.level === "none") return sourcesOnly(verification, repaired);
+
+  // "full" means every claim passed the deterministic checks AND the semantic
+  // judge ruled on every one of them. Without that second check (disabled,
+  // failed, or a claim left unjudged) the answer is at most "partial".
+  const semanticallyVerified = env.selfVerification && verification?.status === "ok" && verification.claimsJudged;
+  if (!semanticallyVerified && checked.level === "full") {
+    checked = { ...checked, level: capLevel(checked.level, "partial") };
+    notices.push(SEMANTIC_UNVERIFIED_NOTICE);
+  }
+
+  if (premiseContradicted(question, chunks, citedRefs(checked.text))) notices.push(PREMISE_NOTICE);
 
   checks.strippedCitations += checked.stripped;
   checks.redactedNumbers += checked.redacted;
@@ -646,6 +763,7 @@ export async function runChatPipeline(input: ChatInput, caller: Caller, emit: Em
 
   function sourcesOnly(v: VerificationResult | null = null, rep = false): ChatOutcome {
     const text = buildDirectSourceAnswer(chunks);
+    if (premiseContradicted(question, chunks, new Set(chunks.map((_, i) => i + 1)))) notices.push(PREMISE_NOTICE);
     return finish(
       {
         answer: text,

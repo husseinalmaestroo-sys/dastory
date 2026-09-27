@@ -8,8 +8,22 @@ import { normalizeQuery } from "./normalize";
 import { getCachedEmbedding, setCachedEmbedding } from "./embedding-cache";
 import { stemArabicText, stemArabicWord } from "./arabic-stem";
 import { localRerank } from "./local-rerank";
-import { parseIntent, resolveVersionScope } from "./intent";
+import { parseIntent, resolveVersionScope, stripArticleReferences } from "./intent";
 import { extractLawReference, resolveLawReference } from "./law-reference";
+import {
+  asksAboutTitleOrCommencement,
+  definesQuestionTerm,
+  hasLexicalEvidence,
+  isBoilerplateArticle,
+  questionTopicStems,
+  questionTopicWords,
+  stripLawNames,
+  matchedTopicStems,
+  matchConcepts,
+  commonTopicStems,
+  questionConcepts,
+  questionTopicText,
+} from "../ai/legal-semantics";
 import { getRerankProvider } from "../ai/rerank";
 import { resolveThresholds, gateChunk, computeConfidence, type ConfidenceResult } from "./confidence";
 import type { QueryType } from "./query-understanding";
@@ -174,6 +188,14 @@ export type SearchResult = {
    * model call) rather than answering from an arbitrary one.
    */
   articleAmbiguity?: { article: string; laws: string[] } | null;
+  /**
+   * Phase 2.1: the question cited the law's number/year and that picked out
+   * one version. `current: false` — the lawyer cited a superseded text, which
+   * is what was searched (and is labelled as not in force).
+   */
+  citedVersion?: { current: boolean } | null;
+  /** The named law was found, but no version of it carries the number/year the question cites. */
+  citationMismatch?: boolean;
 };
 
 export async function hybridSearch(
@@ -232,7 +254,9 @@ export async function hybridSearch(
   // Which law, if any, the question names — scopes the exact-article arm and
   // detects a request for a law the corpus does not hold (law-reference.ts).
   const extracted = env.lawScopedExact ? extractLawReference(question) : null;
-  const resolved = extracted ? await resolveLawReference(extracted) : null;
+  const resolution = extracted ? await resolveLawReference(extracted) : null;
+  // "القانون رقم 8" with no year matched several laws: names none of them.
+  const resolved = resolution && !resolution.ambiguous ? resolution : null;
   const lawRef = resolved?.ref ?? null;
   const lawSourceIds = resolved ? resolved.sourceIds : null;
   const lawNotFound = !!(lawRef && lawSourceIds && lawSourceIds.length === 0);
@@ -242,8 +266,33 @@ export async function hybridSearch(
   // mis-parsed name must never block an answerable question.
   const requestedLawMissing = lawNotFound && intent.articleNumbers.length > 0 ? lawRef!.display : null;
 
-  const searchText = expansion?.searchText?.trim() || question;
-  const orGroup = expansion?.orGroup ?? "";
+  // Phase 2.1 — LAW-SCOPED RETRIEVAL. A question that names a law that is in
+  // the corpus is answered from that law: the ranked arms (vector, keyword,
+  // stem) are restricted to its sources, and the law's own name is removed
+  // from the text they match. Unscoped, the name dominated the match: every
+  // law's short-title article ("يسمى هذا القانون قانون … التجريبي") shares it,
+  // so "ما مدة الإجازة السنوية في قانون العمل؟" retrieved OTHER laws' article 1
+  // and no labour article at all (held-out evaluation, before this change).
+  // Within one law the lexical arms match ANY subject word (OR, ranked by how
+  // many match) instead of all of them (AND), which matched almost nothing in
+  // natural-language questions. A pure lookup ("ما نص المادة 17 من قانون
+  // العمل؟") has no subject words left and keeps the original text.
+  const scopeIds = lawSourceIds && lawSourceIds.length > 0 ? lawSourceIds : null;
+  const questionStems = questionTopicStems(question);
+  const topicStems = scopeIds ? questionStems : [];
+  const scoped = !!scopeIds && topicStems.length > 0;
+  // A question that names no law and cites no article (a paraphrase, a fact
+  // pattern): its subject words are also OR'd into the lexical arms, next to
+  // the whole-question match, so an article repeating most of them in a
+  // different order is found at all (Phase 2.1). Admission stays strict —
+  // see hasLexicalEvidence below.
+  const unscopedTopical = !scopeIds && !intent.isLookup && questionStems.length >= 3;
+  const topicText = scoped ? stripLawNames(question) : question;
+  const baseSearchText = expansion?.searchText?.trim() || question;
+  const searchText = scoped ? stripLawNames(baseSearchText) || topicText : baseSearchText;
+  const topicOr = scoped || unscopedTopical ? questionTopicWords(question).join(" | ") : "";
+  const orGroup = scoped || unscopedTopical ? [topicOr, expansion?.orGroup ?? ""].filter(Boolean).join(" | ") : (expansion?.orGroup ?? "");
+  const keywordOrOnly = scoped && orGroup !== "";
 
   // Reranking widens how deep the arms dig (50 candidates instead of 30) so the
   // cross-encoder (or the local composite reranker) has something to choose
@@ -277,11 +326,19 @@ export async function hybridSearch(
     setCachedEmbedding(searchText, embeddingVector, provider.model);
   }
   const queryVector = toVector(embeddingVector);
-  const folded = foldForSearch(question);
+  const folded = foldForSearch(topicText);
   // stemArabicText wants ta-marbuta still intact (see arabic-stem.ts's header
   // comment), so it runs on `question` (already normalizeQuery'd, unfolded) —
   // NOT on `folded` above.
-  const stemmed = stemArabicText(question);
+  const stemmedPlain = stemArabicText(topicText);
+  const stemmedOr = scoped || unscopedTopical
+    ? stemArabicText(questionTopicText(question))
+        .split(/\s+/)
+        .filter((w) => w.length > 1 && /^[\p{L}\p{N}]+$/u.test(w))
+        .join(" | ")
+    : "";
+  const stemOrOnly = (scoped || unscopedTopical) && stemmedOr !== "";
+  const stemmed = stemOrOnly ? stemmedOr : stemmedPlain;
   const topicHints = expansion?.legalArea ? (AREA_TOPICS[expansion.legalArea] ?? null) : null;
 
   // Filters come from the caller (UI dropdowns) first, then from what the
@@ -310,7 +367,12 @@ export async function hybridSearch(
   // explicitly-historical question lifts that and, if a year was given, caps by
   // effective_date. A UI toggle can force it via filters.includeHistorical.
   const scope = resolveVersionScope(intent);
-  const currentOnly = filters.includeHistorical ? false : scope.currentOnly;
+  // A question that cites a superseded version by its number/year ("قانون
+  // العمل رقم 5 لسنة 2090") asks for that text: the in-force filter would
+  // otherwise leave the pinned scope empty. Answers from it are labelled as
+  // not in force (prompts.ts, grounding.ts).
+  const citedHistorical = !!resolved?.pinned && resolved.pinnedCurrent === false;
+  const currentOnly = filters.includeHistorical || citedHistorical ? false : scope.currentOnly;
   const asOfDate = scope.asOfDate;
 
   const articleNumbers = intent.articleNumbers.length ? intent.articleNumbers : null;
@@ -331,6 +393,9 @@ export async function hybridSearch(
     env.allowSyntheticCorpus,                          // $18 synthetic fixtures allowed?
     env.legacyEmbeddingModel,                          // $19 model assumed for untagged vectors
     provider.model,                                    // $20 model of the query vector
+    scoped ? scopeIds : null,                          // $21 ranked-arm scope: the named law (Phase 2.1)
+    keywordOrOnly,                                     // $22 keyword arm: OR of subject words only
+    stemOrOnly,                                        // $23 stem arm: OR of stems
   ]);
 
   // Rank within each arm from the score it returned — a plain ORDER BY...LIMIT
@@ -465,6 +530,12 @@ export async function hybridSearch(
       // either the topic-boost or a reranker built on top of it.
       if (r.topic_hit) score += 0.015;
 
+      // Phase 2.1: a definition question ("ما تعريف الإيجار؟", "ما المقصود
+      // بـ…") is answered by the article that defines the term — "الإيجار عقد
+      // يلتزم بمقتضاه …" or "يقصد بـ…". Same size of nudge as the topic match,
+      // among chunks already found; the gate below is unchanged.
+      if (expansion?.queryType === "legal_definition" && definesQuestionTerm(question, r.chunk_text)) score += 0.015;
+
       const matched_by: RetrievedChunk["matched_by"] =
         r.vector_rank !== null && r.keyword_rank !== null
           ? "both"
@@ -519,13 +590,71 @@ export async function hybridSearch(
     reranked: !!reranker || useLocalRerank,
     expanded: !!expansion?.orGroup,
   });
-  const gated = fused.filter((c) => gateChunk(c, c._exact, thresholds));
+  // Phase 2.1: a short-title / commencement article states no rule — it never
+  // competes for a substantive question (only an exact lookup of it, or a
+  // question about the law's name or commencement, returns it). And within a
+  // named law, a chunk that shares at least two of the question's subject
+  // words (one, if the question has only one) is admitted even when its
+  // similarity is under the floor calibrated for whole-corpus search.
+  // The expansion's statutory synonyms ("عقوبة" → "يعاقب") count as subject
+  // words here, as they already do in the keyword arm: noun and verb forms of
+  // one concept ("تهديد" / "هدد") do not share a light stem.
+  const asksTitle = asksAboutTitleOrCommencement(question);
+  const expansionStems = scoped
+    ? (expansion?.orGroup ?? "")
+        .split(/[|&]/)
+        .map((w) => foldForSearch(w.trim()))
+        .filter((w) => w.length > 1)
+        .map((w) => stemArabicWord(w) || w)
+    : [];
+  const admissible = fused.filter((c) => c._exact || asksTitle || !isBoilerplateArticle(c.chunk_text));
+  // Within a named law: a source sharing two of the question's concepts (one,
+  // if it has one) is admitted under the floor — provided one of them is not
+  // a word most of the law's candidates contain (commonTopicStems): the
+  // penal code's "عقوبة" or the lease law's "الإيجار" tells its articles
+  // apart no better than the law's name. When every concept is that common
+  // (a definition of the law's own subject), they count as they are.
+  const concepts = scoped ? questionConcepts(question, expansionStems) : [];
+  const matchedById = new Map(admissible.map((c) => [c.id, matchConcepts(question, concepts, c)]));
+  const common = commonTopicStems([...matchedById.values()]);
+  const allCommon = concepts.length > 0 && concepts.every((w) => common.has(w));
+  const needTopic = Math.min(2, concepts.length);
+  const topicAdmits = (c: (typeof admissible)[number]) => {
+    const m = matchedById.get(c.id)!;
+    return scoped && needTopic > 0 && m.length >= needTopic && (allCommon || m.some((w) => !common.has(w)));
+  };
+  // Ranking within a named law (Phase 2.1): the lexical arms' ts_rank has no
+  // notion of how common a word is, so the law's pervasive words ("الإيجار",
+  // "عقوبة") decided the order among its articles — "ما عقوبة تهديد الغير"
+  // ranked "لا جريمة ولا عقوبة إلا بنص" above the article on threats. A nudge
+  // by the share of the question's INFORMATIVE concepts an article contains,
+  // capped at the size of one arm's rank-1 contribution (as topic_hit is).
+  if (scoped) {
+    const informative = concepts.filter((w) => !common.has(w));
+    if (informative.length > 0) {
+      for (const c of admissible) {
+        const hits = matchedById.get(c.id)!.filter((w) => !common.has(w)).length;
+        c.score += 0.015 * (hits / informative.length);
+      }
+      admissible.sort((a, b) => b.score - a.score);
+    }
+  }
+  // A question that names no law: the same "common" test over its candidates.
+  const commonUnscoped = unscopedTopical
+    ? commonTopicStems(admissible.map((c) => matchedTopicStems(question, c)))
+    : new Set<string>();
+  const gated = admissible.filter(
+    (c) =>
+      gateChunk(c, c._exact, thresholds) ||
+      topicAdmits(c) ||
+      (unscopedTopical && hasLexicalEvidence(question, c, commonUnscoped))
+  );
 
   // Whether the lawyer's named citation was actually found — the single
   // strongest confidence signal for a lookup, so it is captured before the
   // internal flag is stripped off.
   const exactHit = gated.some((c) => c._exact);
-  const ranked = gated.map(({ _exact, ...c }) => c);
+  const ranked = gated.map(({ _exact, ...c }) => ({ ...c, exact_hit: _exact }));
 
   const confidenceFor = (chunks: RetrievedChunk[], reranked: boolean) =>
     computeConfidence(chunks, { queryType: expansion?.queryType, exactHit, reranked });
@@ -557,12 +686,14 @@ export async function hybridSearch(
     requestedArticleMissing,
     requestedDecisionMissing,
     articleAmbiguity,
+    citedVersion: resolved?.pinned ? { current: resolved.pinnedCurrent !== false } : null,
+    citationMismatch: !!resolved?.citationMismatch,
   };
   // Confidence is computed on the retrieved chunks as ranked; article parts
   // are merged afterwards (a presentation step — it changes the text each
   // [n] carries, not which sources were found or how they scored).
   const finish = async (chunks: RetrievedChunk[], reranked: boolean, rerankTrace: RerankTrace | null): Promise<SearchResult> => ({
-    chunks: env.mergeArticleParts ? await mergeArticleParts(chunks) : chunks,
+    chunks: env.mergeArticleParts ? await mergeArticleParts(await withReferencedArticles(chunks)) : await withReferencedArticles(chunks),
     embeddingTokens: tokens,
     rerankTrace,
     confidence: confidenceFor(chunks, reranked),
@@ -712,6 +843,7 @@ const ARMS_SQL = `
       -- the same width would otherwise mix silently after a model change.
       -- Untagged (pre-Phase-2) rows count as LEGACY_EMBEDDING_MODEL.
       AND COALESCE(d.embedding_model, $19::text) = $20::text
+      AND ($21::bigint[] IS NULL OR d.source_id = ANY($21::bigint[]))
       ${FILTER_FRAGMENT}
     ORDER BY d.embedding <=> $1::vector
     LIMIT $5)
@@ -724,14 +856,20 @@ const ARMS_SQL = `
      FROM legal_documents d,
           LATERAL (
             SELECT CASE
+                     WHEN $22::boolean
+                       THEN to_tsquery('simple', $3::text)
                      WHEN $3::text IS NULL OR $3::text = ''
                        THEN websearch_to_tsquery('simple', $2)
                      ELSE websearch_to_tsquery('simple', $2) || to_tsquery('simple', $3::text)
                    END AS q
           ) kwq
     WHERE d.content_tsv @@ kwq.q
+      AND ($21::bigint[] IS NULL OR d.source_id = ANY($21::bigint[]))
       ${FILTER_FRAGMENT}
-    ORDER BY score DESC
+    -- d.id breaks ts_rank ties: without it, equal-scoring rows came back in
+    -- physical order, and the same question ranked differently after a
+    -- re-ingest (Phase 2.1: evaluation MRR varied between identical runs).
+    ORDER BY score DESC, d.id
     LIMIT $5)
   UNION ALL
   -- Third arm: the SAME question, light-stemmed (search/arabic-stem.ts),
@@ -745,10 +883,11 @@ const ARMS_SQL = `
   -- design used.
   (SELECT 'stem'::text AS arm, d.id, ts_rank(d.content_tsv_stemmed, stemq.q)::real AS score
      FROM legal_documents d,
-          LATERAL (SELECT plainto_tsquery('simple', $4) AS q) stemq
+          LATERAL (SELECT CASE WHEN $23::boolean THEN to_tsquery('simple', $4) ELSE plainto_tsquery('simple', $4) END AS q) stemq
     WHERE $4::text <> '' AND d.content_tsv_stemmed @@ stemq.q
+      AND ($21::bigint[] IS NULL OR d.source_id = ANY($21::bigint[]))
       ${FILTER_FRAGMENT}
-    ORDER BY score DESC
+    ORDER BY score DESC, d.id
     LIMIT $5)
   UNION ALL
   -- Citation lookups: fetched regardless of what the ranked arms found. Score
@@ -819,6 +958,18 @@ export async function getChunksByIds(ids: number[]): Promise<RetrievedChunk[]> {
 
 /** Cap on a merged article's text: long enough for any ordinary article with its provisos, short enough that eight sources still fit a prompt. */
 const MAX_MERGED_CHARS = 6000;
+/** Room for the exception/condition sentences an excerpt would otherwise cut off. */
+const PROVISO_BUDGET = 1500;
+// An exception or a condition attached to a rule.
+const PROVISO_RE = /(?:^|[\s،,(])(?:و|ف)?(?:إلا|الا|ما\s+لم|باستثناء|استثناء|يستثنى|ما\s+عدا|بشرط|شريطة|على\s+أن|مع\s+مراعاة|على\s+الرغم|خلافاً|خلافا)(?=[\s،,])/;
+
+/** Sentences of an article, whole (split after . ؛ ! ؟). */
+function splitSentences(text: string): string[] {
+  return text
+    .split(/(?<=[.؛!؟])\s+/)
+    .map((x) => x.trim())
+    .filter((x) => x.length > 0);
+}
 
 type PartRow = { id: number; source_id: number; chunk_index: number; article_number: string; chunk_text: string };
 
@@ -902,14 +1053,107 @@ export function mergeArticlePartsFrom(chunks: RetrievedChunk[], parts: PartRow[]
     for (let i = lo + 1; i <= hi; i++) text = joinWithOverlap(text, group[i].chunk_text);
     if (text.length > MAX_MERGED_CHARS) {
       // Too long to carry whole: keep the retrieved part with as much of its
-      // neighbours as fits, marked as an excerpt.
+      // neighbours as fits, marked as an excerpt — plus (Phase 2.1) every
+      // exception or condition sentence of the article that fell outside the
+      // excerpt, verbatim, so a rule never reaches the model without its
+      // proviso.
       const own = group[at].chunk_text;
       const start = Math.max(0, text.indexOf(own.slice(0, 200)) - Math.floor((MAX_MERGED_CHARS - own.length) / 2));
-      text = `…${text.slice(start, start + MAX_MERGED_CHARS)}…`;
+      const provisos = [...splitSentences(text.slice(0, start)), ...splitSentences(text.slice(start + MAX_MERGED_CHARS))].filter((x) =>
+        PROVISO_RE.test(x)
+      );
+      let extra = "";
+      for (const p of provisos) {
+        if (extra.length + p.length > PROVISO_BUDGET) break;
+        extra += ` … ${p}`;
+      }
+      text = `…${text.slice(start, start + MAX_MERGED_CHARS)}…${extra}`;
     }
     out.push({ ...c, chunk_text: text, merged_parts: hi - lo + 1 });
   }
   return out;
+}
+
+// ---------------------------------------------------------------- referenced articles
+
+// "مع مراعاة أحكام المادة (13)", "باستثناء ما ورد في المادة 13", "على الرغم مما
+// ورد في المادة 13", "العقوبة المنصوص عليها في المادة 40" — on folded text.
+const REFERENCE_RE =
+  /(?:مع\s+مراعاه|باستثناء|استثناء\s+من|علي\s+الرغم\s+مما\s+(?:ورد|جاء)\s+في|خلافا\s+(?:لما\s+(?:ورد|جاء)\s+في|ل)|المنصوص\s+عليه(?:ا|ما)?\s+في|المبينه\s+في|المشار\s+اليه(?:ا|ما)?\s+في)\s+(?:احكام\s+|ما\s+ورد\s+في\s+|نص\s+)?(?:ال)?ماده\s*\(?\s*(\d{1,4})\s*\)?([^.؛]{0,30})/g;
+
+/**
+ * Article numbers of the SAME law that an article makes itself subject to
+ * (Phase 2.1). "… المادة 13 من قانون العمل" names another law's article and is
+ * not included; "… من هذا القانون" is this one.
+ */
+export function referencedArticles(text: string): string[] {
+  const out: string[] = [];
+  for (const m of foldForSearch(text).matchAll(REFERENCE_RE)) {
+    const after = m[2] ?? "";
+    if (/^\s*من\s+(?:ال)?(?:قانون|نظام|تعليمات)/.test(after) && !/^\s*من\s+هذا/.test(after)) continue;
+    if (!out.includes(m[1])) out.push(m[1]);
+  }
+  return out;
+}
+
+/** At most this many referenced articles are carried per search. */
+const MAX_COMPANIONS = 2;
+
+const COMPANION_SQL = `
+  SELECT d.id, d.source_id, d.chunk_text, d.article_number, d.law_name, d.law_number,
+         d.part, d.chapter, d.section, d.court, d.decision_number, d.year, d.category,
+         d.keywords, d.legal_topics, s.title AS source_title, s.source_type, d.chunk_index,
+         s.is_current_version, s.effective_date::text AS effective_date, s.jurisdiction,
+         s.provenance, s.is_synthetic, s.source_url
+    FROM legal_documents d
+    JOIN legal_sources s ON s.id = d.source_id
+   WHERE (d.source_id, d.article_number) IN (SELECT * FROM unnest($1::bigint[], $2::text[]))
+     AND s.status = 'ready'
+     AND s.jurisdiction = 'JO'
+     AND (s.is_synthetic = false OR $3::boolean)
+   ORDER BY d.source_id, d.chunk_index
+`;
+
+/**
+ * A rule and its exception often sit in different articles: "مع مراعاة
+ * أحكام المادة 13 …" states a rule whose limits are in article 13, and
+ * "تضاعفت العقوبة المنصوص عليها في المادة 40" cannot be stated without article
+ * 40. When one of the top three results refers so to another article of its
+ * own law (same source, so the same version), that article is carried right
+ * after the results (Phase 2.1). A presentation step like merging article
+ * parts: confidence and ranking were decided before it.
+ */
+async function withReferencedArticles(chunks: RetrievedChunk[]): Promise<RetrievedChunk[]> {
+  const have = new Set(chunks.map((c) => `${Number(c.source_id)}|${c.article_number}`));
+  const wanted: { sourceId: number; article: string; of: number }[] = [];
+  for (const c of chunks.slice(0, 3)) {
+    if (!c.article_number || c.companion_of) continue;
+    for (const a of referencedArticles(c.chunk_text)) {
+      const k = `${Number(c.source_id)}|${a}`;
+      if (a === c.article_number || have.has(k) || wanted.some((w) => `${w.sourceId}|${w.article}` === k)) continue;
+      wanted.push({ sourceId: Number(c.source_id), article: a, of: c.id });
+    }
+  }
+  const pick = wanted.slice(0, MAX_COMPANIONS);
+  if (pick.length === 0) return chunks;
+  const rows = await query<FullRow>(COMPANION_SQL, [pick.map((w) => w.sourceId), pick.map((w) => w.article), env.allowSyntheticCorpus]);
+  const companions: RetrievedChunk[] = [];
+  for (const w of pick) {
+    const row = rows.find((r) => Number(r.source_id) === w.sourceId && r.article_number === w.article);
+    if (!row) continue; // the referenced article is not in the corpus: nothing is invented for it
+    // Field types as the other rows carry them (pg returns bigint ids as strings).
+    companions.push({
+      ...row,
+      vector_score: null,
+      keyword_score: null,
+      stem_score: null,
+      score: 0,
+      matched_by: "keyword",
+      exact_hit: false,
+      companion_of: w.of,
+    });
+  }
+  return [...chunks, ...companions];
 }
 
 // ---------------------------------------------------------------- article-lookup context
@@ -924,7 +1168,7 @@ const LOOKUP_STOP = new Set(
 
 /** Stemmed content words of a question outside its article reference. */
 export function articleContextStems(question: string): string[] {
-  const rest = foldForSearch(question).replace(/(?:ال)?ماد[ةه]\s*[({[]?\s*\d+[)}\]]?/g, " ");
+  const rest = stripArticleReferences(foldForSearch(question));
   return [
     ...new Set(
       rest

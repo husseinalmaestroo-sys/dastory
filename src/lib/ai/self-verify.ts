@@ -2,6 +2,7 @@ import "server-only";
 import { getChatProvider } from "./index";
 import { env } from "../env";
 import { logError } from "../error-log";
+import type { ClaimVerdict } from "./grounding";
 import type { RetrievedChunk } from "../search/types";
 import { fenced, newFence, withSecurityRules, type Fence } from "./untrusted";
 
@@ -60,6 +61,14 @@ export type VerificationResult = {
    */
   status: "ok" | "unavailable";
   passed: boolean;
+  /**
+   * Phase 2.1: the judge's ruling on each numbered claim it was shown (key =
+   * the claim number in the prompt). `claimsJudged` is true only when every
+   * claim got a valid verdict — otherwise the answer counts as not
+   * semantically verified (the pipeline caps it at "partial").
+   */
+  claimVerdicts: Map<number, ClaimVerdict>;
+  claimsJudged: boolean;
   issues: VerificationIssue[];
   severity: VerificationSeverity;
   action: VerificationAction;
@@ -110,7 +119,9 @@ const ISSUE_VALUES: readonly VerificationIssue[] = [
   "CONTRADICTION_DETECTED",
 ];
 
-function parseJudgeJson(raw: string): { issues: VerificationIssue[]; notes: string } | null {
+const VERDICT_VALUES: readonly ClaimVerdict[] = ["SUPPORTED", "PARTIAL", "CONTRADICTED", "UNSUPPORTED", "IRRELEVANT"];
+
+function parseJudgeJson(raw: string): { issues: VerificationIssue[]; notes: string; verdicts: Map<number, ClaimVerdict> } | null {
   const match = raw.match(/\{[\s\S]*\}/);
   if (!match) return null;
   try {
@@ -119,10 +130,23 @@ function parseJudgeJson(raw: string): { issues: VerificationIssue[]; notes: stri
       ? o.issues.filter((x: unknown): x is VerificationIssue => ISSUE_VALUES.includes(x as VerificationIssue))
       : [];
     const notes = typeof o.notes === "string" ? o.notes.slice(0, 500) : "";
-    return { issues: [...new Set(issues)], notes };
+    const verdicts = new Map<number, ClaimVerdict>();
+    if (Array.isArray(o.claims)) {
+      for (const c of o.claims) {
+        const n = Number(c?.n);
+        const v = typeof c?.verdict === "string" ? c.verdict.toUpperCase() : "";
+        if (Number.isInteger(n) && n > 0 && VERDICT_VALUES.includes(v as ClaimVerdict)) verdicts.set(n, v as ClaimVerdict);
+      }
+    }
+    return { issues: [...new Set(issues)], notes, verdicts };
   } catch {
     return null;
   }
+}
+
+/** Numbered claims block — model output, so fenced like every other untrusted text. */
+function formatClaims(claims: { n: number; text: string; refs: number[] }[]): string {
+  return claims.map((c) => `${c.n}) ${c.text.replace(/\s+/g, " ").slice(0, 600)}${c.refs.length ? ` — يستشهد بـ ${c.refs.map((r) => `[${r}]`).join("")}` : ""}`).join("\n");
 }
 
 // Measured live (scripts/tmp-verify-phase6.ts): sending full, untruncated
@@ -166,6 +190,8 @@ function buildJudgePrompt(params: {
    * elsewhere" (working as intended).
    */
   knownGaps: string[];
+  /** Phase 2.1: the claims that survived deterministic grounding, numbered for per-claim verdicts. */
+  claims: { n: number; text: string; refs: number[] }[];
 }) {
   const fence = newFence();
   const system = withSecurityRules(`أنت مراجع جودة داخلي لإجابة قانونية وُلِّدت بالفعل. لست مصدراً قانونياً
@@ -204,8 +230,20 @@ ${
 4. التناقض: هل تناقض الإجابة نفسها في موضع آخر منها، أو تناقض صراحة ما ورد
    في المصادر المرفقة؟
 
+5. الحكم على كل ادعاء مرقّم في كتلة "الادعاءات"، مقابل المصدر الذي يستشهد به
+   ذلك الادعاء تحديداً، بواحدة فقط من هذه القيم:
+   SUPPORTED — المصدر المستشهد به يقرر الادعاء (إعادة الصياغة المعقولة مقبولة)
+     والمصدر يتصل فعلاً بسؤال المحامي.
+   PARTIAL — المصدر يقرره، لكن الادعاء أغفل شرطاً أو استثناءً أو قيداً يذكره
+     المصدر نفسه لهذا الحكم.
+   CONTRADICTED — المصدر يقول خلافه: نفي بدل إثبات أو العكس، أو عقوبة أو مدة أو
+     مبلغ أو طرف أو أثر قانوني مختلف.
+   UNSUPPORTED — المصدر المستشهد به لا يقرر هذا الادعاء.
+   IRRELEVANT — قد يرد في المصدر، لكن المصدر لا يتصل بما سأل عنه المحامي.
+
 أعد ردك بصيغة JSON صالحة فقط، بلا أي نص قبلها أو بعدها، بالضبط بهذا الشكل:
-{"issues": [], "notes": "سطر واحد موجز بالعربية"}
+{"issues": [], "claims": [{"n": 1, "verdict": "SUPPORTED"}], "notes": "سطر واحد موجز بالعربية"}
+يجب أن تحتوي claims حكماً واحداً لكل ادعاء مرقّم، بالرقم نفسه.
 
 قيمة issues مصفوفة، تحتوي فقط على ما ينطبق فعلاً من هذه القيم بالضبط:
 "INCOMPLETE_ANSWER", "UNSUPPORTED_LEGAL_CLAIM", "HALLUCINATION_DETECTED",
@@ -225,6 +263,9 @@ ${
     ``,
     `الإجابة المطلوب مراجعتها:`,
     fenced(fence, "DOCUMENT", "الإجابة", params.answer),
+    ``,
+    `الادعاءات المرقّمة المطلوب الحكم على كل منها:`,
+    fenced(fence, "DOCUMENT", "الادعاءات", params.claims.length ? formatClaims(params.claims) : "لا توجد ادعاءات مرقّمة."),
   ].join("\n");
 
   return { system, user };
@@ -253,6 +294,8 @@ export async function verifyAnswer(params: {
   isRepairAttempt: boolean;
   /** See buildJudgePrompt's knownGaps — topics already honestly gap-marked and separately supplemented, not a coverage defect. Defaults to none. */
   knownGaps?: string[];
+  /** Claims to rule on one by one (Phase 2.1). */
+  claims?: { n: number; text: string; refs: number[] }[];
 }): Promise<VerificationResult> {
   const citedRefs = extractCitedIndices(params.answer);
   const citedSources = citedRefs
@@ -262,6 +305,8 @@ export async function verifyAnswer(params: {
   const issues: VerificationIssue[] = [];
   let notes = "";
   let status: VerificationResult["status"] = "unavailable";
+  let claimVerdicts = new Map<number, ClaimVerdict>();
+  const claims = params.claims ?? [];
 
   try {
     const { system, user } = buildJudgePrompt({
@@ -270,6 +315,7 @@ export async function verifyAnswer(params: {
       citedSources,
       answer: params.answer,
       citationCheck: params.citationCheck,
+      claims,
     });
     const provider = getChatProvider();
     // Provider-level deadline: aborts the HTTP call (the old Promise.race left
@@ -284,6 +330,7 @@ export async function verifyAnswer(params: {
     if (parsed) {
       issues.push(...parsed.issues);
       notes = parsed.notes;
+      claimVerdicts = parsed.verdicts;
       status = "ok";
     } else {
       notes = "تعذّر تحليل نتيجة المراجعة الآلية — لم تُراجَع الإجابة آلياً.";
@@ -296,9 +343,12 @@ export async function verifyAnswer(params: {
   if (params.citationCheck.redactedCount > 0) issues.push("INVALID_CITATION");
 
   const severity = computeSeverity(issues);
+  const claimsJudged = status === "ok" && claims.every((c) => claimVerdicts.has(c.n));
   return {
     status,
     passed: status === "ok" && issues.length === 0,
+    claimVerdicts,
+    claimsJudged,
     issues,
     severity,
     action: decideAction(severity, params.isRepairAttempt),

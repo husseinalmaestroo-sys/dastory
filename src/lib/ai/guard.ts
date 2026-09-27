@@ -167,7 +167,13 @@ function mentionedInChunkText(chunk: CitableChunk, kind: "article" | "decision",
 // number instead of just matching it), reused here for a DIFFERENT reason —
 // see verifyCitedNumbers' header comment for why this file doesn't call that
 // one's DB-backed checker instead.
-const CITED_ARTICLE_RE = /(?:ال)?ماد[ةه]\s*[({[]?\s*(\d+)[)}\]]?|(?<![؀-ۿ])م\s*\.\s*(\d+)/g;
+const CITED_ARTICLE_RE = /(?:ال)?ماد[ةه]\s*[({]?\s*(\d+)[)}]?|(?<![؀-ۿ])م\s*\.\s*(\d+)/g;
+// "المادة [12]": in a GROUNDED answer "[n]" is the citation-marker syntax, so
+// "… في المادة [1]" is the word المادة followed by a marker for source 1 (a
+// model's sentence cut before the number). It is read as an article number
+// only when n is not a source the answer could cite (Phase 2.1 — reading it
+// as article 1 redacted the marker with it).
+const BRACKETED_ARTICLE_RE = /(?:ال)?ماد[ةه]\s*\[\s*(\d+)\s*\]/g;
 const CITED_DECISION_RE =
   /(?:قرار|حكم|طعن|تمييز)\s*(?:رقم\s*)?[({[]?\s*(\d{1,6})\s*[/\-]\s*\d{4}|(?<!\d)(?<!\d\s*[/\-.]\s*)(?:رقم\s*)?(\d{1,6})\s*\/\s*(?:19|20)\d{2}/g;
 const REF_RE = /\[(\d{1,2})\]/g;
@@ -220,6 +226,11 @@ export function verifyCitedNumbers(rawText: string, chunks: CitableChunk[]): { t
   const mentions: Mention[] = [];
   for (const m of text.matchAll(CITED_ARTICLE_RE)) {
     mentions.push({ start: m.index!, end: m.index! + m[0].length, number: m[1] ?? m[2], kind: "article" });
+  }
+  for (const m of text.matchAll(BRACKETED_ARTICLE_RE)) {
+    const n = Number(m[1]);
+    if (n >= 1 && n <= chunks.length) continue; // a citation marker, not an article number
+    mentions.push({ start: m.index!, end: m.index! + m[0].length, number: m[1], kind: "article" });
   }
   for (const m of text.matchAll(CITED_DECISION_RE)) {
     mentions.push({ start: m.index!, end: m.index! + m[0].length, number: m[1] ?? m[2], kind: "decision" });

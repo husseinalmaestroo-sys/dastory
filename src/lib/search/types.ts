@@ -56,6 +56,14 @@ export type RetrievedChunk = {
   source_url?: string | null;
   /** Number of stored chunks merged into this one (a long article split by the chunker, re-joined at retrieval). */
   merged_parts?: number;
+  /** The exact article/decision the question asked for (the exact-citation arm matched it). Always relevant to the question. */
+  exact_hit?: boolean;
+  /**
+   * Phase 2.1: carried because a retrieved article of the same law makes
+   * itself subject to it ("مع مراعاة أحكام المادة 13", "المنصوص عليها في
+   * المادة 40") — the id of that article's chunk. Relevant through it.
+   */
+  companion_of?: number | null;
 };
 
 /** Before/after record of a rerank pass, for logging and benchmarking. */

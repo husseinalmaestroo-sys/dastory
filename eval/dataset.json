@@ -3,6 +3,7 @@
  "_gold": "GOLD = SYNTHETIC. 'relevant' and 'expect' refer to the invented fixture corpus (eval/fixtures/corpus.json) written by the evaluation author, so they are verifiable by construction against that file — they are NOT statements about Jordanian law and are NOT legal gold. Legal gold for the real corpus must come from a qualified reviewer; the only real-corpus set, benchmark/legal-qa-100.json, is marked GOLD UNVERIFIED (labelled against the indexed text by the previous developer, not against official sources).",
  "_modes": "offline: deterministic test providers + synthetic corpus (CI). live: real providers + real corpus (operator-run; see scripts/eval.ts --mode live).",
  "_heldout": "Cases with set='heldout-2.1' were written on 2026-09-27, BEFORE any Phase 2.1 change to retrieval, grounding or false-premise handling, and committed on their own (see git history). Phase 2.1 improvements are measured on the original set AND on this held-out set separately; a proposed gate counts as met only if BOTH sets meet it. Gold is still SYNTHETIC. Pre-registered marker texts the engine must use: a premise-correction notice contains 'تنبيه بشأن مقدمة السؤال'; a claim whose cited source attaches a condition or exception the claim omits is labelled with 'مع مراعاة الشروط والاستثناءات'.",
+ "_heldout_b": "Cases with set='heldout-2.1b' were written on 2026-09-27 AFTER the first Phase 2.1 retrieval fixes (law-scoped retrieval, exact-lookup forms) but BEFORE any further retrieval change, and committed on their own before being run even once. They exist because the 'heldout-2.1' set was used to diagnose failures and is therefore no longer an unbiased measure; 'heldout-2.1b' is. Gold is SYNTHETIC (eval/fixtures/corpus.json).",
  "cases": [
   {
    "id": "ret-exact-1",
@@ -756,6 +757,218 @@
     ],
     "premiseCorrection": false
    }
+  },
+  {
+   "id": "hb-ret-1",
+   "set": "heldout-2.1b",
+   "category": "retrieval.definition",
+   "question": "ما المقصود بالإيجار وفق قانون الإيجار التجريبي؟",
+   "relevant": [
+    [
+     "lease",
+     "2"
+    ]
+   ],
+   "answerable": true
+  },
+  {
+   "id": "hb-ret-2",
+   "set": "heldout-2.1b",
+   "category": "retrieval.paraphrase",
+   "question": "هل يشترط أن يكون عقد الإيجار مكتوباً؟",
+   "relevant": [
+    [
+     "lease",
+     "3"
+    ]
+   ],
+   "answerable": true
+  },
+  {
+   "id": "hb-ret-3",
+   "set": "heldout-2.1b",
+   "category": "retrieval.paraphrase",
+   "question": "متى تدفع الأجرة إذا لم يتفق الطرفان على موعد لدفعها؟",
+   "relevant": [
+    [
+     "lease",
+     "4"
+    ]
+   ],
+   "answerable": true
+  },
+  {
+   "id": "hb-ret-4",
+   "set": "heldout-2.1b",
+   "category": "retrieval.paraphrase",
+   "question": "هل يجوز للمستأجر تأجير العقار لشخص آخر دون موافقة المالك؟",
+   "relevant": [
+    [
+     "lease",
+     "6"
+    ]
+   ],
+   "answerable": true
+  },
+  {
+   "id": "hb-ret-5",
+   "set": "heldout-2.1b",
+   "category": "retrieval.paraphrase",
+   "question": "أي محكمة تنظر دعاوى الإيجار التي تقل قيمتها عن خمسة آلاف دينار؟",
+   "relevant": [
+    [
+     "lease",
+     "18"
+    ]
+   ],
+   "answerable": true
+  },
+  {
+   "id": "hb-ret-6",
+   "set": "heldout-2.1b",
+   "category": "retrieval.exact_article",
+   "question": "ما نص المادة الخامسة من قانون الإيجار التجريبي؟",
+   "relevant": [
+    [
+     "lease",
+     "5"
+    ]
+   ],
+   "answerable": true
+  },
+  {
+   "id": "hb-ret-7",
+   "set": "heldout-2.1b",
+   "category": "retrieval.exact_article",
+   "question": "ما حكم م 41 من ق.ع؟",
+   "relevant": [
+    [
+     "penal",
+     "41"
+    ]
+   ],
+   "answerable": true
+  },
+  {
+   "id": "hb-ret-8",
+   "set": "heldout-2.1b",
+   "category": "retrieval.exact_article",
+   "question": "ما نص المادة 20 من القانون رقم 9 لسنة 2099؟",
+   "relevant": [
+    [
+     "labour",
+     "20"
+    ]
+   ],
+   "answerable": true
+  },
+  {
+   "id": "hb-ret-9",
+   "set": "heldout-2.1b",
+   "category": "retrieval.paraphrase",
+   "question": "كم يوماً إجازة سنوية يستحقها العامل؟",
+   "relevant": [
+    [
+     "labour",
+     "20"
+    ]
+   ],
+   "answerable": true
+  },
+  {
+   "id": "hb-ret-10",
+   "set": "heldout-2.1b",
+   "category": "retrieval.law_name",
+   "question": "ما مدة تقادم دعوى المطالبة بالأجر في قانون العمل التجريبي؟",
+   "relevant": [
+    [
+     "labour",
+     "21"
+    ]
+   ],
+   "answerable": true
+  },
+  {
+   "id": "hb-ret-11",
+   "set": "heldout-2.1b",
+   "category": "retrieval.paraphrase",
+   "question": "هل يعاقب القانون على فعل لم يكن مجرماً وقت ارتكابه؟",
+   "relevant": [
+    [
+     "penal",
+     "17"
+    ]
+   ],
+   "answerable": true
+  },
+  {
+   "id": "hb-ret-12",
+   "set": "heldout-2.1b",
+   "category": "retrieval.paraphrase",
+   "question": "ما الحد الأدنى لرأس مال الشركة ذات المسؤولية المحدودة؟",
+   "relevant": [
+    [
+     "companies",
+     "17"
+    ]
+   ],
+   "answerable": true
+  },
+  {
+   "id": "hb-ret-13",
+   "set": "heldout-2.1b",
+   "category": "retrieval.paraphrase",
+   "question": "هل الشريك في الشركة ذات المسؤولية المحدودة مسؤول عن ديونها من أمواله الخاصة؟",
+   "relevant": [
+    [
+     "companies",
+     "18"
+    ]
+   ],
+   "answerable": true
+  },
+  {
+   "id": "hb-ret-14",
+   "set": "heldout-2.1b",
+   "category": "retrieval.paraphrase",
+   "question": "ما عقوبة من يهدد شخصاً آخر بإلحاق الأذى به؟",
+   "relevant": [
+    [
+     "penal",
+     "55"
+    ]
+   ],
+   "answerable": true
+  },
+  {
+   "id": "hb-ret-15",
+   "set": "heldout-2.1b",
+   "category": "retrieval.paraphrase",
+   "question": "ما العقوبة إذا كان المال الذي تم إتلافه مالاً عاماً؟",
+   "relevant": [
+    [
+     "penal",
+     "41"
+    ],
+    [
+     "penal",
+     "40"
+    ]
+   ],
+   "answerable": true
+  },
+  {
+   "id": "hb-ret-16",
+   "set": "heldout-2.1b",
+   "category": "retrieval.proviso",
+   "question": "هل يجب على المستأجر إبلاغ المالك بالعيوب التي تظهر في المأجور؟",
+   "relevant": [
+    [
+     "lease",
+     "12"
+    ]
+   ],
+   "answerable": true
   }
  ]
 }

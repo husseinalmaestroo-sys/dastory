@@ -25,7 +25,11 @@ import { resolve } from "node:path";
 import { randomBytes } from "node:crypto";
 
 const args = process.argv.slice(2);
-const MODE = (args[args.indexOf("--mode") + 1] ?? "offline") as "offline" | "live";
+const MODE = (args.includes("--mode") ? args[args.indexOf("--mode") + 1] : "offline") as "offline" | "live";
+if (MODE !== "offline" && MODE !== "live") {
+  console.error(`unknown --mode ${MODE} (offline | live)`);
+  process.exit(2);
+}
 if (MODE === "offline") {
   process.env.CHAT_PROVIDER = "test";
   process.env.EMBEDDING_PROVIDER = "test";
@@ -58,6 +62,23 @@ const CONDITION_MARKER = "مع مراعاة الشروط والاستثناءا�
 
 async function main() {
   const { getPool, query } = await import("../src/lib/db");
+  // Phase 2.1: a live result must come from real models over the real corpus —
+  // refuse to start otherwise (src/lib/eval/live-preflight.ts).
+  let preflight: unknown = null;
+  if (MODE === "live") {
+    const { preflightText, runLivePreflight } = await import("../src/lib/eval/live-preflight");
+    const pre = await runLivePreflight({ registryPath: resolve(__dirname, "../deploy/sources/required-laws.json") });
+    console.log(preflightText(pre));
+    if (!pre.ok) {
+      try {
+        await getPool().end();
+      } catch {
+        /* no database configured */
+      }
+      process.exit(2);
+    }
+    preflight = pre;
+  }
   const { loadEvalFixtures } = await import("./load-eval-fixtures");
   const { runChatPipeline } = await import("../src/lib/ai/pipelines/chat");
   const { runContractReview, runCaseAnalysis } = await import("../src/lib/ai/pipelines/documents");
@@ -504,16 +525,24 @@ async function main() {
   const report = {
     mode: MODE,
     ranAt: new Date().toISOString(),
-    gold: "SYNTHETIC (offline) — see eval/dataset.json _gold; real-corpus legal gold: GOLD UNVERIFIED",
+    gold: offline
+      ? "SYNTHETIC (offline) — see eval/dataset.json _gold; real-corpus legal gold: GOLD UNVERIFIED"
+      : "live: cases that need no legal gold (no evidence, jurisdiction, injection, documents, isolation); real-corpus legal gold (benchmark/legal-qa-100.json): GOLD UNVERIFIED",
+    ...(preflight ? { preflight } : {}),
     metrics,
     gates: gateRows,
     expectationFailures,
-    unknown: [
-      "Real LLM behaviour on these cases (false-premise challenge, injection resistance of the model itself, answer quality) — live mode only.",
-      "Real retrieval quality on the Jordanian corpus (the corpus lives in Neon; not reachable here).",
-      "Real latency, token usage and cost per query.",
-      "Scanned-PDF OCR and Arabic PDF extraction in this run.",
-    ],
+    unknown: offline
+      ? [
+          "Real LLM behaviour on these cases (false-premise challenge, injection resistance of the model itself, answer quality) — live mode only.",
+          "Real retrieval quality on the Jordanian corpus (the corpus lives in Neon; not reachable here).",
+          "Real latency, token usage and cost per query.",
+          "Scanned-PDF OCR and Arabic PDF extraction in this run.",
+        ]
+      : [
+          "Legal correctness of answers on the real corpus: GOLD UNVERIFIED until a qualified Jordanian reviewer checks benchmark/legal-qa-100.json.",
+          "Scanned-PDF OCR and Arabic PDF extraction in this run.",
+        ],
     cases: results,
   };
   const dir = resolve(__dirname, "../eval/results");

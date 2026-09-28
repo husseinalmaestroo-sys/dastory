@@ -22,6 +22,8 @@
  */
 import "dotenv/config";
 import { readFileSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { preflightText, runLivePreflight } from "../src/lib/eval/live-preflight";
 import { hybridSearch } from "../src/lib/search/hybrid";
 import { analyzeQueryRules } from "../src/lib/search/query-understanding";
 import { expandQuery } from "../src/lib/search/query-expansion";
@@ -185,6 +187,12 @@ async function main() {
   const args = process.argv.slice(2);
   const generate = args.includes("--generate");
   const only = args.find((a) => a.startsWith("--only="))?.split("=")[1] ?? "";
+
+  // Phase 2.1: this measures the REAL corpus — refuse a synthetic or test
+  // database, test providers or a missing key (src/lib/eval/live-preflight.ts).
+  const pre = await runLivePreflight({ registryPath: resolve(__dirname, "../deploy/sources/required-laws.json"), needChat: generate });
+  console.log(preflightText(pre));
+  if (!pre.ok) process.exit(2);
 
   const data = JSON.parse(readFileSync("./benchmark/legal-qa-100.json", "utf8"));
   const cases: Case[] = data.cases.filter((c: Case) => !only || c.id.startsWith(only));

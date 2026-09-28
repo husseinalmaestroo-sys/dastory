@@ -23,7 +23,8 @@
     "test:integration": "tsx --tsconfig scripts/tsconfig.verify.json --test --test-concurrency=1 tests/integration/*.test.ts",
     "test:http": "tsx --tsconfig scripts/tsconfig.verify.json --test --test-concurrency=1 tests/http/*.test.ts",
     "eval:offline": "tsx --tsconfig scripts/tsconfig.verify.json scripts/eval.ts --mode offline",
-    "eval:live": "tsx --tsconfig scripts/tsconfig.verify.json scripts/eval.ts --mode live",
+    "eval:live": "tsx --tsconfig scripts/tsconfig.verify.json scripts/eval-live.ts",
+    "eval:preflight": "tsx --tsconfig scripts/tsconfig.verify.json scripts/live-preflight.ts",
     "purge": "tsx --tsconfig scripts/tsconfig.verify.json scripts/purge-content.ts",
     "corpus:inventory": "tsx --tsconfig scripts/tsconfig.verify.json scripts/corpus-inventory.ts",
     "corpus:integrity": "tsx --tsconfig scripts/tsconfig.verify.json scripts/corpus-integrity.ts"

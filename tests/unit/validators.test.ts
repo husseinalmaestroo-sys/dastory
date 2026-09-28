@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { validateCaseAnalysis, validateContractReview, validateDraft, extractJson } from "@/lib/ai/output-schemas";
 import { verifyCitedNumbers } from "@/lib/ai/guard";
 import { chunk, penalChunk } from "./fixtures";
+import { checkFiguresAgainst, datesOf, UNVERIFIED_DATE, UNVERIFIED_FIGURE } from "@/lib/ai/output-schemas";
+import { missingSuppliedFields } from "@/lib/ai/pipelines/documents";
 
 // These feed deliberately BAD model outputs (fabricated parties, quotes,
 // figures, citations) straight to the validators — the model cannot be made
@@ -118,4 +120,37 @@ test("a cross-reference that appears in the cited source's own text is not redac
   assert.equal(r.redactedCount, 0);
   const bad = verifyCitedNumbers("تتضاعف العقوبة المنصوص عليها في المادة 77 [1].", [src, penalChunk()]);
   assert.equal(bad.redactedCount, 1);
+});
+
+// ---------------------------------------------------------------- Phase 2.1: dates and figures as units
+
+test("dates are read however they are written; a date is checked whole, not digit by digit", () => {
+  assert.deepEqual([...datesOf("في 12/3/2023 و2024-01-05 و7 كانون الثاني 2024 و3 ابريل 2025 و9 آب 2022")].sort(), [
+    "2022-08-09",
+    "2023-03-12",
+    "2024-01-05",
+    "2024-01-07",
+    "2025-04-03",
+  ]);
+  const file = "أبرم العقد بتاريخ 12/3/2023 ودفعت الأجرة في 5/1/2024 بمبلغ 1500 دينار.";
+  const bad = checkFiguresAgainst("أبرم العقد في 12/1/2024 بمبلغ 1500 دينار ثم 2000 دينار", file);
+  assert.equal(bad.redacted, 2);
+  assert.ok(bad.text.includes(UNVERIFIED_DATE) && bad.text.includes(UNVERIFIED_FIGURE) && bad.text.includes("1500"));
+  assert.equal(checkFiguresAgainst("دُفعت الأجرة في 2024-01-05 وأُبرم العقد في 12 آذار 2023", file).redacted, 0);
+});
+
+test("drafting: a supplied name, court or date must reach the draft as written (spelling variants aside)", () => {
+  const spec = [
+    { id: "plaintiff_name", label: "اسم المدعي", type: "text" },
+    { id: "court", label: "المحكمة", type: "text" },
+    { id: "date", label: "تاريخ العقد", type: "date" },
+    { id: "facts", label: "الوقائع", type: "textarea" },
+  ];
+  const values = { plaintiff_name: "سالم أحمد التجريبي", court: "محكمة الصلح", date: "2024-03-15", facts: "سرد طويل" };
+  assert.deepEqual(missingSuppliedFields(spec, values, "المدعي: سالم احمد التجريبى أمام محكمة الصلح، العقد المؤرخ 15/3/2024"), []);
+  assert.deepEqual(missingSuppliedFields(spec, values, "المدعي: سالم محمد التجريبي أمام محكمة البداية، العقد المؤرخ 15/4/2024"), [
+    "اسم المدعي",
+    "المحكمة",
+    "تاريخ العقد",
+  ]);
 });

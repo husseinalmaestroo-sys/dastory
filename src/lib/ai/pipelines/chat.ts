@@ -45,6 +45,7 @@ import { extractPremise, premiseConflicts, questionTopicStems, sourceIsRelevant 
 import { normalizeDigits } from "../../ingest/clean";
 import { extractAllLawReferences } from "../../search/law-reference";
 import { isAuthoritative } from "../../corpus/integrity";
+import { currentMeter, timeStage } from "../usage-meter";
 import { checkJurisdiction, COMPARISON_NOTICE_AR, isMostlyLatin } from "../jurisdiction";
 import { detectPromptLeak, PROMPT_LEAK_REPLACEMENT } from "../untrusted";
 import type { RequestOutcome } from "../request";
@@ -466,7 +467,7 @@ export async function runChatPipeline(input: ChatInput, caller: Caller, emit: Em
 
   if (comparison) {
     const ctx = { queryType: rules.queryType, legalArea: rules.legalArea };
-    let cmp = await comparisonSearch(question, comparison.sideA, comparison.sideB, filters, env.topK, ctx);
+    let cmp = await timeStage("retrieval", () => comparisonSearch(question, comparison.sideA, comparison.sideB, filters, env.topK, ctx));
     if (cmp.chunks.length === 0 && env.legalQueryExpansion && env.queryLlmFallback) {
       const retry = await comparisonSearch(question, comparison.sideA, comparison.sideB, filters, env.topK, ctx, { allowLLM: true });
       if (retry.chunks.length > 0) cmp = retry;
@@ -475,12 +476,14 @@ export async function runChatPipeline(input: ChatInput, caller: Caller, emit: Em
   } else {
     const expansion = await expandQuery(question, rules);
     addedTerms = expansion.addedTerms;
-    search = await hybridSearch(question, filters, undefined, {
-      searchText: expansion.searchText,
-      orGroup: expansion.orGroup,
-      queryType: rules.queryType,
-      legalArea: rules.legalArea,
-    });
+    search = await timeStage("retrieval", () =>
+      hybridSearch(question, filters, undefined, {
+        searchText: expansion.searchText,
+        orGroup: expansion.orGroup,
+        queryType: rules.queryType,
+        legalArea: rules.legalArea,
+      })
+    );
     if (search.chunks.length === 0 && !search.requestedLawMissing && rules.queryType !== "fact_pattern" && env.legalQueryExpansion && env.queryLlmFallback) {
       const retryExpansion = await expandQuery(question, rules, { allowLLM: true });
       if (retryExpansion.addedTerms.length > 0) {
@@ -673,7 +676,9 @@ export async function runChatPipeline(input: ChatInput, caller: Caller, emit: Em
 
   // 7. Gaps → explicit limitation statements; then verify the text.
   const { gaps, cleaned } = extractGapsAndClean(raw, question);
+  const groundingStarted = Date.now();
   let checked = checkAnswer(cleaned, chunks, question);
+  currentMeter()?.stage("grounding", Date.now() - groundingStarted);
 
   // 8. Second opinion (LLM judge) + at most one repair.
   let verification: VerificationResult | null = null;

@@ -13,6 +13,9 @@ export function useTestEnv(): void {
   process.env.ALLOW_SYNTHETIC_CORPUS = "true";
   process.env.SELF_VERIFICATION ??= "true";
   process.env.QUERY_LLM_FALLBACK = "false";
+  // Tests that need the automatic purge force it (retention.test.ts); left on,
+  // it could delete rows a test seeded as "old" before the test looks at them.
+  process.env.AUTO_RETENTION ??= "false";
 }
 
 export function serviceCaller(officeId: string, userId: string, requestId = `req-${officeId}-${userId}-${Math.random().toString(36).slice(2, 10)}`): Caller {

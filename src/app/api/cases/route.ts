@@ -5,6 +5,7 @@ import { requireCaller } from "@/lib/caller";
 import { readBodyLimited, parseJsonBytes } from "@/lib/http";
 import { admit, failureResponse, runAiRequest } from "@/lib/ai/request";
 import { runCaseAnalysis } from "@/lib/ai/pipelines/documents";
+import { sourceAuthorityOf } from "@/lib/ai/pipelines/chat";
 import { savePdf } from "@/lib/storage";
 import { extractPdfText } from "@/lib/ingest/extract";
 import { cleanText } from "@/lib/ingest/clean";
@@ -133,6 +134,8 @@ async function handlePost(req: NextRequest): Promise<Response> {
     coverage: v.coverage,
     groundingLevel: v.groundingLevel,
     sources: v.sources,
+    // Phase 2.1: whether the cited texts were verified against their official publication.
+    sourceAuthority: sourceAuthorityOf(v.sources),
     usage: r.usage,
     provenance: r.provenance,
   });

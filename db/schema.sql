@@ -626,3 +626,18 @@ CREATE TABLE IF NOT EXISTS corpus_integrity_events (
   created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_integrity_events_source ON corpus_integrity_events (source_id, created_at);
+
+-- ---- Phase 2.1: automatic retention ------------------------------------------
+-- When periodic maintenance last ran, shared by every instance: the content
+-- purge (src/lib/retention.ts) runs from request handling at most once per
+-- interval across the deployment, so retention no longer depends on an
+-- operator having installed the cron job.
+CREATE TABLE IF NOT EXISTS maintenance_runs (
+  task         TEXT        PRIMARY KEY,
+  last_run_at  TIMESTAMPTZ NOT NULL DEFAULT 'epoch',
+  last_report  JSONB
+);
+
+-- Phase 2.1: where each request's time went — pipeline stages and model time
+-- per purpose, ms (src/lib/ai/request.ts stageTimings). Numbers only.
+ALTER TABLE ai_requests ADD COLUMN IF NOT EXISTS stage_ms JSONB;

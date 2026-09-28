@@ -3,8 +3,10 @@ import { logError } from "../../error-log";
 import type { Caller } from "../../caller";
 import { hybridSearch, getChunksByIds } from "../../search/hybrid";
 import type { RetrievedChunk } from "../../search/types";
+import { foldForSearch, normalizeDigits } from "../../ingest/clean";
 import { fieldsOf, formatFields, hasSubstantialNotes, type DraftKind } from "../../drafting/forms";
 import { getChatProvider } from "../index";
+import { timeStage } from "../usage-meter";
 import {
   buildCaseAnalysisPrompt,
   buildContractReviewPrompt,
@@ -15,6 +17,7 @@ import {
 } from "../prompts";
 import { redactCitations, stripInvalidCitations, verifyCitedNumbers } from "../guard";
 import {
+  datesOf,
   validateCaseAnalysis,
   validateContractReview,
   validateDraft,
@@ -42,10 +45,17 @@ import type { RequestOutcome } from "../request";
 const QUERY_TEXT_CHARS = 3000;
 /** Characters one analysis call reads. */
 export const SEGMENT_CHARS = 24_000;
-/** Most segments one contract review will analyse. */
+/** Nominal segments of a fully reviewed contract. */
 export const MAX_CONTRACT_SEGMENTS = 4;
 /** The largest contract reviewed in full. Beyond it the review is explicitly PARTIAL. */
 export const MAX_CONTRACT_FULL_REVIEW_CHARS = SEGMENT_CHARS * MAX_CONTRACT_SEGMENTS;
+/**
+ * Hard cap on analysis calls per review. Segments end at clause boundaries,
+ * a little short of SEGMENT_CHARS, so a contract of exactly
+ * MAX_CONTRACT_FULL_REVIEW_CHARS can need a fifth, small segment; the full-
+ * review promise is kept in characters, with this as the cost bound.
+ */
+export const MAX_CONTRACT_CALLS = MAX_CONTRACT_SEGMENTS + 2;
 
 export type Coverage = {
   totalChars: number;
@@ -95,7 +105,7 @@ export async function runCaseAnalysis(caseText: string, _caller: Caller): Promis
 
   // The uploaded file is evidence to analyse, never an authority to cite:
   // retrieval grounds the analysis in the shared corpus.
-  const { chunks } = await hybridSearch(caseText.slice(0, QUERY_TEXT_CHARS), {}, 10);
+  const { chunks } = await timeStage("retrieval", () => hybridSearch(caseText.slice(0, QUERY_TEXT_CHARS), {}, 10));
 
   const note = coverage.partial
     ? `هذا هو الجزء الأول فقط من الملف (${analyzed.length} من ${caseText.length} حرفاً). لا تفترض شيئاً عن بقية الملف.`
@@ -173,10 +183,21 @@ export type ContractReviewOutcome =
 
 export async function runContractReview(contractText: string, _caller: Caller): Promise<ContractReviewOutcome> {
   const allSegments = segmentContract(contractText);
-  const segments = allSegments.slice(0, MAX_CONTRACT_SEGMENTS);
+  // Phase 2.1: review whole segments up to MAX_CONTRACT_FULL_REVIEW_CHARS
+  // characters (at most MAX_CONTRACT_CALLS of them). Taking the first four
+  // segments reported a contract of exactly 96,000 characters as PARTIAL,
+  // because clause-boundary cuts left a small fifth segment.
+  const segments: string[] = [];
+  let budget = 0;
+  for (const seg of allSegments) {
+    if (segments.length >= MAX_CONTRACT_CALLS) break;
+    if (segments.length > 0 && budget + seg.length > MAX_CONTRACT_FULL_REVIEW_CHARS) break;
+    segments.push(seg);
+    budget += seg.length;
+  }
   // One retrieval for the whole contract: every segment cites the same
   // numbered source list, so [n] means the same source across the merged review.
-  const { chunks } = await hybridSearch(contractText.slice(0, QUERY_TEXT_CHARS), {}, 8);
+  const { chunks } = await timeStage("retrieval", () => hybridSearch(contractText.slice(0, QUERY_TEXT_CHARS), {}, 8));
 
   const provider = getChatProvider();
   let offset = 0;
@@ -312,7 +333,9 @@ export async function runDraft(input: DraftInput, _caller: Caller): Promise<Draf
   }
   const instructions = [formatFields(input.kind, values), input.notes].filter(Boolean).join("\n");
 
-  const [templates, law] = await Promise.all([hybridSearch(instructions, { sourceType: "template" }, 3), hybridSearch(instructions, {}, 6)]);
+  const [templates, law] = await timeStage("retrieval", () =>
+    Promise.all([hybridSearch(instructions, { sourceType: "template" }, 3), hybridSearch(instructions, {}, 6)])
+  );
   const seen = new Set<number>();
   const chunks = [...templates.chunks, ...law.chunks].filter((c) => !seen.has(c.id) && !!seen.add(c.id));
   if (chunks.length === 0) return { noEvidence: true, outcome: { success: true, outcome: "no_evidence", groundingLevel: "none", retrievalCount: 0, sourceCount: 0 } };
@@ -335,10 +358,32 @@ export async function runDraft(input: DraftInput, _caller: Caller): Promise<Draf
   return {
     draft: v.draft,
     groundingLevel: v.groundingLevel,
-    validation: v.report,
+    validation: { ...v.report, missingSuppliedFields: missingSuppliedFields(spec, values, v.draft) },
     sources: chunks.map((c, i) => toCitation(c, i, cited.has(i + 1))),
     outcome: { success: true, outcome: "drafted", groundingLevel: v.groundingLevel, retrievalCount: chunks.length, sourceCount: cited.size },
   };
+}
+
+const forMatch = (t: string) => foldForSearch(normalizeDigits(t)).replace(/[^\p{L}\p{N}]/gu, "");
+
+/**
+ * Phase 2.1: what the lawyer supplied must reach the draft as written — a
+ * party's name misspelled or a court changed in a filing is worse than a
+ * placeholder. Checked for short text and date fields (a narrative field is
+ * paraphrased by design); a date matches however it is written.
+ */
+export function missingSuppliedFields(spec: { id: string; label: string; type: string }[], values: Record<string, string>, draft: string): string[] {
+  const draftNorm = forMatch(draft);
+  const draftDates = datesOf(draft);
+  return spec
+    .filter((f) => (f.type === "text" || f.type === "date") && values[f.id] && values[f.id].length <= 120)
+    .filter((f) => {
+      const value = values[f.id];
+      const asDates = [...datesOf(value)];
+      if (asDates.length > 0) return !asDates.every((d) => draftDates.has(d));
+      return !draftNorm.includes(forMatch(value));
+    })
+    .map((f) => f.label);
 }
 
 export type RefineInput = {

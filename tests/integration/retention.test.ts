@@ -4,7 +4,10 @@ import { mkdirSync, writeFileSync, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { useTestEnv, findInDatabase } from "./helpers";
 import { getPool, query, queryOne } from "@/lib/db";
-import { purgeExpiredContent, deleteSessionContent, deleteOfficeAccounting } from "@/lib/retention";
+import { purgeExpiredContent, deleteSessionContent, deleteOfficeAccounting, runRetentionIfDue, resetRetentionClock } from "@/lib/retention";
+import { runAiRequest } from "@/lib/ai/request";
+import { runChatPipeline } from "@/lib/ai/pipelines/chat";
+import { serviceCaller } from "./helpers";
 import { hybridSearch } from "@/lib/search/hybrid";
 import { loadEvalFixtures } from "../../scripts/load-eval-fixtures";
 
@@ -40,6 +43,41 @@ test("retention: standalone content older than the window is deleted — rows AN
   const d = await deleteSessionContent("sess-new");
   assert.equal(d.chatHistory, 1);
   assert.deepEqual(await findInDatabase("CANARY-RET-NEW"), [], "a session's deletion request removes all its content");
+});
+
+test("retention runs by itself: an AI request triggers the purge, at most once per interval across instances", async () => {
+  process.env.AUTO_RETENTION = "true";
+  const old = (tag: string) =>
+    query(`INSERT INTO chat_history (session_id, question, answer, created_at) VALUES ('sess-auto', $1, 'a', now() - interval '400 days')`, [tag]);
+  try {
+    await query(`DELETE FROM maintenance_runs WHERE task = 'retention'`);
+    await old("CANARY-AUTO-1");
+    await query(`INSERT INTO error_log (context, message, created_at) VALUES ('test', 'CANARY-AUTO-ERR', now() - interval '400 days')`);
+    resetRetentionClock();
+    const first = await runRetentionIfDue();
+    assert.ok(first && first.chatHistory >= 1 && first.errorLog >= 1, JSON.stringify(first));
+    assert.deepEqual(await findInDatabase("CANARY-AUTO-1"), []);
+    assert.deepEqual(await findInDatabase("CANARY-AUTO-ERR"), [], "error_log is purged too (messages can quote model output)");
+
+    // Another process (fresh clock) within the interval: the shared record says it already ran.
+    await old("CANARY-AUTO-2");
+    resetRetentionClock();
+    assert.equal(await runRetentionIfDue(), null);
+    assert.equal((await findInDatabase("CANARY-AUTO-2")).length, 1, "not purged twice within the interval");
+
+    // Due again: a real AI request is what triggers it.
+    await query(`UPDATE maintenance_runs SET last_run_at = 'epoch' WHERE task = 'retention'`);
+    resetRetentionClock();
+    const caller = serviceCaller("office-retention", "u1");
+    const r = await runAiRequest(caller, "chat", undefined, () => runChatPipeline({ question: "ما مدة الإشعار لإنهاء عقد العمل؟" }, caller));
+    assert.ok(r.ok);
+    await runRetentionIfDue(); // joins the purge the request started, if still running
+    assert.deepEqual(await findInDatabase("CANARY-AUTO-2"), [], "purged without any cron job");
+    const state = await queryOne<{ last_report: Record<string, number> }>(`SELECT last_report FROM maintenance_runs WHERE task = 'retention'`);
+    assert.ok(state?.last_report && state.last_report.chatHistory >= 1);
+  } finally {
+    process.env.AUTO_RETENTION = "false";
+  }
 });
 
 test("office offboarding removes the office's accounting rows", async () => {

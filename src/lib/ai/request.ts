@@ -9,6 +9,7 @@ import type { Caller } from "../caller";
 import { UsageMeter, withRequestScope, type UsageTotals } from "./usage-meter";
 import { AiTimeoutError, linkSignal } from "./deadline";
 import { corpusVersion, promptVersion } from "./versioning";
+import { runRetentionIfDue } from "../retention";
 
 /**
  * The lifecycle every AI request goes through (Phase 2: cost control, usage
@@ -143,6 +144,17 @@ function usageReport(requestId: string, t: UsageTotals): UsageReport {
   };
 }
 
+/**
+ * Where a request's time went (Phase 2.1): the pipeline's own stages
+ * (retrieval, grounding) and model time per purpose ("model.answer",
+ * "model.judge", "model.embed"…). Numbers only.
+ */
+export function stageTimings(t: UsageTotals): Record<string, number> {
+  const out: Record<string, number> = { ...t.stages };
+  for (const [purpose, ms] of Object.entries(t.msByPurpose)) out[`model.${purpose}`] = ms;
+  return out;
+}
+
 async function record(caller: Caller, feature: AiFeature, requestId: string, meter: UsageMeter, outcome: RequestOutcome, latencyMs: number, provenance: Provenance) {
   const t = meter.totals();
   // The real spend, at each call's own model price, against the caller's
@@ -153,8 +165,8 @@ async function record(caller: Caller, feature: AiFeature, requestId: string, met
       `INSERT INTO ai_requests
          (request_id, caller_kind, office_id, user_id, lawyer_id, feature, chat_model, embedding_model,
           prompt_version, corpus_version, llm_calls, tokens_in, tokens_out, embedding_tokens, cost_usd,
-          latency_ms, success, outcome, grounding_level, retrieval_count, source_count)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
+          latency_ms, success, outcome, grounding_level, retrieval_count, source_count, stage_ms)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`,
       [
         requestId,
         caller.kind,
@@ -177,6 +189,7 @@ async function record(caller: Caller, feature: AiFeature, requestId: string, met
         outcome.groundingLevel ?? null,
         outcome.retrievalCount ?? null,
         outcome.sourceCount ?? null,
+        JSON.stringify(stageTimings(t)),
       ]
     );
   } catch (err) {
@@ -203,6 +216,7 @@ async function record(caller: Caller, feature: AiFeature, requestId: string, met
       grounding: outcome.groundingLevel ?? null,
       retrieved: outcome.retrievalCount ?? null,
       sources: outcome.sourceCount ?? null,
+      stageMs: stageTimings(t),
       llmCalls: t.llmCalls,
       failedCalls: t.failedCalls,
       tokensIn: t.tokensIn,
@@ -224,6 +238,9 @@ export async function runAiRequest<T extends { outcome: RequestOutcome }>(
   fn: (ctx: { requestId: string; signal: AbortSignal }) => Promise<T>
 ): Promise<RunResult<T>> {
   const requestId = caller.kind === "service" ? caller.principal.requestId : randomUUID();
+  // Phase 2.1: retention runs itself — at most every few hours across the
+  // deployment, never in the request's path (fire-and-forget).
+  void runRetentionIfDue();
   const meter = new UsageMeter();
   const ctrl = new AbortController();
   linkSignal(ctrl, clientSignal);

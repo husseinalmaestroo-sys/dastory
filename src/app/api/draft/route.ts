@@ -5,6 +5,7 @@ import { requireCaller } from "@/lib/caller";
 import { readBodyLimited, parseJsonBytes } from "@/lib/http";
 import { admit, failureResponse, runAiRequest } from "@/lib/ai/request";
 import { runDraft } from "@/lib/ai/pipelines/documents";
+import { sourceAuthorityOf } from "@/lib/ai/pipelines/chat";
 import { NO_EVIDENCE_ANSWER_AR } from "@/lib/ai/prompts";
 import { recordUsage } from "@/lib/analytics";
 import { logError } from "@/lib/error-log";
@@ -81,6 +82,8 @@ async function handlePost(req: NextRequest): Promise<Response> {
     mode: "drafted",
     validation: v.validation,
     sources: v.sources,
+    // Phase 2.1: whether the cited texts were verified against their official publication.
+    sourceAuthority: sourceAuthorityOf(v.sources),
     usage: r.usage,
     provenance: r.provenance,
   });

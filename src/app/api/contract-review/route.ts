@@ -4,6 +4,7 @@ import { requireCaller } from "@/lib/caller";
 import { readBodyLimited, parseJsonBytes } from "@/lib/http";
 import { admit, failureResponse, runAiRequest } from "@/lib/ai/request";
 import { runContractReview, MAX_CONTRACT_FULL_REVIEW_CHARS } from "@/lib/ai/pipelines/documents";
+import { sourceAuthorityOf } from "@/lib/ai/pipelines/chat";
 import { logError } from "@/lib/error-log";
 
 export const runtime = "nodejs";
@@ -58,6 +59,7 @@ async function handlePost(req: NextRequest): Promise<Response> {
     maxFullReviewChars: MAX_CONTRACT_FULL_REVIEW_CHARS,
     validation: v.validation,
     sources: v.sources,
+    sourceAuthority: sourceAuthorityOf(v.sources),
     usage: r.usage,
     provenance: r.provenance,
   });

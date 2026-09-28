@@ -348,6 +348,10 @@ test("usage accounting: every model call of a request is counted, and the ai_req
   assert.equal(row.feature, "chat");
   assert.equal(Number(row.llm_calls), r.usage.llmCalls);
   assert.ok(!JSON.stringify(row).includes("الإجازة"), "no question text in the accounting row");
+  // Phase 2.1: where the time went — pipeline stages and model time per purpose, numbers only.
+  const stages = row.stage_ms as Record<string, number>;
+  for (const k of ["retrieval", "grounding", "model.answer", "model.retrieval"]) assert.equal(typeof stages[k], "number", `${k}: ${JSON.stringify(stages)}`);
+  assert.ok(Object.values(stages).every((v) => typeof v === "number" && v >= 0));
 });
 
 test("a request that exceeds its deadline returns a controlled timeout and is still accounted", async () => {

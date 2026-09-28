@@ -52,6 +52,10 @@ export type UsageTotals = {
   unpricedModels: string[];
   /** Calls per purpose, e.g. { answer: 1, judge: 2, condense: 1 }. */
   byPurpose: Record<string, number>;
+  /** Phase 2.1: model-call time per purpose, ms (e.g. { answer: 5200, judge: 1900 }). */
+  msByPurpose: Record<string, number>;
+  /** Phase 2.1: wall time of the pipeline's own stages, ms (e.g. { retrieval: 140, grounding: 6 }). */
+  stages: Record<string, number>;
   /** Distinct chat models used, in first-use order. */
   chatModels: string[];
   embeddingModel: string | null;
@@ -59,9 +63,15 @@ export type UsageTotals = {
 
 export class UsageMeter {
   readonly entries: MeterEntry[] = [];
+  readonly stageMs: Record<string, number> = {};
 
   add(e: MeterEntry): void {
     this.entries.push(e);
+  }
+
+  /** Adds wall time to a named pipeline stage (retrieval, grounding, …). */
+  stage(name: string, ms: number): void {
+    this.stageMs[name] = (this.stageMs[name] ?? 0) + Math.max(0, Math.round(ms));
   }
 
   totals(): UsageTotals {
@@ -76,12 +86,15 @@ export class UsageMeter {
       costUsd: 0,
       unpricedModels: [],
       byPurpose: {},
+      msByPurpose: {},
+      stages: { ...this.stageMs },
       chatModels: [],
       embeddingModel: null,
     };
     const unpriced = new Set<string>();
     for (const e of this.entries) {
       t.byPurpose[e.purpose] = (t.byPurpose[e.purpose] ?? 0) + 1;
+      t.msByPurpose[e.purpose] = (t.msByPurpose[e.purpose] ?? 0) + Math.round(e.ms);
       if (!e.ok) t.failedCalls++;
       if (e.kind === "chat" || e.kind === "stream") {
         t.llmCalls++;
@@ -128,6 +141,16 @@ export function currentSignal(): AbortSignal | undefined {
 /** Runs `fn` in `scope` (including the callbacks and promises it starts). */
 export function withRequestScope<T>(scope: RequestScope, fn: () => Promise<T>): Promise<T> {
   return storage.run(scope, fn);
+}
+
+/** Times `fn` as a pipeline stage of the current request (no-op outside a request). */
+export async function timeStage<T>(name: string, fn: () => Promise<T>): Promise<T> {
+  const started = Date.now();
+  try {
+    return await fn();
+  } finally {
+    currentMeter()?.stage(name, Date.now() - started);
+  }
 }
 
 /** Convenience for callers that only meter (tests, scripts). */

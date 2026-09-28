@@ -104,6 +104,8 @@ export type CaseValidationReport = {
   droppedArticles: number;
   droppedLegalItems: number;
   qualifiedLegalItems: number;
+  /** Dates/figures in the summary or a restated fact that the file does not state (replaced by a placeholder). */
+  redactedFigures: number;
   groundingLevel: GroundingLevel;
 };
 
@@ -116,6 +118,65 @@ function groundItem(text: string, citation: string | undefined, chunks: Retrieve
   const g = groundAnswer(checked.text, chunks);
   if (g.level === "none" || !g.text) return null;
   return { text: g.text.replace(/\s*\[\d{1,2}\]\s*\.?$/, "").trim(), citation: marker, qualified: g.level !== "full" };
+}
+
+// ---- dates and figures as units (Phase 2.1) --------------------------------
+
+// Levantine and Egyptian/Gulf month names; matched whole (so "ابريل" is never read as "اب").
+const MONTHS: [RegExp, number][] = [
+  [/^كانون الثاني$/, 1], [/^كانون الأول$/, 12], [/^تشرين الأول$/, 10], [/^تشرين الثاني$/, 11],
+  [/^شباط$/, 2], [/^(?:آذار|اذار)$/, 3], [/^نيسان$/, 4], [/^(?:أيار|ايار)$/, 5], [/^حزيران$/, 6], [/^تموز$/, 7], [/^آب$/, 8], [/^(?:أيلول|ايلول)$/, 9],
+  [/^يناير$/, 1], [/^فبراير$/, 2], [/^مارس$/, 3], [/^(?:أبريل|ابريل)$/, 4], [/^مايو$/, 5], [/^(?:يونيو|يونيه)$/, 6], [/^(?:يوليو|يوليه)$/, 7],
+  [/^(?:أغسطس|اغسطس)$/, 8], [/^سبتمبر$/, 9], [/^(?:أكتوبر|اكتوبر)$/, 10], [/^نوفمبر$/, 11], [/^ديسمبر$/, 12],
+];
+const MONTH_ALT = "كانون\\s+الثاني|كانون\\s+الأول|تشرين\\s+الأول|تشرين\\s+الثاني|شباط|آذار|اذار|نيسان|أيار|ايار|حزيران|تموز|آب|أيلول|ايلول|يناير|فبراير|مارس|أبريل|ابريل|مايو|يونيو|يونيه|يوليو|يوليه|أغسطس|اغسطس|سبتمبر|أكتوبر|اكتوبر|نوفمبر|ديسمبر";
+// d/m/y, y/m/d (with / - .), and "15 آذار 2024".
+const DATE_UNIT_RE = new RegExp(
+  `(?<!\\d)(\\d{1,2})\\s*[/\\-.]\\s*(\\d{1,2})\\s*[/\\-.]\\s*(\\d{4})(?!\\d)|(?<!\\d)(\\d{4})\\s*[/\\-.]\\s*(\\d{1,2})\\s*[/\\-.]\\s*(\\d{1,2})(?!\\d)|(?<!\\d)(\\d{1,2})\\s+(${MONTH_ALT})\\s+(\\d{4})(?!\\d)`,
+  "g"
+);
+
+function dateKey(m: RegExpMatchArray): string {
+  const pad = (x: string | number) => String(Number(x)).padStart(2, "0");
+  if (m[1]) return `${m[3]}-${pad(m[2])}-${pad(m[1])}`;
+  if (m[4]) return `${m[4]}-${pad(m[5])}-${pad(m[6])}`;
+  const name = m[8].replace(/\s+/g, " ");
+  const month = MONTHS.find(([re]) => re.test(name))?.[1] ?? 0;
+  return `${m[9]}-${pad(month)}-${pad(m[7])}`;
+}
+
+/** The dates a text states, as yyyy-mm-dd — however they were written. */
+export function datesOf(text: string): Set<string> {
+  return new Set([...normalizeDigits(text).matchAll(DATE_UNIT_RE)].map(dateKey));
+}
+
+export const UNVERIFIED_DATE = "[تاريخ غير مُتحقَّق منه]";
+export const UNVERIFIED_FIGURE = "[رقم غير مُتحقَّق منه]";
+
+/**
+ * A text written ABOUT a file (a summary, a restated fact) may state only the
+ * file's own dates and figures. A date counts as a whole — "12/1/2024" is not
+ * in a file that has "12/3/2023" and "5/1/2024", although each of its digits
+ * is (the old digit-by-digit check let exactly that through) — and is matched
+ * however it is written ("2024-01-12", "12 كانون الثاني 2024").
+ */
+export function checkFiguresAgainst(text: string, file: string): { text: string; redacted: number } {
+  const fileDates = datesOf(file);
+  const fileNumbers = new Set([...normalizeDigits(file).matchAll(/\d+/g)].map((m) => String(Number(m[0]))));
+  let redacted = 0;
+  let out = normalizeDigits(text).replace(DATE_UNIT_RE, (...args) => {
+    const m = args.slice(0, 10) as unknown as RegExpMatchArray;
+    if (fileDates.has(dateKey(m))) return args[0];
+    redacted++;
+    return UNVERIFIED_DATE;
+  });
+  out = out.replace(/\d+(?:[.,]\d+)?/g, (n) => {
+    const whole = n.replace(/[.,]\d+$/, "");
+    if (fileNumbers.has(String(Number(whole))) && (whole === n || normalizeDigits(file).includes(n))) return n;
+    redacted++;
+    return UNVERIFIED_FIGURE;
+  });
+  return { text: out, redacted };
 }
 
 export function validateCaseAnalysis(
@@ -133,13 +194,19 @@ export function validateCaseAnalysis(
   const parties = a.parties.filter((p) => appearsIn(p.name, docNorm)).map((p) => ({ role: p.role, name: p.name.trim() }));
   const facts: string[] = [];
   const factEvidence: string[] = [];
+  let redactedFigures = 0;
   for (const f of a.facts) {
     const fact = typeof f === "string" ? f : f.fact;
     const excerpt = typeof f === "string" ? f : (f.excerpt ?? "");
     // A fact is shown only with a verbatim excerpt of the file behind it —
     // either the declared excerpt, or the fact itself quoted from the file.
+    // Its own wording may not add a date or figure the file does not state
+    // (Phase 2.1: a verbatim excerpt used to vouch for a restated fact that
+    // changed the date).
     if (excerpt && appearsIn(excerpt, docNorm)) {
-      facts.push(fact.trim());
+      const checked = checkFiguresAgainst(fact.trim(), caseText);
+      redactedFigures += checked.redacted;
+      facts.push(checked.text);
       factEvidence.push(excerpt.trim());
     } else if (appearsIn(fact, docNorm)) {
       facts.push(fact.trim());
@@ -170,11 +237,10 @@ export function validateCaseAnalysis(
   const weaknesses = legal(a.weaknesses, "point");
   const kept = legal_basis.length + possible_defenses.length + strengths.length + weaknesses.length;
 
-  // The summary describes the file: figures in it must come from the file.
-  let summary = normalizeDigits(a.summary);
-  const docDigits = new Set([...normalizeDigits(caseText).matchAll(/\d+/g)].map((m) => m[0]));
-  summary = summary.replace(/\d+/g, (n) => (docDigits.has(n) ? n : "[رقم غير مُتحقَّق منه]"));
-  summary = redactCitations(summary).text;
+  // The summary describes the file: its dates and figures must be the file's.
+  const summaryChecked = checkFiguresAgainst(a.summary, caseText);
+  redactedFigures += summaryChecked.redacted;
+  const summary = redactCitations(summaryChecked.text).text;
 
   return {
     ok: true,
@@ -197,6 +263,7 @@ export function validateCaseAnalysis(
       droppedArticles: a.cited_articles.length - citedArticles.length,
       droppedLegalItems: dropped,
       qualifiedLegalItems: qualified,
+      redactedFigures,
       groundingLevel: kept === 0 ? "none" : dropped === 0 && qualified === 0 ? "full" : "partial",
     },
   };
@@ -304,6 +371,12 @@ export type DraftValidationReport = {
   unverifiedFacts: { kind: "date" | "amount" | "number"; value: string }[];
   /** Legal citations in the draft that were verified against a retrieved source. */
   verifiedCitations: number;
+  /**
+   * Phase 2.1: short fields the lawyer supplied (names, court, dates) that do
+   * not appear in the draft as written — misspelled, changed or dropped.
+   * Filled by runDraft, which knows the form.
+   */
+  missingSuppliedFields: string[];
 };
 
 const DATE_RE = /\b\d{1,2}\s*[/\-.]\s*\d{1,2}\s*[/\-.]\s*\d{2,4}\b|\b\d{4}\s*[/\-.]\s*\d{1,2}\s*[/\-.]\s*\d{1,2}\b/g;
@@ -389,6 +462,7 @@ export function validateDraft(
       redactedCitations: checked.redactedCount + redactedUncited,
       unverifiedFacts,
       verifiedCitations: verified,
+      missingSuppliedFields: [],
     },
   };
 }

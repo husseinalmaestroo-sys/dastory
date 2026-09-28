@@ -321,6 +321,14 @@ export const env = {
   get retentionDays() {
     return num("CONTENT_RETENTION_DAYS", 90);
   },
+  /** Content-free accounting (ai_requests) is kept this long. Phase 2.1: configurable, default 400. */
+  get accountingRetentionDays() {
+    return num("ACCOUNTING_RETENTION_DAYS", 400);
+  },
+  /** Phase 2.1: run the retention purge from request handling (at most every 6 h across instances). On unless AUTO_RETENTION=false. */
+  get autoRetention() {
+    return process.env.AUTO_RETENTION !== "false";
+  },
 
   /**
    * Phase 6 post-generation self-verification (self-verify.ts): an LLM judge

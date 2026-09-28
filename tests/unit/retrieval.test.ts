@@ -24,6 +24,7 @@ import {
   matchKeys,
 } from "@/lib/ai/legal-semantics";
 import { foldForSearch } from "@/lib/ingest/clean";
+import { expandWithOntology } from "@/lib/search/legal-ontology";
 import { UsageMeter } from "@/lib/ai/usage-meter";
 import { chunk } from "./fixtures";
 
@@ -302,4 +303,21 @@ test("articles an article makes itself subject to are found (same law only)", ()
   assert.deepEqual(referencedArticles("على الرغم مما ورد في المادة 7، لا يجوز ..."), ["7"]);
   assert.deepEqual(referencedArticles("باستثناء ما ورد في المادة 9 من قانون العمل، ..."), [], "another law's article is not this law's");
   assert.deepEqual(referencedArticles("واستثناء من أحكام هذه المادة، لا يلتزم المؤجر ..."), [], "a self-reference names no other article");
+});
+
+test("ontology: rent non-payment in formal Arabic reaches the statutory terms, as the dialect forms always did", () => {
+  const lease = (q: string) => expandWithOntology(q).matches.some((m) => m.concept === "الإيجار والإخلاء");
+  for (const q of [
+    "مستأجر ما يدفع الأجرة من شهرين", // dialect, as before
+    "إذا لم يسدد المستأجر الإيجار شهراً كاملاً فهل يحق للمالك إنهاء العقد؟",
+    "المستأجر لم يدفع بدل الإيجار منذ ثلاثة أشهر، ما الإجراء؟",
+    "امتنع المستأجر عن سداد الأجرة المستحقة فهل للمؤجر طلب الإخلاء؟",
+    "ما أثر عدم دفع الأجرة على عقد الإيجار؟",
+  ]) {
+    assert.ok(lease(q), q);
+  }
+  assert.ok(expandWithOntology("إذا لم يسدد المستأجر الإيجار").terms.includes("التخلف عن دفع الأجرة"));
+  // Paying rent, or a debtor not paying, is not a tenant's non-payment.
+  assert.equal(lease("متى تدفع الأجرة إذا لم يتفق الطرفان على موعد لدفعها؟"), false);
+  assert.equal(lease("المدين لم يسدد القرض في موعده"), false);
 });

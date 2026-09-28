@@ -1,15 +1,15 @@
 {
   "mode": "offline",
-  "ranAt": "2026-09-28T06:56:08.450Z",
+  "ranAt": "2026-09-28T07:09:34.726Z",
   "gold": "SYNTHETIC (offline) — see eval/dataset.json _gold; real-corpus legal gold: GOLD UNVERIFIED",
   "metrics": {
     "retrieval": {
       "label": "MEASURED on the synthetic corpus with the lexical test embedder — says nothing about real embedding quality on Jordanian law",
       "cases": 50,
-      "recall_at_8": 0.98,
-      "precision_at_k": 0.687,
-      "mrr": 0.945,
-      "ndcg_at_8": 0.9539,
+      "recall_at_8": 1,
+      "precision_at_k": 0.691,
+      "mrr": 0.965,
+      "ndcg_at_8": 0.9739,
       "by_set": {
         "original": {
           "cases": 17,
@@ -20,10 +20,10 @@
         },
         "heldout-2.1": {
           "cases": 17,
-          "recall_at_8": 0.9412,
-          "precision_at_k": 0.6294,
-          "mrr": 0.9412,
-          "ndcg_at_8": 0.9412
+          "recall_at_8": 1,
+          "precision_at_k": 0.6412,
+          "mrr": 1,
+          "ndcg_at_8": 1
         },
         "heldout-2.1b": {
           "cases": 16,
@@ -73,20 +73,20 @@
     "performance": {
       "label": "NOT REPRESENTATIVE (pipeline overhead with an instant test model; real latency is dominated by the LLM — UNKNOWN until the live run)",
       "p50_ms": {
-        "chat": 19,
-        "contract_review": 45,
-        "case_analysis": 46
+        "chat": 18,
+        "contract_review": 44,
+        "case_analysis": 43
       },
       "p95_ms": {
-        "chat": 34,
-        "contract_review": 293,
-        "case_analysis": 46
+        "chat": 36,
+        "contract_review": 292,
+        "case_analysis": 43
       },
       "timeout_rate": 0
     },
     "cost": {
       "label": "NOT REPRESENTATIVE (test models are free; token counts are chars/4 approximations). Real cost: UNKNOWN until the live run.",
-      "avg_tokens_in_per_query": 1988,
+      "avg_tokens_in_per_query": 1992,
       "avg_tokens_out_per_query": 68,
       "avg_cost_usd_per_query": 0,
       "retry_overhead": 0
@@ -172,14 +172,14 @@
     },
     {
       "gate": "retrieval_recall_at_8",
-      "value": 0.98,
+      "value": 1,
       "threshold": "≥ 0.85",
       "pass": true,
       "binding": false
     },
     {
       "gate": "retrieval_mrr",
-      "value": 0.945,
+      "value": 0.965,
       "threshold": "≥ 0.7",
       "pass": true,
       "binding": false
@@ -277,7 +277,7 @@
         "top3": [
           "lease|5",
           "lease|12",
-          "lease|17"
+          "lease|2"
         ]
       }
     },
@@ -1034,15 +1034,16 @@
       "mode": "grounded",
       "groundingLevel": "full",
       "grounded": true,
-      "sources": 2,
+      "sources": 5,
       "claims": 2,
       "llmCalls": 2,
       "retrieval": {
-        "firstRelevantRank": null,
-        "returned": 2,
+        "firstRelevantRank": 1,
+        "returned": 5,
         "top3": [
-          "lease|12",
-          "lease|4"
+          "lease|5",
+          "lease|2",
+          "lease|3"
         ]
       }
     },

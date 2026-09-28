@@ -1,5 +1,7 @@
 import "server-only";
 import { query } from "../db";
+import { SERVABLE_SQL } from "../corpus/integrity";
+import { env } from "../env";
 import { normalizeDigits } from "../ingest/clean";
 import { REDACTION } from "./guard";
 
@@ -53,26 +55,42 @@ const YEAR_RE = /لسنة\s*[({[]?\s*(?:19|20)\d{2}[)}\]]?/g;
 type Span = { start: number; end: number; raw: string; verified: boolean };
 type LawSpan = Span & { lawNumber: string };
 
+// Phase 2.1: a citation is "verified" only against the corpus retrieval may
+// serve — a Jordanian, ready, non-quarantined source (and a fixture only when
+// fixtures are allowed). A law's year is usually in its title, not in the
+// year column (which court decisions use), so both are accepted.
+const SERVED = `status = 'ready' AND jurisdiction = 'JO' AND integrity_status IN (${SERVABLE_SQL}) AND (is_synthetic = false OR $3::boolean)`;
+
 async function verifyLaw(lawNumber: string, year: number | null): Promise<boolean> {
   const rows = await query(
-    `SELECT 1 FROM legal_sources WHERE law_number = $1 AND ($2::int IS NULL OR year = $2) LIMIT 1`,
-    [lawNumber, year]
+    `SELECT 1 FROM legal_sources
+      WHERE law_number = $1
+        AND ($2::int IS NULL OR year = $2 OR title ~ ('(لسنة|لعام|سنة)\\s*\\(?\\s*' || $2::text || '([^0-9]|$)'))
+        AND ${SERVED}
+      LIMIT 1`,
+    [lawNumber, year, env.allowSyntheticCorpus]
   );
   return rows.length > 0;
 }
 
 async function verifyDecision(decisionNumber: string, year: number | null): Promise<boolean> {
   const rows = await query(
-    `SELECT 1 FROM legal_documents WHERE decision_number = $1 AND ($2::int IS NULL OR year = $2) LIMIT 1`,
-    [decisionNumber, year]
+    `SELECT 1 FROM legal_documents d
+      WHERE d.decision_number = $1 AND ($2::int IS NULL OR d.year = $2)
+        AND d.source_id IN (SELECT id FROM legal_sources WHERE ${SERVED})
+      LIMIT 1`,
+    [decisionNumber, year, env.allowSyntheticCorpus]
   );
   return rows.length > 0;
 }
 
 async function verifyArticleInLaw(articleNumber: string, lawNumber: string): Promise<boolean> {
   const rows = await query(
-    `SELECT 1 FROM legal_documents WHERE article_number = $1 AND law_number = $2 LIMIT 1`,
-    [articleNumber, lawNumber]
+    `SELECT 1 FROM legal_documents d
+      WHERE d.article_number = $1 AND d.law_number = $2
+        AND d.source_id IN (SELECT id FROM legal_sources WHERE ${SERVED})
+      LIMIT 1`,
+    [articleNumber, lawNumber, env.allowSyntheticCorpus]
   );
   return rows.length > 0;
 }

@@ -630,6 +630,16 @@ export const GENERAL_ANSWER_DISCLAIMER =
 export const GROUNDED_ANSWER_DISCLAIMER =
   "هذه الإجابة مبنية على مصادر قانونية موثّقة من قاعدة البيانات، ولا تُغني عن استشارة محامٍ مرخّص أو المراجعة المهنية قبل الاعتماد عليها في أي إجراء قانوني أو أمام المحكمة.";
 
+/**
+ * Phase 2.1: the grounded disclaimer when a cited text has not been checked
+ * against the issuing authority's publication (corpus/integrity.ts) — the
+ * sources are the database's, not certified copies of the law.
+ */
+export const GROUNDED_UNVERIFIED_DISCLAIMER =
+  "هذه الإجابة مبنية على نصوص من قاعدة البيانات القانونية لم يُتحقَّق بعد من مطابقتها للنشر الرسمي للجهة المصدرة؛ راجع النص الرسمي قبل الاعتماد عليها، ولا تُغني عن استشارة محامٍ مرخّص أو المراجعة المهنية قبل أي إجراء قانوني أو أمام المحكمة.";
+/** Appended to another disclaimer when a cited text is unverified. */
+export const UNVERIFIED_SOURCES_SENTENCE = "النصوص المستشهد بها لم يُتحقَّق بعد من مطابقتها للنشر الرسمي.";
+
 /** Shown under a partially grounded answer: some claims were removed or qualified by grounding.ts. */
 export const PARTIAL_ANSWER_DISCLAIMER =
   "تحقّق النظام آلياً من هذه الإجابة مقابل مصادرها: بعض ما ورد فيها لم يثبت في المصادر فحُذف أو حُجب أو وُسم بأنه استنتاج. راجع المصادر المرفقة قبل الاعتماد عليها.";

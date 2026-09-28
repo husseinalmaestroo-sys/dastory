@@ -25,6 +25,7 @@ import {
   questionTopicText,
 } from "../ai/legal-semantics";
 import { getRerankProvider } from "../ai/rerank";
+import { SERVABLE_SQL } from "../corpus/integrity";
 import { resolveThresholds, gateChunk, computeConfidence, type ConfidenceResult } from "./confidence";
 import type { QueryType } from "./query-understanding";
 import type { RetrievedChunk, RerankTrace, SearchFilters } from "./types";
@@ -115,6 +116,7 @@ type Row = {
   provenance: string | null;
   is_synthetic: boolean | null;
   source_url: string | null;
+  integrity_status: string | null;
   vector_score: number | null;
   keyword_score: number | null;
   vector_rank: number | null;
@@ -155,6 +157,7 @@ type FullRow = {
   provenance: string | null;
   is_synthetic: boolean | null;
   source_url: string | null;
+  integrity_status: string | null;
 };
 
 export type SearchResult = {
@@ -457,6 +460,7 @@ export async function hybridSearch(
       provenance: full.provenance,
       is_synthetic: full.is_synthetic,
       source_url: full.source_url,
+      integrity_status: full.integrity_status,
       vector_score: vec?.score ?? null,
       keyword_score: kw?.score ?? null,
       vector_rank: vec?.rank ?? null,
@@ -568,6 +572,7 @@ export async function hybridSearch(
         provenance: r.provenance,
         is_synthetic: r.is_synthetic,
         source_url: r.source_url,
+        integrity_status: r.integrity_status,
         vector_score: r.vector_score,
         keyword_score: r.keyword_score,
         stem_score: r.stem_score,
@@ -795,6 +800,8 @@ const FILTER_FRAGMENT = `
           -- into production by mistake can never be quoted as law.
           AND jurisdiction = 'JO'
           AND (is_synthetic = false OR $18::boolean)
+          -- Phase 2.1: a quarantined or replaced text is never served.
+          AND integrity_status IN (${SERVABLE_SQL})
           AND ($14::text IS NULL OR source_type = $14)
           AND ($15::boolean IS NOT TRUE OR is_current_version = TRUE)
           AND ($16::date IS NULL OR effective_date IS NULL OR effective_date <= $16::date)
@@ -914,7 +921,7 @@ const FULL_ROW_SQL = `
          d.part, d.chapter, d.section, d.court, d.decision_number, d.year, d.category,
          d.keywords, d.legal_topics, s.title AS source_title, s.source_type, d.chunk_index,
          s.is_current_version, s.effective_date::text AS effective_date, s.jurisdiction,
-         s.provenance, s.is_synthetic, s.source_url
+         s.provenance, s.is_synthetic, s.source_url, s.integrity_status
     FROM legal_documents d
     JOIN legal_sources s ON s.id = d.source_id
    WHERE d.id = ANY($1::bigint[])
@@ -922,6 +929,7 @@ const FULL_ROW_SQL = `
      -- whose ids come from a client (draft refine).
      AND s.jurisdiction = 'JO'
      AND (s.is_synthetic = false OR $2::boolean)
+     AND s.integrity_status IN (${SERVABLE_SQL})
 `;
 
 /** Reorders `rows` to match `ids` exactly; silently drops any id with no
@@ -1104,13 +1112,14 @@ const COMPANION_SQL = `
          d.part, d.chapter, d.section, d.court, d.decision_number, d.year, d.category,
          d.keywords, d.legal_topics, s.title AS source_title, s.source_type, d.chunk_index,
          s.is_current_version, s.effective_date::text AS effective_date, s.jurisdiction,
-         s.provenance, s.is_synthetic, s.source_url
+         s.provenance, s.is_synthetic, s.source_url, s.integrity_status
     FROM legal_documents d
     JOIN legal_sources s ON s.id = d.source_id
    WHERE (d.source_id, d.article_number) IN (SELECT * FROM unnest($1::bigint[], $2::text[]))
      AND s.status = 'ready'
      AND s.jurisdiction = 'JO'
      AND (s.is_synthetic = false OR $3::boolean)
+     AND s.integrity_status IN (${SERVABLE_SQL})
    ORDER BY d.source_id, d.chunk_index
 `;
 

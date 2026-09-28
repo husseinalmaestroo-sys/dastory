@@ -1,6 +1,7 @@
 import "server-only";
 import { foldForSearch, normalizeDigits } from "../ingest/clean";
 import { query } from "../db";
+import { SERVABLE_SQL } from "../corpus/integrity";
 
 /**
  * Which law a question names — "المادة 17 من قانون العمل" → قانون العمل.
@@ -334,7 +335,10 @@ const TITLE_TTL_MS = 5 * 60_000;
 async function sourceTitles(): Promise<SourceTitle[]> {
   if (titleCache && Date.now() - titleCache.at < TITLE_TTL_MS) return titleCache.rows;
   const rows = await query<{ id: string | number; title: string; is_current_version: boolean }>(
-    `SELECT id, title, is_current_version FROM legal_sources WHERE status = 'ready' AND jurisdiction = 'JO'`
+    // Only texts retrieval may serve: a quarantined or replaced source must not
+    // make a law "present" (Phase 2.1).
+    `SELECT id, title, is_current_version FROM legal_sources
+      WHERE status = 'ready' AND jurisdiction = 'JO' AND integrity_status IN (${SERVABLE_SQL})`
   );
   titleCache = {
     at: Date.now(),

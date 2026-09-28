@@ -30,7 +30,9 @@ import {
   FOREIGN_JURISDICTION_ANSWER_EN,
   GENERAL_ANSWER_DISCLAIMER,
   GROUNDED_ANSWER_DISCLAIMER,
+  GROUNDED_UNVERIFIED_DISCLAIMER,
   PARTIAL_ANSWER_DISCLAIMER,
+  UNVERIFIED_SOURCES_SENTENCE,
   SOURCES_ONLY_DISCLAIMER,
   GAP_MARKER_RE,
   type ConversationTurn,
@@ -42,6 +44,7 @@ import { applyClaimVerdicts, capLevel, claimsForJudge, groundAnswer, type ClaimC
 import { extractPremise, premiseConflicts, questionTopicStems, sourceIsRelevant } from "../legal-semantics";
 import { normalizeDigits } from "../../ingest/clean";
 import { extractAllLawReferences } from "../../search/law-reference";
+import { isAuthoritative } from "../../corpus/integrity";
 import { checkJurisdiction, COMPARISON_NOTICE_AR, isMostlyLatin } from "../jurisdiction";
 import { detectPromptLeak, PROMPT_LEAK_REPLACEMENT } from "../untrusted";
 import type { RequestOutcome } from "../request";
@@ -101,9 +104,22 @@ export type Citation = {
   effectiveDate: string | null;
   provenance: string | null;
   sourceUrl: string | null;
+  /** verified | unverified — whether this text was checked against the official publication (Phase 2.1). */
+  integrityStatus: string | null;
+  /** Official, verified and not a fixture: may be presented as the law's text. Anything else is labelled. */
+  authoritative: boolean;
   /** Whether the final answer cites this source. */
   cited: boolean;
 };
+
+export type SourceAuthority = "verified" | "unverified" | "none";
+
+/** What the cited sources allow the answer to claim about them. */
+export function sourceAuthorityOf(sources: Pick<Citation, "cited" | "authoritative">[]): SourceAuthority {
+  const cited = sources.filter((s) => s.cited);
+  if (cited.length === 0) return "none";
+  return cited.every((s) => s.authoritative) ? "verified" : "unverified";
+}
 
 export type ChatInput = {
   question: string;
@@ -120,6 +136,12 @@ export type ChatOutcome = {
   sources: Citation[];
   claims: Pick<ClaimCheck, "text" | "refs" | "kind" | "status" | "issues" | "evidence">[];
   disclaimer?: string;
+  /**
+   * Phase 2.1: "verified" when every source the answer cites is authoritative
+   * (official, checked against the publication), "unverified" when any is not,
+   * "none" when it cites nothing.
+   */
+  sourceAuthority: SourceAuthority;
   confidence: ConfidenceResult | null;
   notices: string[];
   verification: { status: VerificationResult["status"]; passed: boolean; issues: string[]; severity: string; repaired: boolean } | null;
@@ -249,6 +271,20 @@ export function toAnalysisPayload(a: QueryAnalysis, expandedWith: string[] = [])
   };
 }
 
+/**
+ * The answer's claim about its sources follows from them (Phase 2.1): the
+ * grounded disclaimer used to call every source "موثّقة" although no text had
+ * been checked against its official publication. A grounded answer citing an
+ * unverified text now says so.
+ */
+function withAuthority(o: { sources: Citation[]; disclaimer?: string; grounded: boolean }): { sourceAuthority: SourceAuthority; disclaimer?: string } {
+  const sourceAuthority = sourceAuthorityOf(o.sources);
+  if (!o.grounded || sourceAuthority !== "unverified") return { sourceAuthority, disclaimer: o.disclaimer };
+  const disclaimer =
+    o.disclaimer === GROUNDED_ANSWER_DISCLAIMER ? GROUNDED_UNVERIFIED_DISCLAIMER : [o.disclaimer, UNVERIFIED_SOURCES_SENTENCE].filter(Boolean).join(" ");
+  return { sourceAuthority, disclaimer };
+}
+
 /** What a client needs to render (and trace) a source — never the full chunk body. */
 export function toCitation(c: RetrievedChunk, i: number, cited = false): Citation {
   return {
@@ -271,6 +307,8 @@ export function toCitation(c: RetrievedChunk, i: number, cited = false): Citatio
     effectiveDate: c.effective_date ?? null,
     provenance: c.provenance ?? null,
     sourceUrl: c.source_url ?? null,
+    integrityStatus: c.integrity_status ?? null,
+    authoritative: isAuthoritative(c),
     cited,
   };
 }
@@ -382,8 +420,9 @@ export async function runChatPipeline(input: ChatInput, caller: Caller, emit: Em
     condensed: false,
   };
 
-  const finish = (o: Omit<ChatOutcome, "notices" | "checks" | "outcome">, retrievalCount: number): ChatOutcome => ({
+  const finish = (o: Omit<ChatOutcome, "notices" | "checks" | "outcome" | "sourceAuthority">, retrievalCount: number): ChatOutcome => ({
     ...o,
+    ...withAuthority(o),
     notices,
     checks,
     outcome: {

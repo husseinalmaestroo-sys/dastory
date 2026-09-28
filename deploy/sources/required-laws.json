@@ -1,0 +1,25 @@
+{
+ "_what": "The Jordanian legislation a legal assistant must be able to answer from (Phase 2.1 corpus coverage). scripts/corpus-inventory.ts reports each law as present / servable / official / verified / current / embedded / searchable. A law that is not servable is answered 'not in the database' (search/law-reference.ts), never from another law.",
+ "_verification": "UNVERIFIED METADATA. Numbers and years are copied from this project's own download lists: 'moj-list' = the file names on moj.gov.jo's law list (collected 2026-07-17, deploy/sources/moj-laws-ar.txt); 'missing-list' = deploy/sources/jordan-core-laws-missing.txt, which says they are for guidance and must be checked against the official file at ingest. Neither is a citation source. A qualified reviewer must confirm each entry against the Official Gazette / Legislation and Opinion Bureau before this registry is relied on.",
+ "laws": [
+  { "id": "constitution", "name": "الدستور", "kind": "الدستور", "priority": "P0", "category": "دستورية", "basis": "moj-list" },
+  { "id": "civil", "name": "القانون المدني", "kind": "قانون", "number": "43", "year": 1976, "priority": "P0", "category": "مدنية", "basis": "moj-list" },
+  { "id": "penal", "name": "قانون العقوبات", "kind": "قانون", "number": "16", "year": 1960, "priority": "P0", "category": "جزائية", "basis": "moj-list" },
+  { "id": "civil-procedure", "name": "قانون أصول المحاكمات المدنية", "kind": "قانون", "number": "24", "year": 1988, "priority": "P0", "category": "إجرائية", "basis": "moj-list" },
+  { "id": "criminal-procedure", "name": "قانون أصول المحاكمات الجزائية", "kind": "قانون", "number": "9", "year": 1961, "priority": "P0", "category": "إجرائية", "basis": "moj-list" },
+  { "id": "execution", "name": "قانون التنفيذ", "kind": "قانون", "number": "25", "year": 2007, "priority": "P0", "category": "إجرائية", "basis": "moj-list" },
+  { "id": "evidence", "name": "قانون البينات", "kind": "قانون", "number": "30", "year": 1952, "priority": "P0", "category": "مدنية", "basis": "missing-list" },
+  { "id": "trade", "name": "قانون التجارة", "kind": "قانون", "number": "12", "year": 1966, "priority": "P0", "category": "تجارية", "basis": "missing-list" },
+  { "id": "labour", "name": "قانون العمل", "kind": "قانون", "number": "8", "year": 1996, "priority": "P0", "category": "عمالية", "basis": "missing-list" },
+  { "id": "companies", "name": "قانون الشركات", "kind": "قانون", "number": "22", "year": 1997, "priority": "P0", "category": "شركات", "basis": "missing-list" },
+  { "id": "personal-status", "name": "قانون الأحوال الشخصية", "kind": "قانون", "number": "15", "year": 2019, "priority": "P0", "category": "أحوال شخصية", "basis": "missing-list" },
+  { "id": "courts-formation", "name": "قانون تشكيل المحاكم النظامية", "kind": "قانون", "number": "17", "year": 2001, "priority": "P1", "category": "إجرائية", "basis": "moj-list" },
+  { "id": "notary", "name": "قانون الكاتب العدل", "kind": "قانون", "number": "11", "year": 1952, "priority": "P1", "category": "إجرائية", "basis": "moj-list" },
+  { "id": "mediation", "name": "قانون الوساطة لتسوية النزاعات المدنية", "kind": "قانون", "number": "12", "year": 2006, "priority": "P1", "category": "مدنية", "basis": "moj-list" },
+  { "id": "owners-tenants", "name": "قانون المالكين والمستأجرين", "kind": "قانون", "number": "11", "year": 1994, "priority": "P1", "category": "مدنية", "basis": "missing-list" },
+  { "id": "real-property", "name": "قانون الملكية العقارية", "kind": "قانون", "number": "13", "year": 2019, "priority": "P1", "category": "مدنية", "basis": "missing-list" },
+  { "id": "arbitration", "name": "قانون التحكيم", "kind": "قانون", "number": "31", "year": 2001, "priority": "P1", "category": "تجارية", "basis": "missing-list" },
+  { "id": "income-tax", "name": "قانون ضريبة الدخل", "kind": "قانون", "number": "34", "year": 2014, "priority": "P1", "category": "ضريبية", "basis": "missing-list" },
+  { "id": "consumer-protection", "name": "قانون حماية المستهلك", "kind": "قانون", "number": "7", "year": 2017, "priority": "P1", "category": "تجارية", "basis": "missing-list" }
+ ]
+}

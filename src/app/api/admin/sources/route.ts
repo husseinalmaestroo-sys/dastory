@@ -33,7 +33,8 @@ export async function GET(req: NextRequest) {
 
   const rows = await query(
     `SELECT id, title, source_type, category, court, year, law_number, effective_date,
-            amendment_of, supersedes, is_current_version, status, error, note, chunk_count, created_at
+            amendment_of, supersedes, is_current_version, status, error, note, chunk_count, created_at,
+            provenance, integrity_status, integrity_note
        FROM legal_sources ORDER BY created_at DESC LIMIT 500`
   );
   return Response.json({ sources: rows });

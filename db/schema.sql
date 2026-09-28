@@ -589,3 +589,40 @@ CREATE INDEX IF NOT EXISTS idx_ai_requests_created ON ai_requests (created_at DE
 -- rows; the leftovers are removed (rate-limit buckets keyed on them expire on
 -- their own). Idempotent.
 DELETE FROM users WHERE name_key LIKE 'dostoori-office-%' OR office_name = 'Dostoori (integration)';
+
+-- ============================================================
+--  Phase 2.1 — corpus integrity
+-- ============================================================
+
+-- Whether a source's TEXT can be relied on — separate from where it came from
+-- (provenance) and from whether it is the version in force (is_current_version):
+--   'verified'    compared with the issuing authority's publication and found
+--                 faithful; who, when and against what is in the event log below
+--   'unverified'  not compared (every source ingested before Phase 2.1)
+--   'quarantined' known or suspected damaged — garbled extraction, broken or
+--                 missing article numbering, truncated, the wrong law. NEVER served.
+--   'replaced'    superseded by a repaired re-ingest (replaced_by); kept for the
+--                 audit trail, NEVER served.
+-- A source is AUTHORITATIVE only when it is official, verified and not a
+-- fixture (src/lib/corpus/integrity.ts); everything else is served labelled.
+ALTER TABLE legal_sources ADD COLUMN IF NOT EXISTS integrity_status TEXT NOT NULL DEFAULT 'unverified'
+  CHECK (integrity_status IN ('verified', 'unverified', 'quarantined', 'replaced'));
+ALTER TABLE legal_sources ADD COLUMN IF NOT EXISTS integrity_note       TEXT;
+ALTER TABLE legal_sources ADD COLUMN IF NOT EXISTS integrity_checked_at TIMESTAMPTZ;
+ALTER TABLE legal_sources ADD COLUMN IF NOT EXISTS replaced_by          BIGINT REFERENCES legal_sources(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_sources_integrity ON legal_sources (integrity_status);
+
+-- Every integrity decision, append-only: who changed a source's status, from
+-- what to what, why, and against which evidence (the official publication's
+-- URL or file hash). Quarantining or replacing a source never deletes it.
+CREATE TABLE IF NOT EXISTS corpus_integrity_events (
+  id           BIGSERIAL   PRIMARY KEY,
+  source_id    BIGINT      NOT NULL REFERENCES legal_sources(id) ON DELETE CASCADE,
+  from_status  TEXT,
+  to_status    TEXT        NOT NULL,
+  actor        TEXT        NOT NULL,
+  reason       TEXT        NOT NULL,
+  evidence     TEXT,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_integrity_events_source ON corpus_integrity_events (source_id, created_at);

@@ -28,6 +28,8 @@ type FixtureSource = {
   jurisdiction?: string;
   court?: string;
   year?: number;
+  /** Phase 2.1: a fixture can be loaded quarantined (a damaged text retrieval must never serve). */
+  integrity_status?: "verified" | "unverified" | "quarantined";
   text: string;
 };
 
@@ -44,9 +46,9 @@ export async function loadEvalFixtures(opts: { quiet?: boolean } = {}): Promise<
       const row = await queryOne<{ id: string }>(
         `INSERT INTO legal_sources
            (title, source_type, court, year, status, law_number, effective_date, is_current_version,
-            jurisdiction, language, provenance, is_synthetic, acquired_at, issuing_authority, note)
+            jurisdiction, language, provenance, is_synthetic, acquired_at, issuing_authority, note, integrity_status)
          VALUES ($1,$2,$3,$4,'pending',$5,$6,$7,$8,'ar','synthetic',true,now(),'SYNTHETIC — evaluation fixture',
-                 'مصدر اصطناعي لأغراض الاختبار فقط — ليس قانوناً أردنياً')
+                 'مصدر اصطناعي لأغراض الاختبار فقط — ليس قانوناً أردنياً',$9)
          RETURNING id`,
         [
           s.title,
@@ -57,6 +59,7 @@ export async function loadEvalFixtures(opts: { quiet?: boolean } = {}): Promise<
           s.effective_date,
           s.is_current_version,
           s.jurisdiction ?? "JO",
+          s.integrity_status ?? "unverified",
         ]
       );
       const id = Number(row!.id);

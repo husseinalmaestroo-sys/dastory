@@ -15,6 +15,9 @@ type Source = {
   note: string | null;
   chunk_count: number;
   created_at: string;
+  provenance: string | null;
+  integrity_status: "verified" | "unverified" | "quarantined" | "replaced";
+  integrity_note: string | null;
 };
 
 export function SourcesManager() {
@@ -238,7 +241,10 @@ function Row({
       <td className="p-3 text-muted">{s.year ?? "—"}</td>
       <td className="p-3 text-muted">{s.chunk_count}</td>
       <td className="p-3">
-        <StatusBadge status={s.status} />
+        <div className="flex flex-wrap gap-1">
+          <StatusBadge status={s.status} />
+          <IntegrityBadge status={s.integrity_status} provenance={s.provenance} note={s.integrity_note} />
+        </div>
       </td>
       <td className="p-3">
         <div className="flex gap-1">
@@ -270,6 +276,27 @@ function StatusBadge({ status }: { status: Source["status"] }) {
   } as const;
   const [label, cls] = map[status];
   return <span className={`rounded border px-1.5 py-0.5 text-[10px] ${cls}`}>{label}</span>;
+}
+
+/**
+ * Whether the text can be relied on (Phase 2.1, corpus/integrity.ts): only an
+ * official text checked against its publication is authoritative; quarantined
+ * and replaced texts are never served. Managed with scripts/corpus-integrity.ts.
+ */
+function IntegrityBadge({ status, provenance, note }: { status: Source["integrity_status"]; provenance: string | null; note: string | null }) {
+  const map = {
+    verified: ["متحقق منه", "text-emerald-400 border-emerald-900/60"],
+    unverified: ["غير متحقق منه", "text-amber-400 border-amber-900/60"],
+    quarantined: ["محجوب (تالف)", "text-red-400 border-red-900/60"],
+    replaced: ["مستبدل", "text-muted border-edge"],
+  } as const;
+  const [label, cls] = map[status] ?? map.unverified;
+  const origin = provenance === "official" ? "رسمي" : provenance === "secondary" ? "غير رسمي" : provenance === "synthetic" ? "اصطناعي" : "مصدر غير مسجّل";
+  return (
+    <span title={note ?? undefined} className={`rounded border px-1.5 py-0.5 text-[10px] ${cls}`}>
+      {label} · {origin}
+    </span>
+  );
 }
 
 /** law | regulation | instruction — the types the validation gate treats as

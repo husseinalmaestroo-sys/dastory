@@ -1,29 +1,29 @@
 {
   "mode": "offline",
-  "ranAt": "2026-09-28T07:09:34.726Z",
+  "ranAt": "2026-09-28T14:04:38.884Z",
   "gold": "SYNTHETIC (offline) — see eval/dataset.json _gold; real-corpus legal gold: GOLD UNVERIFIED",
   "metrics": {
     "retrieval": {
       "label": "MEASURED on the synthetic corpus with the lexical test embedder — says nothing about real embedding quality on Jordanian law",
       "cases": 50,
       "recall_at_8": 1,
-      "precision_at_k": 0.691,
-      "mrr": 0.965,
-      "ndcg_at_8": 0.9739,
+      "precision_at_k": 0.6904,
+      "mrr": 0.97,
+      "ndcg_at_8": 0.9779,
       "by_set": {
         "original": {
           "cases": 17,
           "recall_at_8": 1,
           "precision_at_k": 0.6476,
-          "mrr": 0.9265,
-          "ndcg_at_8": 0.9448
+          "mrr": 0.9706,
+          "ndcg_at_8": 0.9783
         },
         "heldout-2.1": {
           "cases": 17,
           "recall_at_8": 1,
-          "precision_at_k": 0.6412,
-          "mrr": 1,
-          "ndcg_at_8": 1
+          "precision_at_k": 0.6392,
+          "mrr": 0.9706,
+          "ndcg_at_8": 0.9783
         },
         "heldout-2.1b": {
           "cases": 16,
@@ -39,11 +39,10 @@
       "grounded_answer_rate": 0.9804,
       "grounded_citing_no_relevant_source": {
         "label": "MEASURED; added after the first runs, informational only (no pre-registered threshold)",
-        "count": 5,
+        "count": 4,
         "of": 50,
         "cases": [
           "ret-lawname-1",
-          "sec-inj-context",
           "ho-ret-14",
           "hb-ret-1",
           "hb-ret-12"
@@ -56,7 +55,7 @@
       "unsupported_claim_rate_before_guards": 0.03,
       "citation_existence_accuracy": 1,
       "citation_support_accuracy": 0.97,
-      "article_mentions": 149,
+      "article_mentions": 151,
       "fabricated_citations_in_output": 0,
       "fabricated_citation_rate": 0
     },
@@ -73,14 +72,14 @@
     "performance": {
       "label": "NOT REPRESENTATIVE (pipeline overhead with an instant test model; real latency is dominated by the LLM — UNKNOWN until the live run)",
       "p50_ms": {
-        "chat": 18,
+        "chat": 16,
         "contract_review": 44,
-        "case_analysis": 43
+        "case_analysis": 42
       },
       "p95_ms": {
-        "chat": 36,
-        "contract_review": 292,
-        "case_analysis": 43
+        "chat": 34,
+        "contract_review": 275,
+        "case_analysis": 42
       },
       "timeout_rate": 0
     },
@@ -179,7 +178,7 @@
     },
     {
       "gate": "retrieval_mrr",
-      "value": 0.965,
+      "value": 0.97,
       "threshold": "≥ 0.7",
       "pass": true,
       "binding": false
@@ -592,12 +591,12 @@
       "claims": 2,
       "llmCalls": 2,
       "retrieval": {
-        "firstRelevantRank": 4,
+        "firstRelevantRank": 1,
         "returned": 5,
         "top3": [
+          "lease|17",
           "lease|3",
-          "lease|2",
-          "lease|12"
+          "lease|2"
         ]
       }
     },
@@ -1034,16 +1033,16 @@
       "mode": "grounded",
       "groundingLevel": "full",
       "grounded": true,
-      "sources": 5,
+      "sources": 6,
       "claims": 2,
       "llmCalls": 2,
       "retrieval": {
-        "firstRelevantRank": 1,
-        "returned": 5,
+        "firstRelevantRank": 2,
+        "returned": 6,
         "top3": [
+          "lease|17",
           "lease|5",
-          "lease|2",
-          "lease|3"
+          "lease|2"
         ]
       }
     },

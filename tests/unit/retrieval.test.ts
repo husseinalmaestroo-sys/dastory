@@ -25,6 +25,7 @@ import {
 } from "@/lib/ai/legal-semantics";
 import { foldForSearch } from "@/lib/ingest/clean";
 import { expandWithOntology } from "@/lib/search/legal-ontology";
+import { stemArabicWord } from "@/lib/search/arabic-stem";
 import { UsageMeter } from "@/lib/ai/usage-meter";
 import { chunk } from "./fixtures";
 
@@ -303,6 +304,30 @@ test("articles an article makes itself subject to are found (same law only)", ()
   assert.deepEqual(referencedArticles("على الرغم مما ورد في المادة 7، لا يجوز ..."), ["7"]);
   assert.deepEqual(referencedArticles("باستثناء ما ورد في المادة 9 من قانون العمل، ..."), [], "another law's article is not this law's");
   assert.deepEqual(referencedArticles("واستثناء من أحكام هذه المادة، لا يلتزم المؤجر ..."), [], "a self-reference names no other article");
+});
+
+test("match keys: a final hamza seated under an attached pronoun meets its bare form", () => {
+  // As the pipeline sees words: folded, then light-stemmed.
+  const st = (w: string) => stemArabicWord(foldForSearch(w)) || foldForSearch(w);
+  const meet = (a: string, b: string) => {
+    const kb = new Set(matchKeys(st(b)));
+    return matchKeys(st(a)).some((k) => kb.has(k));
+  };
+  for (const [a, b] of [
+    ["إنهاء", "إنهاؤه"],
+    ["لإنهاء", "إنهائه"],
+    ["أداء", "أداؤه"],
+    ["أداء", "أدائها"],
+  ]) {
+    assert.ok(meet(a, b), `${a} ~ ${b}`);
+  }
+  for (const [a, b] of [
+    ["إنهاء", "انتهاء"], // termination by an act is not expiry
+    ["أداء", "أدوات"],
+    ["رأي", "راء"],
+  ]) {
+    assert.ok(!meet(a, b), `${a} !~ ${b}`);
+  }
 });
 
 test("ontology: rent non-payment in formal Arabic reaches the statutory terms, as the dialect forms always did", () => {

@@ -529,7 +529,13 @@ function withoutOwnLawName(c: Pick<RetrievedChunk, "chunk_text" | "law_name" | "
  *     "عقوبه"/"عقوب(ات)";
  *   • a skeleton without inner long vowels, for broken plurals and verbal
  *     nouns — "عيوب"/"عيب", "أجور"/"أجر", "دعاوى"/"دعوى", "تهديد"/"هدد",
- *     "عقوبة"/"يعاقب".
+ *     "عقوبة"/"يعاقب";
+ *   • a final hamza that took a seat under an attached pronoun ("إنهاؤه"/
+ *     "إنهائه"/"إنهاء", "أداؤه"/"أداء") — an article saying "يجوز للمستأجر
+ *     إنهاؤه … بإشعار" never met the question's "لإنهاء الإيجار" (case
+ *     sec-inj-context, ranked 4th → 1st). The analogous ة → ت rule ("مدته"/
+ *     "مدة") was measured and NOT adopted: "مدة" is so common in statutes that
+ *     it admitted a second, weaker article in four evaluation cases.
  * For MATCHING two texts only (topic overlap, relevance), never for storage
  * or ranking: the looser keys can join words of one root that differ in
  * meaning, which is why a source still needs two shared subject words, not
@@ -539,6 +545,12 @@ export function matchKeys(stem: string): string[] {
   const keys = new Set<string>([stem]);
   const bases = new Set<string>([stem]);
   if (stem.length >= 4 && /^[يت]/.test(stem)) bases.add(stem.slice(1));
+  // An attached pronoun seats a final hamza: folded "إنهاؤه"/"إنهائه" are
+  // "انهاوه"/"انهايه"; both map back to the bare "انهاء".
+  for (const b of [...bases]) {
+    const hamza = /^(.{2,}ا)[وي](?:ه|ها|هم|هما|هن)?$/.exec(b);
+    if (hamza) bases.add(`${hamza[1]}ء`);
+  }
   for (const b of [...bases]) if (b.length >= 4 && b.endsWith("ه")) bases.add(b.slice(0, -1));
   // Accusative tanween written as a final alef: "عاما"/"عام", "شهرا"/"شهر".
   for (const b of [...bases]) if (b.length >= 4 && b.endsWith("ا")) bases.add(b.slice(0, -1));

@@ -18,6 +18,7 @@ import { POST as caseAnalysis } from '@/app/api/ai/case-analysis/route'
 import { POST as contractDraft } from '@/app/api/ai/contract-draft/route'
 import { POST as draftExport } from '@/app/api/ai/contract-draft/export/route'
 import { DEFAULT_MONTHLY_CAP, monthlyAiUsage } from '@/lib/ai/usage'
+import { purgeExpiredConversations } from '@/lib/ai/conversations'
 import { cleanupOffice, createColleague, createTestOfficeUser, readJson, testRequest } from './helpers'
 
 const SERVICE_KEY = 'integration-stub-key'
@@ -66,7 +67,10 @@ beforeAll(async () => {
         return
       }
       if (question.includes('malformed')) { res.end(JSON.stringify({ answer: 'x [9]', mode: 'grounded', groundingLevel: 'full', grounded: true, sources: [], usage, provenance })); return }
-      res.end(JSON.stringify({ answer: `answer to: ${question}`, mode: 'no_evidence', groundingLevel: 'none', grounded: false, sources: [], notices: [], disclaimer: null, confidence: null, usage, provenance }))
+      const reply = () => res.end(JSON.stringify({ answer: `answer to: ${question}`, mode: 'no_evidence', groundingLevel: 'none', grounded: false, sources: [], notices: [], disclaimer: null, confidence: null, usage, provenance }))
+      // Phase 2.1: a request that stays in flight long enough to be submitted twice.
+      if (question.includes('upstream-slow')) setTimeout(reply, 400)
+      else reply()
     })
   })
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
@@ -176,6 +180,45 @@ describe('server-side conversation memory (forged history)', () => {
     expect((await del(outsider)).status).toBe(404)
     expect((await del(owner)).status).toBe(200)
     expect(await prisma.aiMessage.count({ where: { conversationId } })).toBe(0)
+  })
+
+  it('retention (Phase 2.1): a conversation untouched past the window is deleted with its messages; a recent one is kept', async () => {
+    const user = await officeUser()
+    const old = await readJson(await ask(user, 'سؤال قديم'))
+    const recent = await readJson(await ask(user, 'سؤال حديث'))
+    await prisma.aiConversation.update({ where: { id: old.conversationId }, data: { updatedAt: new Date(Date.now() - 200 * 86_400_000) } })
+    const purged = await purgeExpiredConversations()
+    expect(purged).toBeGreaterThanOrEqual(1)
+    expect(await prisma.aiConversation.findUnique({ where: { id: old.conversationId } })).toBeNull()
+    expect(await prisma.aiMessage.count({ where: { conversationId: old.conversationId } })).toBe(0)
+    expect(await prisma.aiConversation.findUnique({ where: { id: recent.conversationId } })).not.toBeNull()
+    // The deleted conversation can no longer be continued.
+    expect((await ask(user, 'متابعة', { conversationId: old.conversationId })).status).toBe(404)
+  })
+})
+
+describe('duplicate submissions (Phase 2.1)', () => {
+  it('an identical request while the first is in flight is refused (409) — not sent upstream, not counted — and allowed again once it completes', async () => {
+    const user = await officeUser()
+    const before = seen.length
+    const [a, b] = await Promise.all([ask(user, 'upstream-slow سؤال مكرر'), ask(user, 'upstream-slow سؤال مكرر')])
+    const statuses = [a.status, b.status].sort()
+    expect(statuses).toEqual([200, 409])
+    const refused = a.status === 409 ? a : b
+    expect((await readJson(refused)).code).toBe('duplicate_in_flight')
+    expect(seen.length - before).toBe(1)
+    expect(await monthlyAiUsage(user.officeId)).toBe(1)
+    // Completed: the key is cleared, so asking again is a new request.
+    expect((await ask(user, 'upstream-slow سؤال مكرر')).status).toBe(200)
+    const rows = await prisma.aiUsageLog.findMany({ where: { officeId: user.officeId }, select: { inflightKey: true } })
+    expect(rows.every((r) => r.inflightKey === null)).toBe(true)
+  })
+
+  it('different questions from the same user, and the same question from a colleague, are not duplicates', async () => {
+    const user = await officeUser()
+    const colleague = await createColleague(user.officeId)
+    const results = await Promise.all([ask(user, 'upstream-slow أ'), ask(user, 'upstream-slow ب'), ask(colleague, 'upstream-slow أ')])
+    expect(results.map((r) => r.status)).toEqual([200, 200, 200])
   })
 })
 

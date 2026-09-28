@@ -61,8 +61,8 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
   const caseText = extracted.text.slice(0, MAX_CASE_CHARS)
   const cutLocally = extracted.text.length > MAX_CASE_CHARS
 
-  const reservation = await reserveAiCall(auth.user, 'case_analysis')
-  if (!reservation.ok) return NextResponse.json({ error: reservation.message, code: reservation.reason }, { status: 429 })
+  const reservation = await reserveAiCall(auth.user, 'case_analysis', { payload: caseText })
+  if (!reservation.ok) return NextResponse.json({ error: reservation.message, code: reservation.reason }, { status: reservation.reason === 'duplicate_in_flight' ? 409 : 429 })
 
   const start = Date.now()
   try {
@@ -93,6 +93,7 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
       groundingLevel: result.groundingLevel,
       coverage,
       sources: result.sources,
+      sourceAuthority: result.sourceAuthority,
     })
   } catch (err) {
     const ragError = err instanceof LegalRagError ? err : null

@@ -80,6 +80,10 @@ export interface EngineCitation {
   isCurrentVersion: boolean | null
   effectiveDate: string | null
   provenance: string | null
+  /** Phase 2.1: whether the text was checked against its official publication (engine corpus/integrity.ts). */
+  integrityStatus: string | null
+  /** Official + verified + not a fixture. Absent (an older engine) reads as false. */
+  authoritative: boolean
   cited: boolean
 }
 
@@ -101,8 +105,28 @@ export function citation(x: unknown, path: string): EngineCitation {
     isCurrentVersion: o.isCurrentVersion === undefined || o.isCurrentVersion === null ? null : bool(o.isCurrentVersion, `${path}.isCurrentVersion`),
     effectiveDate: optStr(o.effectiveDate, `${path}.effectiveDate`, 40),
     provenance: optStr(o.provenance, `${path}.provenance`, 40),
+    integrityStatus: optStr(o.integrityStatus, `${path}.integrityStatus`, 40),
+    authoritative: o.authoritative === undefined ? false : bool(o.authoritative, `${path}.authoritative`),
     cited: o.cited === undefined ? false : bool(o.cited, `${path}.cited`),
   }
+}
+
+export const SOURCE_AUTHORITY = ['verified', 'unverified', 'none'] as const
+export type SourceAuthority = (typeof SOURCE_AUTHORITY)[number]
+
+/**
+ * Phase 2.1: what the answer may claim about its sources. Derived from the
+ * cited sources when the engine does not say (an older engine); an engine
+ * that claims "verified" for citations that are not all authoritative is
+ * rejected like any other self-contradiction.
+ */
+function sourceAuthority(x: unknown, sources: EngineCitation[]): SourceAuthority {
+  const cited = sources.filter((s) => s.cited)
+  const derived: SourceAuthority = cited.length === 0 ? 'none' : cited.every((s) => s.authoritative) ? 'verified' : 'unverified'
+  if (x === undefined || x === null) return derived
+  const declared = oneOf(x, 'sourceAuthority', SOURCE_AUTHORITY)
+  if (declared === 'verified' && derived !== 'verified') throw new EngineShapeError('sourceAuthority', 'claims verified sources the citations do not support')
+  return declared
 }
 
 export interface EngineUsage {
@@ -162,6 +186,7 @@ export interface EngineChatResult {
   disclaimer: string | null
   notices: string[]
   confidence: { label: string; score: number } | null
+  sourceAuthority: SourceAuthority
   usage: EngineUsage
   provenance: EngineProvenance
 }
@@ -186,6 +211,7 @@ export function parseChatResponse(x: unknown): EngineChatResult {
     disclaimer: optStr(o.disclaimer, 'disclaimer', 1000),
     notices: o.notices === undefined ? [] : arr(o.notices, 'notices', (v, p) => str(v, p, 1000), 10),
     confidence: conf ? { label: str(conf.label, 'confidence.label', 40), score: num(conf.score, 'confidence.score') } : null,
+    sourceAuthority: sourceAuthority(o.sourceAuthority, sources),
     usage: usage(o.usage),
     provenance: provenance(o.provenance),
   }
@@ -222,6 +248,7 @@ export interface EngineContractReview {
   risks: { severity: 'high' | 'medium' | 'low' | 'info'; title: string; excerpt: string; explanation: string }[]
   coverage: EngineCoverage
   sources: EngineCitation[]
+  sourceAuthority: SourceAuthority
   usage: EngineUsage
   provenance: EngineProvenance
 }
@@ -250,6 +277,7 @@ export function parseContractReview(x: unknown): EngineContractReview {
     risks,
     coverage: coverage(o.coverage),
     sources,
+    sourceAuthority: sourceAuthority(o.sourceAuthority, sources),
     usage: usage(o.usage),
     provenance: provenance(o.provenance),
   }
@@ -271,6 +299,7 @@ export interface EngineCaseAnalysis {
   groundingLevel: GroundingLevel
   coverage: EngineCoverage
   sources: EngineCitation[]
+  sourceAuthority: SourceAuthority
   usage: EngineUsage
   provenance: EngineProvenance
 }
@@ -304,6 +333,7 @@ export function parseCaseAnalysis(x: unknown): EngineCaseAnalysis {
     groundingLevel: oneOf(o.groundingLevel, 'groundingLevel', GROUNDING_LEVELS),
     coverage: coverage(o.coverage),
     sources,
+    sourceAuthority: sourceAuthority(o.sourceAuthority, sources),
     usage: usage(o.usage),
     provenance: provenance(o.provenance),
   }
@@ -315,7 +345,10 @@ export interface EngineDraft {
   groundingLevel: GroundingLevel
   mode: string
   unverifiedFacts: number
+  /** Phase 2.1: labels of supplied fields (names, court, dates) the draft does not carry as written. */
+  missingSuppliedFields: string[]
   sources: EngineCitation[]
+  sourceAuthority: SourceAuthority
   usage: EngineUsage
   provenance: EngineProvenance
 }
@@ -332,7 +365,10 @@ export function parseDraft(x: unknown): EngineDraft {
     groundingLevel: oneOf(o.groundingLevel, 'groundingLevel', GROUNDING_LEVELS),
     mode: str(o.mode ?? 'drafted', 'mode', 40),
     unverifiedFacts: validation && Array.isArray(validation.unverifiedFacts) ? validation.unverifiedFacts.length : 0,
+    missingSuppliedFields:
+      validation && Array.isArray(validation.missingSuppliedFields) ? arr(validation.missingSuppliedFields, 'validation.missingSuppliedFields', (v, p) => str(v, p, 200), 40) : [],
     sources,
+    sourceAuthority: sourceAuthority(o.sourceAuthority, sources),
     usage: usage(o.usage),
     provenance: provenance(o.provenance),
   }

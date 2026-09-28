@@ -61,3 +61,36 @@ export async function deleteOwnConversation(actor: Actor, conversationId: string
   const res = await prisma.aiConversation.deleteMany({ where: { id: conversationId, officeId: actor.officeId, userId: actor.id } })
   return res.count > 0
 }
+
+// ---- retention (Phase 2.1) ----------------------------------------------------
+// Conversations used to be kept forever. One untouched for
+// AI_CONVERSATION_RETENTION_DAYS (default 90) is deleted with its messages
+// (AiMessage cascades) — by the assistant route itself, at most every six
+// hours per process, so retention does not depend on a cron job existing.
+
+const DEFAULT_RETENTION_DAYS = 90
+const PURGE_EVERY_MS = 6 * 3_600_000
+let lastPurge = 0
+
+export function conversationRetentionDays(): number {
+  const v = Number(process.env.AI_CONVERSATION_RETENTION_DAYS)
+  return Number.isFinite(v) && v >= 1 ? Math.floor(v) : DEFAULT_RETENTION_DAYS
+}
+
+/** Deletes every conversation (and its messages) last touched before the retention window. Returns how many. */
+export async function purgeExpiredConversations(now = new Date()): Promise<number> {
+  const cutoff = new Date(now.getTime() - conversationRetentionDays() * 86_400_000)
+  const res = await prisma.aiConversation.deleteMany({ where: { updatedAt: { lt: cutoff } } })
+  return res.count
+}
+
+/**
+ * The purge, at most once per PURGE_EVERY_MS per process, never in the
+ * request's path. Idempotent: two instances running it at once delete the
+ * same rows once.
+ */
+export function maybePurgeExpiredConversations(): void {
+  if (Date.now() - lastPurge < PURGE_EVERY_MS) return
+  lastPurge = Date.now()
+  void purgeExpiredConversations().catch((error) => console.error('[ai-conversations] retention purge failed', error))
+}

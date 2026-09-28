@@ -77,6 +77,19 @@ describe('askLegalRag — signed request, validated JSON response', () => {
     expect(result.provenance.corpusVersion).toBe('c-def')
   })
 
+  it('source authority (Phase 2.1): derived when an older engine does not report it; "verified" only for authoritative citations', async () => {
+    const { askLegalRag } = await import('./legal-rag-client')
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(chatOk)))
+    const older = await askLegalRag('س', undefined, ACTOR)
+    expect(older.sourceAuthority).toBe('unverified')
+    expect(older.sources[0].authoritative).toBe(false)
+    const verified = { ...chatOk, sources: [{ ...source, integrityStatus: 'verified', authoritative: true }], sourceAuthority: 'verified' }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(verified)))
+    const v = await askLegalRag('س', undefined, ACTOR)
+    expect(v.sourceAuthority).toBe('verified')
+    expect(v.sources[0].integrityStatus).toBe('verified')
+  })
+
   it('mints a fresh single-use id for every request', async () => {
     const fetchMock = vi.fn().mockImplementation(async () => jsonResponse(chatOk))
     vi.stubGlobal('fetch', fetchMock)
@@ -93,6 +106,8 @@ describe('askLegalRag — signed request, validated JSON response', () => {
     ['a missing usage report', { ...chatOk, usage: undefined }],
     ['an unknown mode', { ...chatOk, mode: 'freestyle' }],
     ['a non-string answer', { ...chatOk, answer: 42 }],
+    ['"verified" sources the citations do not support', { ...chatOk, sourceAuthority: 'verified' }],
+    ['an unknown source-authority value', { ...chatOk, sourceAuthority: 'certified' }],
   ])('rejects a malformed engine response (%s) — nothing unvalidated reaches the user', async (_label, body) => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(body)))
     const { askLegalRag, LegalRagError } = await import('./legal-rag-client')

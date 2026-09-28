@@ -413,10 +413,15 @@ model AiUsageLog {
   latencyMs    Int
   success      Boolean
   errorCode    String?
+  // Phase 2.1: HMAC of (feature, request payload) while the call is in flight,
+  // cleared when it completes — refuses an identical second request (double
+  // submit, client retry) instead of paying for it twice. Never content.
+  inflightKey  String?  @db.VarChar(64)
   createdAt    DateTime @default(now())
 
   @@index([officeId, createdAt])
   @@index([userId, createdAt])
+  @@index([userId, inflightKey])
 }
 
 // ── Phase 2: server-side AI conversation memory ────────────────────────────

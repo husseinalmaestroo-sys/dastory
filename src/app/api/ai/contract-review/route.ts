@@ -68,8 +68,8 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
 
   // Reserved only now: a document that can't even be read never counts
   // against the office's monthly AI cap.
-  const reservation = await reserveAiCall(auth.user, 'contract_review')
-  if (!reservation.ok) return NextResponse.json({ error: reservation.message, code: reservation.reason }, { status: 429 })
+  const reservation = await reserveAiCall(auth.user, 'contract_review', { payload: contractText })
+  if (!reservation.ok) return NextResponse.json({ error: reservation.message, code: reservation.reason }, { status: reservation.reason === 'duplicate_in_flight' ? 409 : 429 })
 
   const start = Date.now()
   try {
@@ -121,6 +121,7 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
       keyTerms: result.keyTerms,
       risks: verifiedRisks,
       sources,
+      sourceAuthority: result.sourceAuthority,
       extractionMethod: extracted.method,
       coverage,
       // Kept for older clients: true whenever ANY part was not analysed.

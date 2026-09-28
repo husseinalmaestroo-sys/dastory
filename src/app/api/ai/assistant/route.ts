@@ -5,7 +5,7 @@ import { auditLog } from '@/lib/audit'
 import { withErrorHandling } from '@/lib/api-handler'
 import { askLegalRag, isLegalRagConfigured, LegalRagError } from '@/lib/ai/legal-rag-client'
 import { completeAiCall, reserveAiCall } from '@/lib/ai/usage'
-import { deleteOwnConversation, findOwnConversation, historyFor, recordExchange } from '@/lib/ai/conversations'
+import { deleteOwnConversation, findOwnConversation, historyFor, maybePurgeExpiredConversations, recordExchange } from '@/lib/ai/conversations'
 
 // Mirrors ailegal_hussein's own limit (its /api/chat schema caps `question`
 // at 2000) — a clear Dostoori-side 400 instead of a passthrough error.
@@ -25,6 +25,8 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
 
   const limited = rateLimit(req, `ai:assistant:${auth.user.id}`, { limit: 20, windowMs: 60 * 60_000 })
   if (limited) return limited
+  // Phase 2.1: expired conversations are removed without a cron job.
+  maybePurgeExpiredConversations()
 
   const body = await req.json().catch(() => null)
   const message = typeof body?.message === 'string' ? body.message.trim() : ''
@@ -48,8 +50,8 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
   if (!isLegalRagConfigured()) {
     return NextResponse.json({ error: 'خدمة المساعد الذكي غير مُفعّلة على هذا الخادم حالياً' }, { status: 503 })
   }
-  const reservation = await reserveAiCall(auth.user, 'assistant')
-  if (!reservation.ok) return NextResponse.json({ error: reservation.message, code: reservation.reason }, { status: 429 })
+  const reservation = await reserveAiCall(auth.user, 'assistant', { payload: JSON.stringify([conversationId, message]) })
+  if (!reservation.ok) return NextResponse.json({ error: reservation.message, code: reservation.reason }, { status: reservation.reason === 'duplicate_in_flight' ? 409 : 429 })
 
   const start = Date.now()
   try {
@@ -82,6 +84,8 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
       disclaimer: result.disclaimer,
       confidence: result.confidence,
       sources: result.sources,
+      // Phase 2.1: whether the cited texts were checked against their official publication.
+      sourceAuthority: result.sourceAuthority,
       provenance: { promptVersion: result.provenance.promptVersion, corpusVersion: result.provenance.corpusVersion },
     })
   } catch (err) {

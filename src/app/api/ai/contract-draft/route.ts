@@ -46,8 +46,8 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
   if (!isLegalRagConfigured()) {
     return NextResponse.json({ error: 'خدمة صياغة العقود بالذكاء الاصطناعي غير مُفعّلة على هذا الخادم حالياً' }, { status: 503 })
   }
-  const reservation = await reserveAiCall(auth.user, 'contract_draft')
-  if (!reservation.ok) return NextResponse.json({ error: reservation.message, code: reservation.reason }, { status: 429 })
+  const reservation = await reserveAiCall(auth.user, 'contract_draft', { payload: JSON.stringify([fields, notes]) })
+  if (!reservation.ok) return NextResponse.json({ error: reservation.message, code: reservation.reason }, { status: reservation.reason === 'duplicate_in_flight' ? 409 : 429 })
 
   const start = Date.now()
   try {
@@ -72,7 +72,11 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
       // Dates / amounts / ids the model wrote that the lawyer never supplied
       // were replaced with "[يُستكمل: …]" by the engine; this is their count.
       unverifiedFacts: result.unverifiedFacts,
+      // Phase 2.1: supplied fields (names, court, dates) the draft does not
+      // carry as the lawyer wrote them — review before filing.
+      missingSuppliedFields: result.missingSuppliedFields,
       sources: result.sources,
+      sourceAuthority: result.sourceAuthority,
     })
   } catch (err) {
     const ragError = err instanceof LegalRagError ? err : null

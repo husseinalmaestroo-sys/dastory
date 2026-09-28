@@ -34,16 +34,51 @@ export default function AiAssistantPage() {
       })
       const data = await res.json()
       if (res.status === 503) { setNotConfigured(true); setError(data.error); return }
+      if (res.status === 409) { setError(data.error || 'هذا السؤال قيد المعالجة بالفعل'); return }
       if (!res.ok) { setError(data.error || 'تعذّر الحصول على رد'); return }
       if (typeof data.conversationId === 'string') setConversationId(data.conversationId)
       const cited = Array.isArray(data.sources) ? data.sources.filter((s: { cited?: boolean }) => s.cited).length : 0
+      // Phase 2.1: "verified" only when every cited text was checked against its
+      // official publication — otherwise the label says the texts are the database's.
+      const origin =
+        data.sourceAuthority === 'verified'
+          ? `${cited} مصدر رسمي متحقَّق منه`
+          : `${cited} مصدر من قاعدة البيانات، لم يُتحقَّق بعد من مطابقته للنشر الرسمي`
       const groundNote =
         data.groundingLevel === 'full'
-          ? `مُسند بالكامل لمصادر موثّقة (${cited} مصدر) — ${data.disclaimer ?? ''}`
+          ? `مُسند بالكامل (${origin}) — ${data.disclaimer ?? ''}`
           : data.groundingLevel === 'partial'
-            ? `مُسند جزئياً — ${data.disclaimer ?? ''}`
+            ? `مُسند جزئياً (${origin}) — ${data.disclaimer ?? ''}`
             : data.disclaimer || 'لا توجد إجابة مُسندة لهذا السؤال في قاعدة البيانات.'
-      setMessages((items) => [...items, { role: 'a', text: data.answer, citation: groundNote }])
+      const notices: string[] = Array.isArray(data.notices) ? data.notices.filter((n: unknown) => typeof n === 'string' && !String(data.answer).includes(n)) : []
+      const text = notices.length > 0 ? `${notices.join('\n')}\n\n${data.answer}` : data.answer
+      setMessages((items) => [...items, { role: 'a', text, citation: groundNote }])
+    } catch {
+      setError('تعذّر الاتصال بالخادم')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // Phase 2.1: start over without the previous context, or delete the
+  // conversation (its messages are removed on the server, not just hidden).
+  const newConversation = () => {
+    setConversationId(null)
+    setMessages([WELCOME])
+    setError('')
+  }
+  const deleteConversation = async () => {
+    if (!conversationId || busy) return
+    if (!window.confirm('حذف هذه المحادثة وجميع رسائلها نهائياً؟')) return
+    setBusy(true)
+    try {
+      const res = await fetch(`/api/ai/assistant?conversationId=${encodeURIComponent(conversationId)}`, { method: 'DELETE' })
+      if (!res.ok && res.status !== 404) {
+        const data = await res.json().catch(() => ({}))
+        setError(data.error || 'تعذّر حذف المحادثة')
+        return
+      }
+      newConversation()
     } catch {
       setError('تعذّر الاتصال بالخادم')
     } finally {
@@ -60,6 +95,12 @@ export default function AiAssistantPage() {
             ⚠️ خدمة المساعد القانوني غير مُفعّلة على هذا الخادم حالياً.
           </div>
         )}
+        <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginBottom: 8 }}>
+          <button className="dbtn dbtn-s" style={{ fontSize: '.74rem' }} onClick={newConversation} disabled={busy}>محادثة جديدة</button>
+          {conversationId && (
+            <button className="dbtn dbtn-s" style={{ fontSize: '.74rem', color: '#F87171' }} onClick={deleteConversation} disabled={busy}>حذف المحادثة</button>
+          )}
+        </div>
         <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginBottom: 12 }}>
           {['ما الفرق بين الفسخ والإنهاء في عقود العمل؟', 'ما هي الخطوات العامة لرفع دعوى مدنية؟', 'ما مدة التقادم في الدعاوى المدنية بشكل عام؟'].map((q) => (
             <button key={q} className="dbtn dbtn-s" style={{ fontSize: '.74rem' }} onClick={() => send(q)} disabled={busy || notConfigured}>{q.length > 32 ? q.slice(0, 32) : q}</button>

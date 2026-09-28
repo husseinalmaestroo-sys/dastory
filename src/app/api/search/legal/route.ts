@@ -39,8 +39,8 @@ export const POST = withErrorHandling(async (req: NextRequest) => {
   if (!isLegalRagConfigured()) {
     return NextResponse.json({ error: 'خدمة البحث القانوني غير مُفعّلة على هذا الخادم حالياً' }, { status: 503 })
   }
-  const reservation = await reserveAiCall(auth.user, 'legal_search')
-  if (!reservation.ok) return NextResponse.json({ error: reservation.message, code: reservation.reason }, { status: 429 })
+  const reservation = await reserveAiCall(auth.user, 'legal_search', { payload: JSON.stringify([question, filters ?? null]) })
+  if (!reservation.ok) return NextResponse.json({ error: reservation.message, code: reservation.reason }, { status: reservation.reason === 'duplicate_in_flight' ? 409 : 429 })
 
   const start = Date.now()
   try {

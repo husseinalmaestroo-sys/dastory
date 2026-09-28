@@ -1,3 +1,4 @@
+import { createHmac } from 'crypto'
 import { prisma } from '@/lib/prisma'
 import type { EngineUsage } from './engine-schema'
 
@@ -66,13 +67,29 @@ export async function officeMonthlyCap(officeId: string, tx: Tx | typeof prisma 
   return envInt('AI_DEFAULT_MONTHLY_CAP', DEFAULT_MONTHLY_CAP)
 }
 
-export type Reservation = { ok: true; id: string } | { ok: false; reason: 'office_monthly_cap' | 'user_daily_cap' | 'office_token_budget'; message: string }
+export type Reservation =
+  | { ok: true; id: string }
+  | { ok: false; reason: 'office_monthly_cap' | 'user_daily_cap' | 'office_token_budget' | 'duplicate_in_flight'; message: string }
 
 const REFUSALS = {
   office_monthly_cap: 'تم بلوغ الحد الشهري لاستخدام أدوات الذكاء الاصطناعي لهذا المكتب',
   user_daily_cap: 'تم بلوغ حدك اليومي لاستخدام أدوات الذكاء الاصطناعي، حاول غداً',
   office_token_budget: 'تم بلوغ الحد الشهري لحجم معالجة الذكاء الاصطناعي لهذا المكتب',
+  duplicate_in_flight: 'الطلب نفسه قيد المعالجة بالفعل — انتظر نتيجته بدل إرساله مرة أخرى',
 } as const
+
+/**
+ * Phase 2.1: the key of an in-flight request — an HMAC of the feature and the
+ * request's payload, so an identical second request (a double submit, a
+ * client retry while the first is still running) is refused instead of being
+ * paid for twice. Keyed with the server secret: the column never holds
+ * anything that could be matched against a guessed question, and it is
+ * cleared when the call completes.
+ */
+export function inflightKeyFor(feature: AiFeature, payload: string): string {
+  const secret = process.env.JWT_SECRET || process.env.AI_LEGAL_SERVICE_KEY || 'dostoori-inflight'
+  return createHmac('sha256', secret).update(`${feature}\u0000${payload}`).digest('hex')
+}
 
 /**
  * Atomically claims one AI call against all three limits. Reservations for
@@ -80,9 +97,20 @@ const REFUSALS = {
  * of the count-and-insert, so N concurrent requests cannot all see "499 <
  * 500" and all proceed.
  */
-export async function reserveAiCall(actor: UsageActor, feature: AiFeature): Promise<Reservation> {
+export async function reserveAiCall(actor: UsageActor, feature: AiFeature, opts: { payload?: string } = {}): Promise<Reservation> {
+  const inflightKey = opts.payload === undefined ? null : inflightKeyFor(feature, opts.payload)
   return prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT \`id\` FROM \`Office\` WHERE \`id\` = ${actor.officeId} FOR UPDATE`
+
+    // The same user's identical request still running (serialized by the
+    // office lock above, so two concurrent submits cannot both pass).
+    if (inflightKey) {
+      const running = await tx.aiUsageLog.findFirst({
+        where: { userId: actor.id, inflightKey, errorCode: PENDING, createdAt: { gte: new Date(Date.now() - PENDING_TTL_MS) } },
+        select: { id: true },
+      })
+      if (running) return { ok: false, reason: 'duplicate_in_flight', message: REFUSALS.duplicate_in_flight } as const
+    }
 
     const monthly = await tx.aiUsageLog.count({ where: { officeId: actor.officeId, createdAt: { gte: monthStartUtc() }, ...counted() } })
     if (monthly >= (await officeMonthlyCap(actor.officeId, tx))) return { ok: false, reason: 'office_monthly_cap', message: REFUSALS.office_monthly_cap } as const
@@ -100,7 +128,7 @@ export async function reserveAiCall(actor: UsageActor, feature: AiFeature): Prom
     }
 
     const row = await tx.aiUsageLog.create({
-      data: { officeId: actor.officeId, userId: actor.id, feature, model: 'ailegal_hussein', latencyMs: 0, success: false, errorCode: PENDING },
+      data: { officeId: actor.officeId, userId: actor.id, feature, model: 'ailegal_hussein', latencyMs: 0, success: false, errorCode: PENDING, inflightKey },
       select: { id: true },
     })
     return { ok: true, id: row.id } as const
@@ -123,6 +151,7 @@ export async function completeAiCall(
       where: { id: reservationId },
       data: {
         success: outcome.success,
+        inflightKey: null,
         latencyMs: Math.max(0, Math.round(outcome.latencyMs)),
         errorCode: outcome.success ? null : (outcome.errorCode ?? 'unknown_error'),
         ...(outcome.model ? { model: outcome.model.slice(0, 190) } : {}),

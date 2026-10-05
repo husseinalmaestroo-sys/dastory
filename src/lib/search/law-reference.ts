@@ -1,7 +1,8 @@
 import "server-only";
 import { foldForSearch, normalizeDigits } from "../ingest/clean";
 import { query } from "../db";
-import { SERVABLE_SQL } from "../corpus/integrity";
+import { servableSourceSql } from "../corpus/integrity";
+import { env } from "../env";
 
 /**
  * Which law a question names — "المادة 17 من قانون العمل" → قانون العمل.
@@ -325,26 +326,51 @@ const AMENDING_RE = /^(?:قانون|نظام|تعليمات)\s+معد[ّ]?ل\s/;
 // ---- matching against the corpus --------------------------------------------
 
 type SourceTitle = { id: number; folded: string; current?: boolean };
-let titleCache: { at: number; rows: SourceTitle[] } | null = null;
+type HeldBackTitle = SourceTitle & { integrity: string };
+let titleCache: { at: number; rows: SourceTitle[]; heldBack: HeldBackTitle[] } | null = null;
 // legal_sources is small (hundreds of rows); folding every title in JS with
 // the exact function the question was folded with is both simpler and more
 // faithful than re-implementing foldForSearch in SQL. A new source becomes
 // matchable within TITLE_TTL_MS.
 const TITLE_TTL_MS = 5 * 60_000;
 
-async function sourceTitles(): Promise<SourceTitle[]> {
-  if (titleCache && Date.now() - titleCache.at < TITLE_TTL_MS) return titleCache.rows;
-  const rows = await query<{ id: string | number; title: string; is_current_version: boolean }>(
-    // Only texts retrieval may serve: a quarantined or replaced source must not
-    // make a law "present" (Phase 2.1).
-    `SELECT id, title, is_current_version FROM legal_sources
-      WHERE status = 'ready' AND jurisdiction = 'JO' AND integrity_status IN (${SERVABLE_SQL})`
+async function loadTitles(): Promise<{ rows: SourceTitle[]; heldBack: HeldBackTitle[] }> {
+  if (titleCache && Date.now() - titleCache.at < TITLE_TTL_MS) return titleCache;
+  const rows = await query<{ id: string | number; title: string; is_current_version: boolean; integrity_status: string; servable: boolean }>(
+    // Ready Jordanian sources (fixtures only when allowed). Only the ones
+    // retrieval may serve make a law "present"; the rest — unchecked,
+    // quarantined, replaced — are kept apart so a question naming such a law
+    // is told it is held back, not that it does not exist (corpus repair).
+    `SELECT id, title, is_current_version, integrity_status, (${servableSourceSql("", "$1")}) AS servable
+       FROM legal_sources
+      WHERE status = 'ready' AND jurisdiction = 'JO' AND (is_synthetic = false OR $1::boolean)`,
+    [env.allowSyntheticCorpus]
   );
+  const shape = (r: (typeof rows)[number]) => ({ id: Number(r.id), folded: foldForSearch(r.title), current: r.is_current_version });
   titleCache = {
     at: Date.now(),
-    rows: rows.map((r) => ({ id: Number(r.id), folded: foldForSearch(r.title), current: r.is_current_version })),
+    rows: rows.filter((r) => r.servable).map(shape),
+    heldBack: rows.filter((r) => !r.servable).map((r) => ({ ...shape(r), integrity: r.integrity_status })),
   };
-  return titleCache.rows;
+  return titleCache;
+}
+
+async function sourceTitles(): Promise<SourceTitle[]> {
+  return (await loadTitles()).rows;
+}
+
+/**
+ * A named law with no servable source that IS in the database, held back
+ * because its text has not passed the integrity checks (unchecked,
+ * quarantined, or replaced with no servable replacement). The answer must say
+ * so — "not in the corpus" would be untrue, and quoting it is not allowed.
+ */
+export async function heldBackLaw(ref: LawReference): Promise<{ display: string; statuses: string[] } | null> {
+  const { heldBack } = await loadTitles();
+  const r = resolveAgainstTitles(ref, heldBack);
+  if (r.sourceIds.length === 0) return null;
+  const statuses = [...new Set(heldBack.filter((t) => r.sourceIds.includes(t.id)).map((t) => t.integrity))].sort();
+  return { display: ref.display, statuses };
 }
 
 /** Test hook. */

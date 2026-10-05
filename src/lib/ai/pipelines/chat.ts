@@ -44,7 +44,8 @@ import { applyClaimVerdicts, capLevel, claimsForJudge, groundAnswer, type ClaimC
 import { extractPremise, premiseConflicts, questionTopicStems, sourceIsRelevant } from "../legal-semantics";
 import { normalizeDigits } from "../../ingest/clean";
 import { extractAllLawReferences } from "../../search/law-reference";
-import { isAuthoritative } from "../../corpus/integrity";
+import { authorityLevel, isAuthoritative, type AuthorityLevel } from "../../corpus/integrity";
+import { sourceClassOf, type SourceClass } from "../../corpus/source-class";
 import { currentMeter, timeStage } from "../usage-meter";
 import { checkJurisdiction, COMPARISON_NOTICE_AR, isMostlyLatin } from "../jurisdiction";
 import { detectPromptLeak, PROMPT_LEAK_REPLACEMENT } from "../untrusted";
@@ -78,6 +79,7 @@ export type ChatMode =
   | "sources_only"
   | "no_evidence"
   | "law_not_in_corpus"
+  | "law_unavailable"
   | "article_not_in_corpus"
   | "decision_not_in_corpus"
   | "clarification"
@@ -105,9 +107,15 @@ export type Citation = {
   effectiveDate: string | null;
   provenance: string | null;
   sourceUrl: string | null;
-  /** verified | unverified — whether this text was checked against the official publication (Phase 2.1). */
+  /** Text integrity — always 'passed' for a served source (corpus/integrity.ts). */
   integrityStatus: string | null;
-  /** Official, verified and not a fixture: may be presented as the law's text. Anything else is labelled. */
+  /** Whether the text was compared with the Official Gazette: 'verified' | 'unverified'. Separate from provenance. */
+  gazetteStatus: string | null;
+  /** What may truthfully be said about the source (corpus/integrity.ts authorityLevel) — the label must not say more. */
+  authorityLevel: AuthorityLevel;
+  /** What kind of text it is (corpus/source-class.ts): legislation, regulation, instruction, interpretation, court_decision, mou, secondary. */
+  sourceClass: SourceClass;
+  /** Gazette-verified, integrity passed, not a fixture: may be presented as the law's text. Anything else is labelled. */
   authoritative: boolean;
   /** Whether the final answer cites this source. */
   cited: boolean;
@@ -138,9 +146,10 @@ export type ChatOutcome = {
   claims: Pick<ClaimCheck, "text" | "refs" | "kind" | "status" | "issues" | "evidence">[];
   disclaimer?: string;
   /**
-   * Phase 2.1: "verified" when every source the answer cites is authoritative
-   * (official, checked against the publication), "unverified" when any is not,
-   * "none" when it cites nothing.
+   * "verified" when every source the answer cites is authoritative —
+   * Gazette-verified with a recorded reference, integrity passed, not a
+   * fixture (corpus/integrity.ts; an official provenance alone is NOT
+   * enough) — "unverified" when any is not, "none" when it cites nothing.
    */
   sourceAuthority: SourceAuthority;
   confidence: ConfidenceResult | null;
@@ -171,9 +180,26 @@ export const PREMISE_NOTICE =
 export const SEMANTIC_UNVERIFIED_NOTICE =
   "تنبيه: لم يكتمل التحقق الدلالي الآلي من مطابقة كل جملة لمصدرها؛ راجع النصوص المستشهد بها قبل الاعتماد على الإجابة.";
 const LAW_NOT_IN_CORPUS_AR =
-  "القانون الذي يشير إليه السؤال غير موجود في قاعدة البيانات القانونية المتاحة، لذلك لا يمكن تقديم نص المادة المطلوبة من مصدر موثّق، ولن تُستبدل بها مادة من تشريع آخر. راجع النص الرسمي لذلك القانون.";
+  "القانون الذي يشير إليه السؤال غير موجود في قاعدة البيانات القانونية المتاحة، لذلك لا يمكن تقديم نص المادة المطلوبة منها، ولن تُستبدل بها مادة من تشريع آخر. راجع النص الرسمي لذلك القانون.";
 const LAW_NOT_IN_CORPUS_EN =
-  "The law this question refers to is not in the available legal database, so the article cannot be quoted from a verified source, and no other law's article is substituted for it. Please consult the official text of that law.";
+  "The law this question refers to is not in the available legal database, so the article cannot be quoted from it, and no other law's article is substituted for it. Please consult the official text of that law.";
+/**
+ * Corpus repair: the named law is in the database but its text may not be
+ * served (it has not passed the integrity checks). Not "not in the corpus" —
+ * that would be untrue — and nothing of it is quoted. Never echoes the
+ * question's wording.
+ */
+export function lawHeldBackMessage(statuses: string[], english: boolean): string {
+  const damaged = statuses.includes("quarantined") || statuses.includes("replaced");
+  if (english) {
+    return damaged
+      ? "The law this question refers to is in the database, but its stored text is held back: it failed the text-integrity checks (a damaged or suspect text) and has not yet been replaced by a sound official text. It is not quoted or cited, and no other law is used in its place. Please consult the official text published in the Official Gazette."
+      : "The law this question refers to is in the database, but its stored text is held back until it passes the text-integrity checks. It is not quoted or cited, and no other law is used in its place. Please consult the official text published in the Official Gazette.";
+  }
+  return damaged
+    ? "القانون الذي يشير إليه السؤال موجود في قاعدة البيانات، لكن نصه المحفوظ محجوب عن الاستخدام: لم يجتز فحص سلامة النص (نص تالف أو مشكوك فيه) ولم يُستبدل بعد بنص رسمي سليم. لذلك لا يُقتبس منه ولا يُستشهد به، ولن تُستخدم نصوص تشريعات أخرى بديلاً عنه. راجع النص الرسمي المنشور في الجريدة الرسمية."
+    : "القانون الذي يشير إليه السؤال موجود في قاعدة البيانات، لكن نصه المحفوظ محجوب عن الاستخدام إلى أن يجتاز فحص سلامة النص. لذلك لا يُقتبس منه ولا يُستشهد به، ولن تُستخدم نصوص تشريعات أخرى بديلاً عنه. راجع النص الرسمي المنشور في الجريدة الرسمية.";
+}
 const LAW_NOT_IN_CORPUS_CONCEPT_AR =
   "القانون الذي يشير إليه السؤال غير موجود في قاعدة البيانات القانونية المتاحة، لذلك لا يمكن الإجابة من نصه، ولن تُستخدم نصوص تشريعات أخرى بديلاً عنه. راجع النص الرسمي لذلك القانون.";
 const LAW_NOT_IN_CORPUS_CONCEPT_EN =
@@ -280,7 +306,9 @@ export function toAnalysisPayload(a: QueryAnalysis, expandedWith: string[] = [])
  */
 function withAuthority(o: { sources: Citation[]; disclaimer?: string; grounded: boolean }): { sourceAuthority: SourceAuthority; disclaimer?: string } {
   const sourceAuthority = sourceAuthorityOf(o.sources);
-  if (!o.grounded || sourceAuthority !== "unverified") return { sourceAuthority, disclaimer: o.disclaimer };
+  if (!o.grounded || sourceAuthority === "verified") return { sourceAuthority, disclaimer: o.disclaimer };
+  // The Gazette claim of the grounded disclaimer needs a cited text that bears it.
+  if (sourceAuthority === "none") return { sourceAuthority, disclaimer: o.disclaimer === GROUNDED_ANSWER_DISCLAIMER ? GROUNDED_UNVERIFIED_DISCLAIMER : o.disclaimer };
   const disclaimer =
     o.disclaimer === GROUNDED_ANSWER_DISCLAIMER ? GROUNDED_UNVERIFIED_DISCLAIMER : [o.disclaimer, UNVERIFIED_SOURCES_SENTENCE].filter(Boolean).join(" ");
   return { sourceAuthority, disclaimer };
@@ -309,6 +337,9 @@ export function toCitation(c: RetrievedChunk, i: number, cited = false): Citatio
     provenance: c.provenance ?? null,
     sourceUrl: c.source_url ?? null,
     integrityStatus: c.integrity_status ?? null,
+    gazetteStatus: c.gazette_status ?? null,
+    authorityLevel: authorityLevel(c),
+    sourceClass: sourceClassOf(c.source_type, c.source_title),
     authoritative: isAuthoritative(c),
     cited,
   };
@@ -508,6 +539,9 @@ export async function runChatPipeline(input: ChatInput, caller: Caller, emit: Em
   //    an injected phrase must not come back looking like our statement).
   const shortCircuit = (answer: string, mode: ChatMode) =>
     finish({ answer, mode, groundingLevel: "none", grounded: false, sources: [], claims: [], confidence: null, verification: null, gapTopics: [], analysis }, 0);
+  if (search?.requestedLawHeldBack) {
+    return shortCircuit(lawHeldBackMessage(search.requestedLawHeldBack.statuses, english), "law_unavailable");
+  }
   if (search?.requestedLawMissing) {
     return shortCircuit(english ? LAW_NOT_IN_CORPUS_EN : LAW_NOT_IN_CORPUS_AR, "law_not_in_corpus");
   }

@@ -9,7 +9,7 @@ import { getCachedEmbedding, setCachedEmbedding } from "./embedding-cache";
 import { stemArabicText, stemArabicWord } from "./arabic-stem";
 import { localRerank } from "./local-rerank";
 import { parseIntent, resolveVersionScope, stripArticleReferences } from "./intent";
-import { extractLawReference, resolveLawReference } from "./law-reference";
+import { extractLawReference, heldBackLaw, resolveLawReference } from "./law-reference";
 import {
   asksAboutTitleOrCommencement,
   definesQuestionTerm,
@@ -25,7 +25,8 @@ import {
   questionTopicText,
 } from "../ai/legal-semantics";
 import { getRerankProvider } from "../ai/rerank";
-import { SERVABLE_SQL } from "../corpus/integrity";
+import { servableSourceSql } from "../corpus/integrity";
+import { orderBySourceClass } from "../corpus/source-class";
 import { resolveThresholds, gateChunk, computeConfidence, type ConfidenceResult } from "./confidence";
 import type { QueryType } from "./query-understanding";
 import type { RetrievedChunk, RerankTrace, SearchFilters } from "./types";
@@ -117,6 +118,7 @@ type Row = {
   is_synthetic: boolean | null;
   source_url: string | null;
   integrity_status: string | null;
+  gazette_status: string | null;
   vector_score: number | null;
   keyword_score: number | null;
   vector_rank: number | null;
@@ -158,6 +160,7 @@ type FullRow = {
   is_synthetic: boolean | null;
   source_url: string | null;
   integrity_status: string | null;
+  gazette_status: string | null;
 };
 
 export type SearchResult = {
@@ -180,6 +183,13 @@ export type SearchResult = {
   requestedLawMissing?: string | null;
   /** The question names a law no corpus title matches (conceptual question: a notice, not a refusal). */
   lawNotFound?: boolean;
+  /**
+   * Corpus repair: the named law IS in the database, but no text of it may be
+   * served — it has not passed the integrity checks (unchecked, quarantined,
+   * or replaced). The pipeline says the text is held back; it never quotes it
+   * and never says the law does not exist.
+   */
+  requestedLawHeldBack?: { display: string; statuses: string[] } | null;
   /** The named law is in the corpus but the requested article is not (hallucination trap). */
   requestedArticleMissing?: string | null;
   /** A decision asked for by number that the corpus does not hold. */
@@ -268,6 +278,8 @@ export async function hybridSearch(
   // For a conceptual question the pipeline adds a notice instead — a
   // mis-parsed name must never block an answerable question.
   const requestedLawMissing = lawNotFound && intent.articleNumbers.length > 0 ? lawRef!.display : null;
+  // Not absent but held back: the law is in the database, its text is not servable.
+  const requestedLawHeldBack = lawNotFound && lawRef ? await heldBackLaw(lawRef) : null;
 
   // Phase 2.1 — LAW-SCOPED RETRIEVAL. A question that names a law that is in
   // the corpus is answered from that law: the ranked arms (vector, keyword,
@@ -461,6 +473,7 @@ export async function hybridSearch(
       is_synthetic: full.is_synthetic,
       source_url: full.source_url,
       integrity_status: full.integrity_status,
+      gazette_status: full.gazette_status,
       vector_score: vec?.score ?? null,
       keyword_score: kw?.score ?? null,
       vector_rank: vec?.rank ?? null,
@@ -573,6 +586,7 @@ export async function hybridSearch(
         is_synthetic: r.is_synthetic,
         source_url: r.source_url,
         integrity_status: r.integrity_status,
+        gazette_status: r.gazette_status,
         vector_score: r.vector_score,
         keyword_score: r.keyword_score,
         stem_score: r.stem_score,
@@ -687,6 +701,7 @@ export async function hybridSearch(
   const lawInfo = {
     lawReference: lawRef ? { display: lawRef.display, matchedSources: lawSourceIds?.length ?? 0 } : null,
     requestedLawMissing,
+    requestedLawHeldBack,
     lawNotFound,
     requestedArticleMissing,
     requestedDecisionMissing,
@@ -705,9 +720,22 @@ export async function hybridSearch(
     ...lawInfo,
   });
 
+  // Corpus repair: source classes. Applicable legislation first, then binding
+  // interpretations, court decisions, and memoranda / secondary material last
+  // — score order within each class, the gap cutoff within each class. Runs
+  // after the relevance gate, so a memorandum's higher lexical similarity
+  // never lifts it over an admitted article of a law (corpus/source-class.ts;
+  // a question that asks for decisions, or about a memorandum, is the
+  // exception it states).
+  const byClass = <T extends RetrievedChunk>(list: T[], scoreOf: (c: T) => number): T[] =>
+    orderBySourceClass(list, question, {
+      hasDecisionNumber: intent.decisionNumbers.length > 0,
+      cutoff: (tier) => applyScoreGapCutoff(tier, scoreOf),
+    });
+
   // ---- plain RRF path (default) ----
   if (!reranker && !useLocalRerank) {
-    return finish(applyScoreGapCutoff(ranked, (c) => c.score).slice(0, topK), false, null);
+    return finish(byClass(ranked, (c) => c.score).slice(0, topK), false, null);
   }
 
   // ---- rerank path: wide candidates → (cross-encoder | local composite) → topK ----
@@ -725,9 +753,11 @@ export async function hybridSearch(
     // or local composite — judges "does this passage answer what was asked",
     // and the added synonyms would blur that judgement. The local path is
     // synchronous (no network, no API key); awaiting a non-Promise is a no-op.
+    // Every candidate is scored (not only topK): the class order below may lift
+    // an admitted legislative article the reranker placed under topK.
     const hits = useLocalRerank
-      ? localRerank(question, candidates, topK, topicHints)
-      : await reranker!.rerank(question, candidates.map((c) => c.chunk_text), topK);
+      ? localRerank(question, candidates, candidates.length, topicHints)
+      : await reranker!.rerank(question, candidates.map((c) => c.chunk_text), candidates.length);
 
     const before = candidates.map((c) => ({
       id: c.id,
@@ -763,7 +793,7 @@ export async function hybridSearch(
     // Gap cutoff on rerank_score, NOT the stale RRF `score` — the reranker
     // just re-sorted this list by rerank_score, so that is the scale a
     // discontinuity has to be measured on.
-    const trimmed = applyScoreGapCutoff(reordered, (c) => c.rerank_score ?? 0);
+    const trimmed = byClass(reordered, (c) => c.rerank_score ?? 0);
     return finish(trimmed.slice(0, topK).map(({ _from, ...c }) => c), true, trace);
   } catch (err) {
     // Reranking is a refinement, never a dependency. A failed call must not
@@ -771,7 +801,7 @@ export async function hybridSearch(
     // Confidence is computed as UN-reranked, because it was: reporting a
     // cross-encoder's endorsement that never happened would overstate it.
     logError(`[rerank] ${rerankerName} failed, falling back to RRF order:`, err);
-    return finish(applyScoreGapCutoff(candidates, (c) => c.score).slice(0, topK), false, null);
+    return finish(byClass(candidates, (c) => c.score).slice(0, topK), false, null);
   }
 }
 
@@ -794,14 +824,10 @@ const FILTER_FRAGMENT = `
      AND ($13::int  IS NULL OR d.year     = $13 OR d.year     IS NULL)
      AND d.source_id IN (
        SELECT id FROM legal_sources
-        WHERE status = 'ready'
-          -- Phase 2: Jordanian sources only, and synthetic evaluation
-          -- fixtures only when ALLOW_SYNTHETIC_CORPUS=true — a fixture loaded
-          -- into production by mistake can never be quoted as law.
-          AND jurisdiction = 'JO'
-          AND (is_synthetic = false OR $18::boolean)
-          -- Phase 2.1: a quarantined or replaced text is never served.
-          AND integrity_status IN (${SERVABLE_SQL})
+        -- The one definition of a servable source (corpus/integrity.ts): ready,
+        -- Jordanian, not a fixture (unless ALLOW_SYNTHETIC_CORPUS, $18), and an
+        -- integrity status of 'passed' — never unchecked, quarantined or replaced.
+        WHERE ${servableSourceSql("", "$18")}
           AND ($14::text IS NULL OR source_type = $14)
           AND ($15::boolean IS NOT TRUE OR is_current_version = TRUE)
           AND ($16::date IS NULL OR effective_date IS NULL OR effective_date <= $16::date)
@@ -921,15 +947,13 @@ const FULL_ROW_SQL = `
          d.part, d.chapter, d.section, d.court, d.decision_number, d.year, d.category,
          d.keywords, d.legal_topics, s.title AS source_title, s.source_type, d.chunk_index,
          s.is_current_version, s.effective_date::text AS effective_date, s.jurisdiction,
-         s.provenance, s.is_synthetic, s.source_url, s.integrity_status
+         s.provenance, s.is_synthetic, s.source_url, s.integrity_status, s.gazette_status
     FROM legal_documents d
     JOIN legal_sources s ON s.id = d.source_id
    WHERE d.id = ANY($1::bigint[])
      -- Same served-corpus rule as the arms: also guards getChunksByIds,
      -- whose ids come from a client (draft refine).
-     AND s.jurisdiction = 'JO'
-     AND (s.is_synthetic = false OR $2::boolean)
-     AND s.integrity_status IN (${SERVABLE_SQL})
+     AND ${servableSourceSql("s", "$2")}
 `;
 
 /** Reorders `rows` to match `ids` exactly; silently drops any id with no
@@ -953,13 +977,18 @@ export async function getChunksByIds(ids: number[]): Promise<RetrievedChunk[]> {
   const fullRows = await query<FullRow>(FULL_ROW_SQL, [ids, env.allowSyntheticCorpus]);
   const chunks: RetrievedChunk[] = fullRows.map((full) => ({
     ...full,
+    // node-postgres returns BIGINT as a string: matched against the caller's
+    // numeric ids as they came, no row was ever found, and /api/draft/refine
+    // ran without its sources (found by the corpus-repair regression tests).
+    id: Number(full.id),
+    source_id: Number(full.source_id),
     vector_score: null,
     keyword_score: null,
     stem_score: null,
     score: 0,
     matched_by: "keyword" as const,
   }));
-  return orderChunksByIds(chunks, ids);
+  return orderChunksByIds(chunks, ids.map(Number));
 }
 
 // ---------------------------------------------------------------- article parts
@@ -1112,14 +1141,11 @@ const COMPANION_SQL = `
          d.part, d.chapter, d.section, d.court, d.decision_number, d.year, d.category,
          d.keywords, d.legal_topics, s.title AS source_title, s.source_type, d.chunk_index,
          s.is_current_version, s.effective_date::text AS effective_date, s.jurisdiction,
-         s.provenance, s.is_synthetic, s.source_url, s.integrity_status
+         s.provenance, s.is_synthetic, s.source_url, s.integrity_status, s.gazette_status
     FROM legal_documents d
     JOIN legal_sources s ON s.id = d.source_id
    WHERE (d.source_id, d.article_number) IN (SELECT * FROM unnest($1::bigint[], $2::text[]))
-     AND s.status = 'ready'
-     AND s.jurisdiction = 'JO'
-     AND (s.is_synthetic = false OR $3::boolean)
-     AND s.integrity_status IN (${SERVABLE_SQL})
+     AND ${servableSourceSql("s", "$3")}
    ORDER BY d.source_id, d.chunk_index
 `;
 

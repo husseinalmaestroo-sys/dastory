@@ -122,4 +122,7 @@ export const SOURCE_TYPE_LABELS: Record<string, string> = {
   court_decision: "قرار محكمة",
   principle: "مبدأ قانوني",
   template: "قالب صياغة",
+  interpretation: "قرار تفسيري (الديوان الخاص)",
+  mou: "مذكرة تفاهم",
+  secondary: "مادة ثانوية",
 };

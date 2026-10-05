@@ -1,5 +1,6 @@
 import "server-only";
 import { analyzeInventory, loadInventoryInput, loadRegistry, type InventoryReport } from "../corpus/inventory";
+import { DEFAULT_REPAIRS_PATH, loadRepairManifest, loadRepairRows, planRepairs, servingBlockers, type RepairPlanRow } from "../corpus/repairs";
 
 /**
  * Live-evaluation preflight (Phase 2.1).
@@ -20,10 +21,18 @@ import { analyzeInventory, loadInventoryInput, loadRegistry, type InventoryRepor
  *              least one non-synthetic source; no non-synthetic chunk carries
  *              a test-model vector; at least 90% of servable chunks carry a
  *              vector of the served embedding model (the rest are invisible
- *              to retrieval); at least one P0 law of the registry is servable.
- * Reported, not blocking: P0 laws that are not servable, zero authoritative
- * (verified official) sources, critical inventory anomalies — findings about
- * the corpus the live run should measure, not reasons to skip measuring it.
+ *              to retrieval); at least one P0 law of the registry is servable;
+ *   repair     (corpus repair, 2026-10) every ready non-synthetic source has
+ *              been through the integrity check (none 'unchecked'); every
+ *              applicable entry of the known-defect manifest
+ *              (deploy/sources/corpus-repairs.json) is applied; and no
+ *              launch-blocking defect — the corrupted Civil Code, the old
+ *              corrupted Penal Code — can still be served. The remedy for all
+ *              three is `npm run corpus:integrity -- prepare --apply`.
+ * Reported, not blocking: P0 laws that are not servable, zero Gazette-verified
+ * sources, manifest entries that need a reviewer (conflict, mismatch, review),
+ * critical inventory anomalies — findings about the corpus the live run should
+ * measure, not reasons to skip measuring it.
  */
 
 /** Share of servable chunks that must be visible to the served embedding model. */
@@ -36,11 +45,13 @@ const RERANK_KEYS: Record<string, string> = { cohere: "COHERE_API_KEY", voyage: 
 /** What the schema must have for the Phase 2.1 pipeline (table or table.column). */
 export const REQUIRED_SCHEMA = [
   "legal_sources.integrity_status",
+  "legal_sources.gazette_status",
   "legal_sources.is_synthetic",
   "legal_sources.provenance",
   "legal_documents.embedding_model",
   "ai_requests.stage_ms",
   "corpus_integrity_events",
+  "corpus_integrity_events.kind",
   "maintenance_runs",
 ] as const;
 
@@ -54,6 +65,18 @@ export type PreflightDb =
       inventory: InventoryReport;
       /** Chunks of non-synthetic sources embedded by a test model. */
       testVectorChunks: number;
+      /** The known-defect manifest against this database, or why it could not be read. */
+      repairs: PreflightRepairs;
+    }
+  | { ok: false; error: string };
+
+export type PreflightRepairs =
+  | {
+      ok: true;
+      /** The manifest's plan for this database (corpus/repairs.ts planRepairs). */
+      plan: RepairPlanRow[];
+      /** Launch-blocking defects still servable (or unconfirmable). */
+      blockers: { id: string; sourceId: number | null; detail: string }[];
     }
   | { ok: false; error: string };
 
@@ -73,6 +96,11 @@ export type PreflightResult = {
     servableSources: number;
     servableChunks: number;
     visibleChunks: number;
+    /** Ready non-synthetic sources never checked — not served. */
+    uncheckedSources: number;
+    /** Sources the integrity check or a reviewer quarantined, and replaced ones — kept, never served. */
+    heldBackSources: number;
+    gazetteVerifiedSources: number;
     authoritativeSources: number;
     p0Laws: number;
     p0Servable: number;
@@ -139,12 +167,56 @@ export function evaluatePreflight(input: PreflightInput): PreflightResult {
 
   const servable = inventory.sources.filter((s) => s.servable);
   const real = servable.filter((s) => !s.is_synthetic);
+  const readyReal = inventory.sources.filter((s) => !s.is_synthetic && s.status === "ready");
+  const unchecked = readyReal.filter((s) => s.integrity_status === "unchecked");
+  const heldBack = readyReal.filter((s) => s.integrity_status === "quarantined" || s.integrity_status === "replaced");
   add(
     "real_corpus",
     true,
     real.length > 0,
-    real.length > 0 ? `${real.length} non-synthetic servable source(s)` : "no non-synthetic servable source: this is a synthetic or empty database, not the production corpus"
+    real.length > 0
+      ? `${real.length} non-synthetic servable source(s)`
+      : readyReal.length > 0
+        ? `none of the ${readyReal.length} non-synthetic source(s) has passed the integrity check — nothing is served until it has: npm run corpus:integrity -- prepare --apply`
+        : "no non-synthetic servable source: this is a synthetic or empty database, not the production corpus"
   );
+  add(
+    "integrity_checked",
+    true,
+    unchecked.length === 0,
+    unchecked.length === 0
+      ? `every non-synthetic source has been through the integrity check (${heldBack.length} held back: quarantined or replaced)`
+      : `${unchecked.length} non-synthetic source(s) never checked (not served; a live run would not measure the corpus as it will be served) — npm run corpus:integrity -- prepare --apply`
+  );
+  if (!input.db.repairs.ok) {
+    add("known_defects", true, false, `the known-defect manifest could not be read: ${input.db.repairs.error}`);
+  } else {
+    const { plan, blockers } = input.db.repairs;
+    add(
+      "known_defects",
+      true,
+      blockers.length === 0,
+      blockers.length === 0
+        ? "no launch-blocking defect of the manifest can be served"
+        : `launch-blocking defect(s) still servable: ${blockers.map((b) => `${b.id} — ${b.detail}`).join("; ")} — npm run corpus:integrity -- prepare --apply`
+    );
+    const pending = plan.filter((p) => p.outcome === "apply");
+    add(
+      "repairs_applied",
+      true,
+      pending.length === 0,
+      pending.length === 0
+        ? "every applicable manifest repair is applied"
+        : `${pending.length} manifest repair(s) not applied (${[...new Set(pending.map((p) => p.id))].join(", ")}) — npm run corpus:integrity -- prepare --apply`
+    );
+    const review = plan.filter((p) => p.outcome === "conflict" || p.outcome === "mismatch" || p.outcome === "too_many" || p.outcome === "review");
+    add(
+      "repairs_review",
+      false,
+      review.length === 0,
+      review.length === 0 ? "no manifest entry needs a reviewer" : `for a reviewer: ${review.map((p) => `${p.id} (${p.outcome}${p.sourceId !== null ? `, source ${p.sourceId}` : ""})`).join("; ")}`
+    );
+  }
   add(
     "no_test_vectors",
     true,
@@ -172,12 +244,15 @@ export function evaluatePreflight(input: PreflightInput): PreflightResult {
   const p0Missing = p0.filter((c) => !c.servable).map((c) => `${c.law.name}${c.law.number ? ` ${c.law.number}/${c.law.year}` : ""}`);
   add("p0_any", true, p0.length === 0 || p0Servable.length > 0, `${p0Servable.length} of ${p0.length} P0 laws servable`);
   add("p0_all", false, p0Missing.length === 0, p0Missing.length ? `not servable: ${p0Missing.join("; ")}` : "every P0 law is servable");
+  const gazetteVerified = real.filter((s) => s.gazetteVerified).length;
   const authoritative = real.filter((s) => s.authoritative).length;
   add(
     "authoritative",
     false,
     authoritative > 0,
-    authoritative > 0 ? `${authoritative} verified official source(s)` : "no verified official source: every grounded answer will say its texts are not verified against the official publication"
+    authoritative > 0
+      ? `${authoritative} Gazette-verified source(s) with a passed integrity check`
+      : "no Gazette-verified source: every grounded answer will say its texts were not compared with the Official Gazette (an official provenance is not a Gazette verification)"
   );
   add("anomalies", false, inventory.summary.critical === 0, `${inventory.summary.critical} critical / ${inventory.summary.warnings} warning inventory anomalies (npm run corpus:inventory)`);
 
@@ -188,6 +263,9 @@ export function evaluatePreflight(input: PreflightInput): PreflightResult {
       servableSources: real.length,
       servableChunks,
       visibleChunks,
+      uncheckedSources: unchecked.length,
+      heldBackSources: heldBack.length,
+      gazetteVerifiedSources: gazetteVerified,
       authoritativeSources: authoritative,
       p0Laws: p0.length,
       p0Servable: p0Servable.length,
@@ -201,7 +279,12 @@ export function evaluatePreflight(input: PreflightInput): PreflightResult {
 type Q = { query: (sql: string, params?: unknown[]) => Promise<{ rows: Record<string, unknown>[] }> };
 
 /** Reads what evaluatePreflight needs from the database. Never throws: an unreachable database is a result. */
-export async function loadPreflightDb(db: Q, env: Readonly<Record<string, string | undefined>>, registryPath: string): Promise<PreflightDb> {
+export async function loadPreflightDb(
+  db: Q,
+  env: Readonly<Record<string, string | undefined>>,
+  registryPath: string,
+  repairsPath: string = DEFAULT_REPAIRS_PATH
+): Promise<PreflightDb> {
   try {
     const present = new Set(
       (await db.query(`SELECT table_name AS t, column_name AS c FROM information_schema.columns WHERE table_schema = 'public'`)).rows.flatMap((r) => [
@@ -224,6 +307,7 @@ export async function loadPreflightDb(db: Q, env: Readonly<Record<string, string
         vectorDim: Number.isFinite(vectorDim) ? vectorDim : null,
         inventory: analyzeInventory({ sources: [], chunks: [], orphanChunks: 0, registry, servedModel: null }),
         testVectorChunks: 0,
+        repairs: { ok: false, error: "schema not migrated" },
       };
     }
     const input = await loadInventoryInput(db);
@@ -232,10 +316,29 @@ export async function loadPreflightDb(db: Q, env: Readonly<Record<string, string
       `SELECT count(*)::int AS n FROM legal_documents d JOIN legal_sources s ON s.id = d.source_id
         WHERE s.is_synthetic = false AND d.embedding_model LIKE 'test-%'`
     );
-    return { ok: true, schemaMissing, vectorDim: Number.isFinite(vectorDim) ? vectorDim : null, inventory, testVectorChunks: Number(tv.rows[0]?.n ?? 0) };
+    return {
+      ok: true,
+      schemaMissing,
+      vectorDim: Number.isFinite(vectorDim) ? vectorDim : null,
+      inventory,
+      testVectorChunks: Number(tv.rows[0]?.n ?? 0),
+      repairs: await loadPreflightRepairs(db, repairsPath),
+    };
   } catch (err) {
     return { ok: false, error: redact(err instanceof Error ? err.message.split("\n")[0] : "unknown error") };
   }
+}
+
+/** The known-defect manifest planned against this database. A manifest that cannot be read is a result, not a crash. */
+export async function loadPreflightRepairs(db: Q, repairsPath: string): Promise<PreflightRepairs> {
+  let manifest;
+  try {
+    manifest = loadRepairManifest(repairsPath);
+  } catch (err) {
+    return { ok: false, error: redact(err instanceof Error ? err.message.split("\n")[0] : String(err)) };
+  }
+  const { rows, applied } = await loadRepairRows(db);
+  return { ok: true, plan: planRepairs(manifest, rows, applied), blockers: servingBlockers(manifest, rows, applied, false) };
 }
 
 /** Removes anything shaped like a credential from a message before it is printed. */
@@ -249,6 +352,7 @@ export function redact(s: string): string {
 /** The preflight against the configured database (process env unless given). */
 export async function runLivePreflight(opts: {
   registryPath: string;
+  repairsPath?: string;
   needChat?: boolean;
   env?: Readonly<Record<string, string | undefined>>;
 }): Promise<PreflightResult> {
@@ -256,7 +360,7 @@ export async function runLivePreflight(opts: {
   let db: PreflightDb;
   try {
     const { getPool } = await import("../db");
-    db = await loadPreflightDb(getPool(), env, opts.registryPath);
+    db = await loadPreflightDb(getPool(), env, opts.registryPath, opts.repairsPath);
   } catch (err) {
     db = { ok: false, error: redact(err instanceof Error ? err.message.split("\n")[0] : "unknown error") };
   }

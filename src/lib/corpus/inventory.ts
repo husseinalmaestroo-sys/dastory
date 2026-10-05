@@ -1,18 +1,27 @@
 import "server-only";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { assessArabicText } from "../ingest/quality";
 import { foldForSearch } from "../ingest/clean";
+import { isAmendingTitle, parseLawNumber, parseLawYear } from "../ingest/law-identity";
+import { titleProblems } from "../ingest/title";
 import { matchLawTitles, titleCitation } from "../search/law-reference";
-import { SERVABLE_INTEGRITY, isAuthoritative } from "./integrity";
+import { authorityLevel, isAuthoritative, isServableSource, type AuthorityLevel } from "./integrity";
+import { expectedSourceType, sourceClassOf, type SourceClass } from "./source-class";
+import { isPartOfLaw } from "./check";
 
 /**
- * Corpus inventory and anomaly detection (Phase 2.1).
+ * Corpus inventory and anomaly detection (Phase 2.1; separate states since the
+ * 2026-10 corpus repair).
  *
  * One pass over legal_sources + legal_documents answering, per source: what
- * law it is, where it came from, whether it is the version in force, whether
- * its text was checked, how many chunks it has, which model embedded them —
- * and what is wrong with it. Plus the coverage of the laws a Jordanian legal
- * assistant must be able to answer from (deploy/sources/required-laws.json).
+ * law it is, what class of text, where it came from, whether its text passed
+ * the integrity checks, whether it was compared with the Official Gazette,
+ * whether it is the version in force, how many chunks it has and which model
+ * embedded them — and what is wrong with it. Plus the coverage of the laws a
+ * Jordanian legal assistant must be able to answer from
+ * (deploy/sources/required-laws.json), with every state reported on its own:
+ * none is inferred from another.
  *
  * analyzeInventory is pure (unit-tested); loadInventoryInput reads the DB.
  */
@@ -28,11 +37,15 @@ export type InventorySource = {
   source_url: string | null;
   issuing_authority: string | null;
   integrity_status: string;
+  /** 'verified' only with a recorded Gazette reference (db constraint). Absent in old inputs = unverified. */
+  gazette_status?: string | null;
   is_current_version: boolean;
   supersedes: number | null;
   amendment_of: number | null;
   replaced_by?: number | null;
   law_number: string | null;
+  /** legal_sources.year (decisions use it; laws usually carry the year in the title). */
+  year?: number | null;
   effective_date: string | null;
   file_hash: string | null;
   chunk_count: number;
@@ -58,7 +71,10 @@ export type RequiredLaw = {
   year?: number;
   priority: "P0" | "P1";
   category: string;
+  /** Which repository list the number/year are copied from: moj-list, moj-constitution-list, missing-list (corpus/registry-check.ts). */
   basis: string;
+  /** The exact record in that list (checked by corpus/registry-check.ts; a guidance list is not a citation source). */
+  evidence?: string;
 };
 
 export type AnomalyKind =
@@ -67,6 +83,7 @@ export type AnomalyKind =
   | "failed_ingest"
   | "empty_source"
   | "garbled_text"
+  | "integrity_unchecked"
   | "missing_embeddings"
   | "mixed_embedding_models"
   | "stale_embedding_model"
@@ -77,7 +94,12 @@ export type AnomalyKind =
   | "article_order"
   | "provenance_unrecorded"
   | "invalid_metadata"
+  | "metadata_incomplete"
+  | "malformed_title"
+  | "source_class_mismatch"
+  | "amendment_unlinked"
   | "duplicate_file"
+  | "duplicate_content"
   | "duplicate_law"
   | "multiple_current_versions"
   | "orphan_chunks";
@@ -96,8 +118,15 @@ export type SourceReport = InventorySource & {
   kind: string | null;
   number: string | null;
   year: number | null;
+  sourceClass: SourceClass;
+  /** Retrieval may serve it (corpus/integrity.ts servableSourceSql, in JS). */
   servable: boolean;
+  integrityPassed: boolean;
+  gazetteVerified: boolean;
   authoritative: boolean;
+  authorityLevel: AuthorityLevel;
+  /** Statutes: number and year known (column or title). Decisions and others: not applicable (true). */
+  metadataComplete: boolean;
   chunksActual: number;
   embedded: number;
   models: string[];
@@ -106,19 +135,38 @@ export type SourceReport = InventorySource & {
   anomalies: Anomaly[];
 };
 
+/**
+ * One required law and each of its states, separately (corpus repair). A
+ * state is true only when a SERVABLE source of the law shows it — except
+ * presentInDatabase, which counts any ready source, served or not.
+ */
 export type CoverageRow = {
   law: RequiredLaw;
+  /** Every matched source, in any state. */
   sourceIds: number[];
-  present: boolean;
+  /** DATABASE VERIFIED presence: a ready source of the law is in the database this inventory read. */
+  presentInDatabase: boolean;
+  /** At least one of its texts may be served (integrity passed, ready, Jordanian, not a fixture). */
   servable: boolean;
-  official: boolean;
-  verified: boolean;
-  current: boolean;
-  provenance: string[];
+  /** OFFICIAL SOURCE: a servable text recorded as from the official publisher. */
+  officialSource: boolean;
+  /** GAZETTE VERIFIED: a servable text compared with the Official Gazette (with a reference). */
+  gazetteVerified: boolean;
+  /** CURRENT VERSION: a servable text marked as the version in force. */
+  currentVersion: boolean;
+  /** EMBEDDED: every servable text fully embedded with the query model. */
   embedded: boolean;
+  /** SEARCHABLE: servable and embedded. */
   searchable: boolean;
+  /** AUTHORITATIVE: a servable text Gazette-verified, integrity passed, not a fixture. */
+  authoritative: boolean;
+  /** Number and year recorded for a servable text. */
+  metadataComplete: boolean;
+  /** How many matched sources are in each integrity state. */
+  integrity: Record<string, number>;
+  provenance: string[];
   articles: number;
-  status: "unavailable" | "quarantined_only" | "served_unverified" | "authoritative";
+  status: "absent" | "held_back" | "served_not_gazette_verified" | "authoritative";
 };
 
 export type InventoryReport = {
@@ -131,10 +179,15 @@ export type InventoryReport = {
     sources: number;
     servable: number;
     authoritative: number;
+    gazetteVerified: number;
+    officialProvenance: number;
+    byIntegrity: Record<string, number>;
+    byClass: Record<string, number>;
     chunks: number;
     critical: number;
     warnings: number;
     requiredLaws: number;
+    requiredPresent: number;
     requiredServable: number;
     requiredAuthoritative: number;
   };
@@ -147,8 +200,12 @@ export function loadRegistry(path: string): RequiredLaw[] {
 
 const LEADING_INT = /^\s*(\d{1,5})/;
 
-/** Numbering of a law's articles in chunk order: gaps, repeats and reversals point at a broken extraction. */
-export function articleSequence(articles: (string | null)[]): ArticleSequence {
+/**
+ * Numbering of a law's articles in chunk order: gaps, repeats and reversals
+ * point at a broken extraction. One part of a law (corpus/check.ts
+ * isPartOfLaw) is measured from its own lowest article, as the check does.
+ */
+export function articleSequence(articles: (string | null)[], opts: { fromLowest?: boolean } = {}): ArticleSequence {
   const numbered = articles.filter((a): a is string => !!a && LEADING_INT.test(a));
   const unnumbered = articles.length - numbered.length;
   // Consecutive chunks with one number are the parts of one long article.
@@ -165,11 +222,12 @@ export function articleSequence(articles: (string | null)[]): ArticleSequence {
   for (let i = 1; i < ints.length; i++) if (ints[i] < ints[i - 1]) outOfOrder++;
   const distinctInts = new Set(ints);
   const gaps: number[] = [];
+  const low = opts.fromLowest && distinctInts.size ? Math.min(...distinctInts) : 1;
   if (distinctInts.size >= 3) {
     const max = Math.max(...distinctInts);
-    for (let n = 1; n <= max; n++) if (!distinctInts.has(n)) gaps.push(n);
+    for (let n = low; n <= max; n++) if (!distinctInts.has(n)) gaps.push(n);
   }
-  const span = distinctInts.size ? Math.max(...distinctInts) : 0;
+  const span = distinctInts.size ? Math.max(...distinctInts) - low + 1 : 0;
   return {
     numbered: numbered.length,
     unnumbered,
@@ -190,14 +248,17 @@ function lawIdentity(title: string): { kind: string | null; number: string | nul
 }
 
 function isServable(s: InventorySource, chunks: number): boolean {
-  return (
-    s.status === "ready" &&
-    s.jurisdiction === "JO" &&
-    !s.is_synthetic &&
-    (SERVABLE_INTEGRITY as readonly string[]).includes(s.integrity_status) &&
-    chunks > 0
-  );
+  return isServableSource(s, false) && chunks > 0;
 }
+
+/** A fingerprint of a text's content — catches byte-different but content-identical files. */
+function contentFingerprint(sample: string): string | null {
+  const t = foldForSearch(sample).replace(/\s+/g, " ").trim().slice(0, 4000);
+  if (t.length < 400) return null;
+  return createHash("sha256").update(t).digest("hex");
+}
+
+const STATUTE_TYPES = ["law", "regulation", "instruction"];
 
 export function analyzeInventory(input: {
   sources: InventorySource[];
@@ -223,9 +284,13 @@ export function analyzeInventory(input: {
     const id = lawIdentity(s.title);
     const servable = isServable({ ...s, is_synthetic: input.includeSynthetic ? false : s.is_synthetic }, chunksActual);
     const sid = Number(s.id);
+    const statute = STATUTE_TYPES.includes(s.source_type);
 
     if (s.status !== "ready") add({ kind: "failed_ingest", severity: "warning", sourceId: sid, detail: `status ${s.status}` }, own);
     if (s.status === "ready" && chunksActual === 0) add({ kind: "empty_source", severity: "critical", sourceId: sid, detail: "ready with no chunks" }, own);
+    if (s.status === "ready" && s.integrity_status === "unchecked") {
+      add({ kind: "integrity_unchecked", severity: "warning", sourceId: sid, detail: "never checked — not served until it passes (npm run corpus:integrity -- check --apply)" }, own);
+    }
     if (c && s.chunk_count !== chunksActual) {
       add({ kind: "chunk_count_mismatch", severity: "warning", sourceId: sid, detail: `recorded ${s.chunk_count}, stored ${chunksActual}` }, own);
     }
@@ -241,8 +306,7 @@ export function analyzeInventory(input: {
     const garbled = quality?.garbled ? quality.reason : null;
     if (garbled) add({ kind: "garbled_text", severity: "critical", sourceId: sid, detail: garbled }, own);
 
-    const seq = articleSequence(c?.articles ?? []);
-    const statute = ["law", "regulation", "instruction"].includes(s.source_type);
+    const seq = articleSequence(c?.articles ?? [], { fromLowest: isPartOfLaw(s.title) });
     if (statute && c && !s.is_synthetic) {
       if (seq.numbered === 0 && chunksActual > 0) {
         add({ kind: "unnumbered_articles", severity: "warning", sourceId: sid, detail: "no chunk carries an article number" }, own);
@@ -269,22 +333,52 @@ export function analyzeInventory(input: {
     if (!/^[A-Z]{2}$/.test(s.jurisdiction ?? "")) meta.push(`jurisdiction "${s.jurisdiction}"`);
     if (s.is_synthetic && s.provenance !== "synthetic") meta.push("synthetic fixture not marked provenance=synthetic");
     if (!s.is_synthetic && s.provenance === "synthetic") meta.push("provenance=synthetic on a non-fixture source");
-    if (statute && !(id.number && id.year) && !s.law_number) meta.push("no law number/year in title or metadata");
     if (statute && !s.effective_date) meta.push("no effective date");
     if (s.provenance === "official" && !s.source_url) meta.push("official provenance without a source URL");
-    if (s.integrity_status === "verified" && s.provenance !== "official") meta.push("verified integrity on a non-official text");
     if (meta.length) {
       add({ kind: "invalid_metadata", severity: meta.some((m) => m.startsWith("synthetic") || m.startsWith("provenance=synthetic")) ? "critical" : "warning", sourceId: sid, detail: meta.join("; ") }, own);
     }
 
+    // Number and year of a statute: recorded or in the title, never guessed.
+    const number = s.law_number ?? parseLawNumber(s.title) ?? id.number;
+    const year = (statute ? (s.year ?? null) : null) ?? parseLawYear(s.title) ?? id.year ?? null;
+    const amending = isAmendingTitle(s.title);
+    const constitution = /^(?:ال)?دستور/.test(foldForSearch(s.title).trim());
+    const metadataComplete = !statute || constitution || (!!number && !!year);
+    if (statute && !constitution && !metadataComplete) {
+      add({ kind: "metadata_incomplete", severity: "warning", sourceId: sid, detail: `law number ${number ?? "unknown"}, year ${year ?? "unknown"} — to be taken from the official text, never guessed` }, own);
+    }
+    for (const p of titleProblems(s.title)) {
+      add(
+        {
+          kind: "malformed_title",
+          severity: "warning",
+          sourceId: sid,
+          detail: p === "unnormalized" ? "title carries tatweel, underscores, unnormalised digits or a bracketed number (npm run corpus:integrity -- normalize-titles)" : `"لسنة" is not followed by a year: "${s.title}"`,
+        },
+        own
+      );
+    }
+    const expected = expectedSourceType(s.source_type, s.title);
+    if (expected) add({ kind: "source_class_mismatch", severity: "warning", sourceId: sid, detail: `filed as ${s.source_type}, title says ${expected}` }, own);
+    if (statute && amending && s.amendment_of === null) {
+      add({ kind: "amendment_unlinked", severity: "warning", sourceId: sid, detail: "an amending act not linked to the law it amends (amendment_of)" }, own);
+    }
+
+    const gazetteVerified = s.gazette_status === "verified";
     return {
       ...s,
       id: sid,
       kind: id.kind,
-      number: id.number,
-      year: id.year,
+      number: number ?? null,
+      year,
+      sourceClass: sourceClassOf(s.source_type, s.title),
       servable,
+      integrityPassed: s.integrity_status === "passed",
+      gazetteVerified,
       authoritative: servable && isAuthoritative(s),
+      authorityLevel: authorityLevel(s),
+      metadataComplete,
       chunksActual,
       embedded: c?.embedded ?? 0,
       models: c?.models ?? [],
@@ -299,6 +393,18 @@ export function analyzeInventory(input: {
   for (const r of reports) if (r.file_hash && r.status === "ready") byHash.set(r.file_hash, [...(byHash.get(r.file_hash) ?? []), r]);
   for (const [hash, list] of byHash) {
     if (list.length > 1) add({ kind: "duplicate_file", severity: "warning", detail: `sources ${list.map((r) => r.id).join(", ")} share file hash ${hash.slice(0, 12)}` });
+  }
+  // The same text in two byte-different files (e.g. two PDFs of one regulation).
+  const byContent = new Map<string, SourceReport[]>();
+  for (const r of reports) {
+    const fp = r.status === "ready" ? contentFingerprint(byId.get(r.id)?.sample_text ?? "") : null;
+    if (fp) byContent.set(fp, [...(byContent.get(fp) ?? []), r]);
+  }
+  for (const list of byContent.values()) {
+    const hashes = new Set(list.map((r) => r.file_hash ?? `none-${r.id}`));
+    if (list.length > 1 && hashes.size > 1) {
+      add({ kind: "duplicate_content", severity: "warning", detail: `sources ${list.map((r) => r.id).join(", ")} hold the same text in different files` });
+    }
   }
   const byLaw = new Map<string, SourceReport[]>();
   for (const r of reports) {
@@ -324,42 +430,52 @@ export function analyzeInventory(input: {
   }
   if (input.orphanChunks > 0) add({ kind: "orphan_chunks", severity: "critical", detail: `${input.orphanChunks} chunk(s) belong to no ready source` });
 
-  // ---- coverage of the required laws
+  // ---- coverage of the required laws: every state separately
   const titles = reports.map((r) => ({ id: r.id, folded: foldForSearch(r.title) }));
   const coverage: CoverageRow[] = input.registry.map((law) => {
     const ids = matchRequiredLaw(law, titles);
     const matched = reports.filter((r) => ids.includes(r.id));
     const served = matched.filter((r) => r.servable);
     const embedded = served.length > 0 && served.every((r) => r.embedded === r.chunksActual && (!input.servedModel || r.models.every((m) => m === input.servedModel)));
+    const integrity: Record<string, number> = {};
+    for (const r of matched) integrity[r.integrity_status] = (integrity[r.integrity_status] ?? 0) + 1;
+    const presentInDatabase = matched.some((r) => r.status === "ready");
     const row: CoverageRow = {
       law,
       sourceIds: ids,
-      present: matched.some((r) => r.status === "ready"),
+      presentInDatabase,
       servable: served.length > 0,
-      official: served.some((r) => r.provenance === "official"),
-      verified: served.some((r) => r.integrity_status === "verified"),
-      current: served.some((r) => r.is_current_version),
-      provenance: [...new Set(matched.map((r) => r.provenance ?? "غير مسجّل"))],
+      officialSource: served.some((r) => r.provenance === "official"),
+      gazetteVerified: served.some((r) => r.gazetteVerified),
+      currentVersion: served.some((r) => r.is_current_version),
       embedded,
       searchable: served.length > 0 && embedded,
+      authoritative: served.some((r) => r.authoritative),
+      metadataComplete: served.some((r) => r.metadataComplete),
+      integrity,
+      provenance: [...new Set(matched.map((r) => r.provenance ?? "غير مسجّل"))],
       articles: new Set(served.flatMap((r) => (byId.get(r.id)?.articles ?? []).filter(Boolean))).size,
-      status: served.some((r) => r.authoritative)
-        ? "authoritative"
-        : served.length > 0
-          ? "served_unverified"
-          : matched.some((r) => r.integrity_status === "quarantined" || r.integrity_status === "replaced")
-            ? "quarantined_only"
-            : "unavailable",
+      status: served.some((r) => r.authoritative) ? "authoritative" : served.length > 0 ? "served_not_gazette_verified" : presentInDatabase ? "held_back" : "absent",
     };
-    if (!row.present) {
+    if (!presentInDatabase) {
       add({ kind: "missing_law", severity: law.priority === "P0" ? "critical" : "warning", law: law.name, detail: `${law.name}${law.number ? ` رقم ${law.number} لسنة ${law.year}` : ""} is not in the corpus` });
     } else if (!row.servable) {
-      add({ kind: "law_not_servable", severity: law.priority === "P0" ? "critical" : "warning", law: law.name, detail: `present, but no source of it can be served (${row.status})` });
+      add({
+        kind: "law_not_servable",
+        severity: law.priority === "P0" ? "critical" : "warning",
+        law: law.name,
+        detail: `present, but no text of it can be served (${Object.entries(integrity).map(([k, n]) => `${n} ${k}`).join(", ")})`,
+      });
     }
     return row;
   });
 
   const summaryCount = (sev: Anomaly["severity"]) => anomalies.filter((a) => a.severity === sev).length;
+  const count = (f: (r: SourceReport) => string) => {
+    const out: Record<string, number> = {};
+    for (const r of reports) out[f(r)] = (out[f(r)] ?? 0) + 1;
+    return out;
+  };
   return {
     generatedAt: new Date().toISOString(),
     servedModel: input.servedModel,
@@ -370,10 +486,15 @@ export function analyzeInventory(input: {
       sources: reports.length,
       servable: reports.filter((r) => r.servable).length,
       authoritative: reports.filter((r) => r.authoritative).length,
+      gazetteVerified: reports.filter((r) => r.gazetteVerified).length,
+      officialProvenance: reports.filter((r) => r.provenance === "official").length,
+      byIntegrity: count((r) => r.integrity_status),
+      byClass: count((r) => r.sourceClass),
       chunks: reports.reduce((n, r) => n + r.chunksActual, 0),
       critical: summaryCount("critical"),
       warnings: summaryCount("warning"),
       requiredLaws: coverage.length,
+      requiredPresent: coverage.filter((c) => c.presentInDatabase).length,
       requiredServable: coverage.filter((c) => c.servable).length,
       requiredAuthoritative: coverage.filter((c) => c.status === "authoritative").length,
     },
@@ -392,7 +513,14 @@ export function matchRequiredLaw(law: RequiredLaw, titles: { id: number; folded:
     const amending = matchLawTitles({ key: foldForSearch(law.name), display: law.name }, titles).filter((id) =>
       /^(?:قانون|نظام|تعليمات)\s+معد[ّ]?ل\s/.test(titles.find((t) => t.id === id)!.folded)
     );
-    return [...new Set([...exact.map((t) => t.id), ...amending])];
+    // A source of the law whose title carries no number/year (a consolidated
+    // text, or a title damaged at extraction) still belongs to it by name —
+    // otherwise "قانون الملكية العقارية" would be reported absent.
+    const byNameUnnumbered = matchLawTitles({ key: foldForSearch(law.name), display: law.name }, titles).filter((id) => {
+      const c = titleCitation(titles.find((t) => t.id === id)!.folded);
+      return c.number === undefined && c.year === undefined;
+    });
+    return [...new Set([...exact.map((t) => t.id), ...amending, ...byNameUnnumbered])];
   }
   return matchLawTitles({ key: foldForSearch(law.name), display: law.name }, titles);
 }
@@ -406,7 +534,7 @@ export async function loadInventoryInput(db: Q): Promise<{ sources: InventorySou
   const sources = (
     await db.query(
       `SELECT id, title, source_type, status, jurisdiction, language, provenance, source_url, issuing_authority,
-              integrity_status, is_current_version, supersedes, amendment_of, replaced_by, law_number,
+              integrity_status, gazette_status, is_current_version, supersedes, amendment_of, replaced_by, law_number, year,
               effective_date::text AS effective_date, file_hash, chunk_count, is_synthetic
          FROM legal_sources ORDER BY id`
     )
@@ -416,6 +544,7 @@ export async function loadInventoryInput(db: Q): Promise<{ sources: InventorySou
     supersedes: r.supersedes === null ? null : Number(r.supersedes),
     amendment_of: r.amendment_of === null ? null : Number(r.amendment_of),
     replaced_by: r.replaced_by === null ? null : Number(r.replaced_by),
+    year: r.year === null || r.year === undefined ? null : Number(r.year),
     chunk_count: Number(r.chunk_count),
   }));
   const chunks = (

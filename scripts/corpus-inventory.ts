@@ -28,18 +28,29 @@ const yes = (b: boolean) => (b ? "✓" : "✗");
 export function inventoryMarkdown(r: InventoryReport): string {
   const lines: string[] = [];
   lines.push(`# Corpus inventory — ${r.generatedAt}`, "");
+  const counts = (o: Record<string, number>) => Object.entries(o).map(([k, n]) => `${k} ${n}`).join(", ") || "—";
   lines.push(
-    `Sources ${r.summary.sources} · servable ${r.summary.servable} · authoritative ${r.summary.authoritative} · chunks ${r.summary.chunks} · ` +
-      `critical anomalies ${r.summary.critical} · warnings ${r.summary.warnings} · query embedding model ${r.servedModel ?? "?"}`,
+    `Sources ${r.summary.sources} · servable ${r.summary.servable} · Gazette-verified ${r.summary.gazetteVerified} · authoritative ${r.summary.authoritative} · ` +
+      `official provenance ${r.summary.officialProvenance} · chunks ${r.summary.chunks} · critical anomalies ${r.summary.critical} · warnings ${r.summary.warnings} · ` +
+      `query embedding model ${r.servedModel ?? "?"}`,
+    "",
+    `Integrity: ${counts(r.summary.byIntegrity)} · Classes: ${counts(r.summary.byClass)}`,
     ""
   );
   lines.push("## Coverage of required laws", "");
-  lines.push("| Law | Priority | Required | Present | Official | Current | Provenance | Verified | Embedded | Searchable | Articles | Status |");
-  lines.push("|---|---|---|---|---|---|---|---|---|---|---|---|");
+  lines.push(
+    "Each state is established separately from THIS database; none is inferred from another. " +
+      "A state is ✓ only when a servable text of the law shows it (Present counts any ready text).",
+    ""
+  );
+  lines.push(
+    "| Law | Priority | Present in DB | Servable | Official source | Gazette-verified | Current | Embedded | Searchable | Authoritative | Number/year known | Integrity of its texts | Provenance | Articles | Status |"
+  );
+  lines.push("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|");
   for (const c of r.coverage) {
     const name = `${c.law.name}${c.law.number ? ` ${c.law.number}/${c.law.year}` : ""}`;
     lines.push(
-      `| ${name} | ${c.law.priority} | ✓ | ${yes(c.present)} | ${yes(c.official)} | ${yes(c.current)} | ${c.provenance.join(", ") || "—"} | ${yes(c.verified)} | ${yes(c.embedded)} | ${yes(c.searchable)} | ${c.articles} | ${c.status} |`
+      `| ${name} | ${c.law.priority} | ${yes(c.presentInDatabase)} | ${yes(c.servable)} | ${yes(c.officialSource)} | ${yes(c.gazetteVerified)} | ${yes(c.currentVersion)} | ${yes(c.embedded)} | ${yes(c.searchable)} | ${yes(c.authoritative)} | ${yes(c.metadataComplete)} | ${counts(c.integrity)} | ${c.provenance.join(", ") || "—"} | ${c.articles} | ${c.status} |`
     );
   }
   lines.push("", "## Anomalies", "");
@@ -50,11 +61,11 @@ export function inventoryMarkdown(r: InventoryReport): string {
     lines.push("");
   }
   lines.push("## Sources", "");
-  lines.push("| id | Title | Type | Law | Status | Integrity | Provenance | Current | Chunks | Embedded | Models | Servable | Authoritative |");
-  lines.push("|---|---|---|---|---|---|---|---|---|---|---|---|---|");
+  lines.push("| id | Title | Type | Class | Law | Status | Integrity | Gazette | Provenance | Authority | Current | Chunks | Embedded | Models | Servable | Authoritative |");
+  lines.push("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|");
   for (const s of r.sources) {
     lines.push(
-      `| ${s.id} | ${s.title.slice(0, 60)} | ${s.source_type} | ${s.number ? `${s.number}/${s.year ?? "?"}` : "—"} | ${s.status} | ${s.integrity_status} | ${s.provenance ?? "—"} | ${yes(s.is_current_version)} | ${s.chunksActual} | ${s.embedded} | ${s.models.join(", ") || "—"} | ${yes(s.servable)} | ${yes(s.authoritative)} |`
+      `| ${s.id} | ${s.title.slice(0, 60)} | ${s.source_type} | ${s.sourceClass} | ${s.number ? `${s.number}/${s.year ?? "?"}` : s.metadataComplete ? "—" : "incomplete"} | ${s.status} | ${s.integrity_status} | ${s.gazette_status ?? "unverified"} | ${s.provenance ?? "—"} | ${s.authorityLevel} | ${yes(s.is_current_version)} | ${s.chunksActual} | ${s.embedded} | ${s.models.join(", ") || "—"} | ${yes(s.servable)} | ${yes(s.authoritative)} |`
     );
   }
   return lines.join("\n") + "\n";

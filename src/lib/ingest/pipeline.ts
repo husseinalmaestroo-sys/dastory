@@ -7,6 +7,7 @@ import { chunkLegalText } from "./chunk";
 import { extractDecisionMeta, extractLawName } from "./metadata";
 import { parseLawNumber } from "./law-identity";
 import { stemArabicText } from "../search/arabic-stem";
+import { applyVerdict, integrityVerdict } from "../corpus/check";
 
 export type IngestInput = {
   sourceId: number;
@@ -171,6 +172,23 @@ export async function ingestSource(input: IngestInput): Promise<IngestResult> {
           WHERE id = $1`,
         [input.sourceId, chunks.length, court, year, note]
       );
+
+      // Corpus repair (2026-10): a source is served only once it has passed
+      // the integrity check (corpus/check.ts) — run here on the full text, so
+      // a freshly ingested law is judged before anyone can retrieve it. A
+      // source a reviewer quarantined or replaced is never moved by this.
+      const cur = await client.query(`SELECT integrity_status, is_synthetic FROM legal_sources WHERE id = $1`, [input.sourceId]);
+      const from = cur.rows[0]?.integrity_status as string | undefined;
+      if (from === "unchecked" || from === "passed") {
+        const v = integrityVerdict({
+          sourceType: input.sourceType,
+          title: input.title,
+          isSynthetic: cur.rows[0]?.is_synthetic === true,
+          chunkTexts: chunks.map((c) => c.text),
+          articles: chunks.map((c) => (trustNumbers ? c.articleNumber : null)),
+        });
+        if (v.verdict !== from) await applyVerdict(client, input.sourceId, from, v.verdict, v.findings, "ingest (automatic)");
+      }
     });
 
     return {

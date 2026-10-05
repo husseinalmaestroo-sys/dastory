@@ -676,8 +676,14 @@ console.log("\n[classify: source type]");
   check("نظام → regulation", t("/d/نظام_رسوم_الكاتب_العدل_2026.pdf") === "regulation");
   check("تعليمات → instruction", t("/d/تعليمات_المراقبة_الالكترونية_2025.pdf") === "instruction");
   check("التعليمات (with al-) → instruction", t("/d/التعليمات_الناظمة_للبيع_بالمزاد_الالكتروني.pdf") === "instruction");
-  check("لائحة → template", t("/d/لائحة_أجور_أتعاب_الكاتب_العدل_المرخص_لسنة_2015.pdf") === "template");
-  check("قرار → court_decision", t("/d/قرار_بتحديد_الصحف_الاوسع_انتشارا_لسنة_2021.pdf") === "court_decision");
+  // Corpus repair (2026-10): both files below are listed by moj.gov.jo under
+  // its REGULATIONS (deploy/sources/moj-regulations-ar.txt). A fee schedule
+  // ("لائحة أجور") was filed as a pleading template and an executive decision
+  // as a court decision; only a pleading ("لائحة دعوى") is a template.
+  check("لائحة أجور (fee schedule) → regulation", t("/d/لائحة_أجور_أتعاب_الكاتب_العدل_المرخص_لسنة_2015.pdf") === "regulation");
+  check("لائحة دعوى (pleading) → template", t("/d/لائحة_دعوى_مطالبة_مالية.docx") === "template");
+  check("قرار بتحديد (executive decision) → instruction", t("/d/قرار_بتحديد_الصحف_الاوسع_انتشارا_لسنة_2021.pdf") === "instruction");
+  check("قرار (court decision) → court_decision", t("/d/قرار_محكمة_التمييز_رقم_1234_لسنة_2020.pdf") === "court_decision");
 
   /**
    * Regression: "نظام معدل لنظام المساعدة القانونية" contains "القانونية",

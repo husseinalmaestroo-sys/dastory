@@ -594,19 +594,12 @@ DELETE FROM users WHERE name_key LIKE 'dostoori-office-%' OR office_name = 'Dost
 --  Phase 2.1 — corpus integrity
 -- ============================================================
 
--- Whether a source's TEXT can be relied on — separate from where it came from
--- (provenance) and from whether it is the version in force (is_current_version):
---   'verified'    compared with the issuing authority's publication and found
---                 faithful; who, when and against what is in the event log below
---   'unverified'  not compared (every source ingested before Phase 2.1)
---   'quarantined' known or suspected damaged — garbled extraction, broken or
---                 missing article numbering, truncated, the wrong law. NEVER served.
---   'replaced'    superseded by a repaired re-ingest (replaced_by); kept for the
---                 audit trail, NEVER served.
--- A source is AUTHORITATIVE only when it is official, verified and not a
--- fixture (src/lib/corpus/integrity.ts); everything else is served labelled.
-ALTER TABLE legal_sources ADD COLUMN IF NOT EXISTS integrity_status TEXT NOT NULL DEFAULT 'unverified'
-  CHECK (integrity_status IN ('verified', 'unverified', 'quarantined', 'replaced'));
+-- Whether a source's TEXT can be relied on. Its values and its CHECK
+-- constraint were redefined by the corpus repair below ("separate states"):
+-- unchecked / passed / quarantined / replaced, and Gazette verification is a
+-- column of its own. The Phase 2.1 values (verified / unverified) are migrated
+-- there.
+ALTER TABLE legal_sources ADD COLUMN IF NOT EXISTS integrity_status TEXT NOT NULL DEFAULT 'unchecked';
 ALTER TABLE legal_sources ADD COLUMN IF NOT EXISTS integrity_note       TEXT;
 ALTER TABLE legal_sources ADD COLUMN IF NOT EXISTS integrity_checked_at TIMESTAMPTZ;
 ALTER TABLE legal_sources ADD COLUMN IF NOT EXISTS replaced_by          BIGINT REFERENCES legal_sources(id) ON DELETE SET NULL;
@@ -641,3 +634,106 @@ CREATE TABLE IF NOT EXISTS maintenance_runs (
 -- Phase 2.1: where each request's time went — pipeline stages and model time
 -- per purpose, ms (src/lib/ai/request.ts stageTimings). Numbers only.
 ALTER TABLE ai_requests ADD COLUMN IF NOT EXISTS stage_ms JSONB;
+
+-- ============================================================
+--  Corpus repair — separate states, safe by default (2026-10)
+-- ============================================================
+-- Five facts about a source are recorded separately, and none is inferred
+-- from another (src/lib/corpus/integrity.ts):
+--   provenance          where the text came from: the official publisher, or a
+--                       secondary republication (column above, unchanged)
+--   integrity_status    whether the stored TEXT passed the integrity checks
+--   gazette_status      whether the text was compared with the Official
+--                       Gazette — with the reference it was compared against
+--   is_current_version / effective_date   which version of the law it is
+--   authority           derived, never stored: Gazette-verified AND integrity
+--                       passed AND not a fixture
+-- A text from the Legislation Bureau is an official source but NOT
+-- Gazette-verified until someone compares it; a Ministry of Justice
+-- republication is secondary, and can still be Gazette-verified later.
+--
+-- integrity_status, redefined:
+--   'unchecked'   never checked — NEVER served. The default: nothing reaches a
+--                 lawyer until it has passed the checks.
+--   'passed'      passed the integrity checks (automatic: not garbled, not
+--                 empty, article numbering intact; or a reviewer's decision).
+--                 Served. Says nothing about the Official Gazette.
+--   'quarantined' damaged or suspect — NEVER served, kept as evidence
+--   'replaced'    replaced by a repaired re-ingest — NEVER served, kept
+-- Phase 2.1's values migrate:
+--   'verified'   (a reviewer compared the text with "the official publication",
+--                which may have been the Legislation Bureau's copy rather than
+--                the Official Gazette) becomes integrity 'passed' — the text was
+--                reviewed — and gazette_status stays 'unverified': a Gazette
+--                verification is never inferred from it. A reviewer confirms it
+--                with `corpus:integrity gazette-verify` and the Gazette reference.
+--   'unverified' (served without any check) becomes 'unchecked', so nothing is
+--                served again until it has been checked
+--                (npm run corpus:integrity -- prepare --apply).
+-- Both migrations are logged as events.
+ALTER TABLE legal_sources ADD COLUMN IF NOT EXISTS gazette_status      TEXT NOT NULL DEFAULT 'unverified';
+ALTER TABLE legal_sources ADD COLUMN IF NOT EXISTS gazette_reference   TEXT;
+ALTER TABLE legal_sources ADD COLUMN IF NOT EXISTS gazette_verified_at TIMESTAMPTZ;
+ALTER TABLE legal_sources ADD COLUMN IF NOT EXISTS gazette_verified_by TEXT;
+ALTER TABLE legal_sources ALTER COLUMN integrity_status SET DEFAULT 'unchecked';
+
+-- Every corpus decision, not only integrity ones: what kind of fact changed
+-- ('integrity', 'gazette', 'metadata', 'classification', 'provenance').
+-- Repairs from deploy/sources/corpus-repairs.json are logged here too.
+ALTER TABLE corpus_integrity_events ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'integrity';
+
+DO $$
+DECLARE c record;
+BEGIN
+  -- Phase 2.1 created integrity_status (and the first deploy source_type) with
+  -- an inline CHECK, auto-named: drop every CHECK on those columns but ours.
+  FOR c IN SELECT conname FROM pg_constraint
+            WHERE conrelid = 'legal_sources'::regclass AND contype = 'c'
+              AND conname NOT IN ('legal_sources_integrity_chk', 'legal_sources_source_type_chk')
+              AND (pg_get_constraintdef(oid) LIKE '%integrity_status%' OR pg_get_constraintdef(oid) LIKE '%source_type%')
+  LOOP
+    EXECUTE format('ALTER TABLE legal_sources DROP CONSTRAINT %I', c.conname);
+  END LOOP;
+
+  INSERT INTO corpus_integrity_events (source_id, kind, from_status, to_status, actor, reason, evidence)
+  SELECT id, 'integrity', 'verified', 'passed', 'migration (corpus repair 2026-10)',
+         'Phase 2.1 "verified" (compared with an official publication) recorded as integrity passed. '
+         'Gazette verification is NOT inferred from it: confirm with corpus:integrity gazette-verify and the Gazette reference.',
+         integrity_note
+    FROM legal_sources WHERE integrity_status = 'verified';
+  UPDATE legal_sources SET integrity_status = 'passed' WHERE integrity_status = 'verified';
+
+  INSERT INTO corpus_integrity_events (source_id, kind, from_status, to_status, actor, reason, evidence)
+  SELECT id, 'integrity', 'unverified', 'unchecked', 'migration (corpus repair 2026-10)',
+         'Phase 2.1 served "unverified" texts without any check; nothing is served now until the integrity check passes (corpus:integrity prepare --apply).',
+         NULL
+    FROM legal_sources WHERE integrity_status = 'unverified';
+  UPDATE legal_sources SET integrity_status = 'unchecked' WHERE integrity_status = 'unverified';
+
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'legal_sources_integrity_chk') THEN
+    ALTER TABLE legal_sources ADD CONSTRAINT legal_sources_integrity_chk
+      CHECK (integrity_status IN ('unchecked', 'passed', 'quarantined', 'replaced'));
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'legal_sources_gazette_chk') THEN
+    ALTER TABLE legal_sources ADD CONSTRAINT legal_sources_gazette_chk
+      CHECK (gazette_status IN ('unverified', 'verified'));
+  END IF;
+  -- Gazette verification is a claim about a text: it needs the reference it was
+  -- compared against, and who compared it.
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'legal_sources_gazette_evidence_chk') THEN
+    ALTER TABLE legal_sources ADD CONSTRAINT legal_sources_gazette_evidence_chk
+      CHECK (gazette_status <> 'verified' OR (gazette_reference IS NOT NULL AND gazette_verified_by IS NOT NULL));
+  END IF;
+
+  -- Source classes (src/lib/corpus/source-class.ts). Added: 'interpretation'
+  -- (decisions of the Special Bureau for the Interpretation of Laws, until now
+  -- filed as 'principle'), 'mou' (memoranda of understanding, until now filed
+  -- as 'instruction' for want of a type) and 'secondary' (commentary and other
+  -- secondary material).
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'legal_sources_source_type_chk') THEN
+    ALTER TABLE legal_sources ADD CONSTRAINT legal_sources_source_type_chk
+      CHECK (source_type IN ('law', 'regulation', 'instruction', 'court_decision', 'principle', 'template',
+                             'interpretation', 'mou', 'secondary'));
+  END IF;
+END $$;
+CREATE INDEX IF NOT EXISTS idx_sources_gazette ON legal_sources (gazette_status);

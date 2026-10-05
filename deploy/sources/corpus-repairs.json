@@ -1,0 +1,123 @@
+{
+  "_what": "Known defects of the PRODUCTION corpus, recorded in this repository, and the safe repair for each. Applied by `npm run corpus:integrity -- apply-repairs --apply` (dry run without --apply); `npm run eval:preflight` blocks while an entry marked launchBlocker is still servable.",
+  "_rules": [
+    "Every entry cites the repository record it rests on (evidence). Nothing here is a guess about the database.",
+    "An entry with sourceId touches that row only, and only if the row's title matches too; otherwise it is reported as a mismatch and nothing changes.",
+    "No entry adds legal text, a law number or a year. A damaged text is quarantined (kept, never served) until a clean official text replaces it with `corpus:integrity replace`.",
+    "set_provenance never overwrites a recorded value; Gazette verification is never set here — it needs a reviewer and a Gazette reference (`corpus:integrity gazette-verify`).",
+    "Every change is logged in corpus_integrity_events with actor 'repair-manifest:<id>'."
+  ],
+  "repairs": [
+    {
+      "id": "civil-code-43-1976-corrupted",
+      "action": "quarantine",
+      "match": { "sourceId": 2, "titleIncludesAll": ["المدني"] },
+      "launchBlocker": true,
+      "reason": "Civil Code text is character-corrupted in the index (orphan-letter ratio 6.1%; substitution corruption, e.g. \"الجديود\" for \"الجديد\"). No clean authoritative replacement is available in the repository.",
+      "evidence": "benchmark/legal-qa-100.json _blocked (\"القانون المدني (id 2, orphan-letter ratio 6.1%), still character-corrupted in the index\"); src/lib/ingest/quality.ts measurements"
+    },
+    {
+      "id": "penal-code-16-1960-old-corrupted",
+      "action": "quarantine",
+      "match": { "sourceId": 3, "titleIncludesAll": ["العقوبات"] },
+      "launchBlocker": true,
+      "reason": "Old Penal Code text, character-corrupted (orphan-letter ratio 16.3%), kept as history with is_current_version=false — a historical question could still have retrieved it.",
+      "evidence": "benchmark/legal-qa-100.json _blocked (\"the corrupted id 3 is retained as history\"); benchmark/rerank-eval.json _comment (\"قانون العقوبات (id 3) ... its stored text is character-corrupted\"); src/lib/ingest/quality.ts measurements"
+    },
+    {
+      "id": "penal-code-16-1960-secondary",
+      "action": "set_provenance",
+      "match": { "sourceId": 170, "titleIncludesAll": ["العقوبات"] },
+      "params": { "provenance": "secondary", "authority": "مصدر أردني ثانوي (لم يُسمَّ في سجلات المستودع)" },
+      "reason": "The Penal Code in service was re-ingested from a secondary Jordanian source. It must never be labelled official or Gazette-verified without evidence.",
+      "evidence": "benchmark/legal-qa-100.json _blocked (\"re-ingested clean from a secondary Jordanian source (source id 170, 476 articles verified, orphan ratio 2.0%)\")"
+    },
+    {
+      "id": "commercial-law-lob",
+      "action": "set_provenance",
+      "match": { "sourceId": 159, "titleIncludesAll": ["التجارة"] },
+      "params": { "provenance": "official", "authority": "ديوان التشريع والرأي" },
+      "reason": "Re-ingested from the Legislation and Opinion Bureau (lob.gov.jo) .txt. Official source — NOT thereby Gazette-verified.",
+      "evidence": "benchmark/rerank-eval.json _comment (\"التجارة id 159 ... re-ingested from lob.gov.jo .txt\")"
+    },
+    {
+      "id": "labour-law-lob",
+      "action": "set_provenance",
+      "match": { "sourceId": 160, "titleIncludesAll": ["العمل"] },
+      "params": { "provenance": "official", "authority": "ديوان التشريع والرأي" },
+      "reason": "Re-ingested from the Legislation and Opinion Bureau (lob.gov.jo) .txt. Official source — NOT thereby Gazette-verified.",
+      "evidence": "benchmark/rerank-eval.json _comment (\"العمل id 160 ... re-ingested from lob.gov.jo .txt\")"
+    },
+    {
+      "id": "companies-law-lob",
+      "action": "set_provenance",
+      "match": { "sourceId": 161, "titleIncludesAll": ["الشركات"] },
+      "params": { "provenance": "official", "authority": "ديوان التشريع والرأي" },
+      "reason": "Re-ingested from the Legislation and Opinion Bureau (lob.gov.jo) .txt. Official source — NOT thereby Gazette-verified.",
+      "evidence": "benchmark/rerank-eval.json _comment (\"الشركات id 161 ... re-ingested from lob.gov.jo .txt\")"
+    },
+    {
+      "id": "labour-article-138-secondary",
+      "action": "set_provenance",
+      "match": { "titleEquals": "قانون العمل الأردني رقم 8 لسنة 1996 وتعديلاته", "noteIncludes": "iclc-law.com", "maxMatches": 1 },
+      "params": { "provenance": "secondary", "authority": "نص المادة 138 مُقارَن بموقعين ثانويين (iclc-law.com، jordan-lawyer.com)" },
+      "reason": "A single article (138) added by hand, its text cross-checked against two secondary websites because the official PDF extracts as mojibake.",
+      "evidence": "scripts/tmp-add-labor-limitation.ts (header; its note names iclc-law.com and jordan-lawyer.com)"
+    },
+    {
+      "id": "labour-article-138-review",
+      "action": "review",
+      "match": { "titleEquals": "قانون العمل الأردني رقم 8 لسنة 1996 وتعديلاته", "noteIncludes": "iclc-law.com", "maxMatches": 1 },
+      "reason": "May duplicate article 138 of the full Labour Law (source 160). A reviewer should compare the two and link (supersedes) or replace one — not done automatically.",
+      "evidence": "deploy/sources/jordan-core-laws-missing.txt (\"يوجد حالياً في القاعدة نص المادة 138 فقط (أُدخل يدوياً)؛ يجب ... ربط المادة 138 القائمة به أو استبدالها\")"
+    },
+    {
+      "id": "real-property-title",
+      "action": "retitle",
+      "match": { "titleEquals": "قانون الملكية العقارية لسنة أحكام عامة", "maxMatches": 1 },
+      "params": { "title": "قانون الملكية العقارية" },
+      "reason": "Title-extraction artefact: \"لسنة أحكام عامة\" is a chapter heading where the year belongs. The law's name is kept; its number and year are NOT added: the only repository mention (\"رقم 13 لسنة 2019\", deploy/sources/jordan-core-laws-missing.txt) is marked guidance-only, to be checked against the official text, so its metadata stays incomplete until then.",
+      "evidence": "benchmark/comparison-snapshot-before.json, comparison-snapshot-after.json (stored title)"
+    },
+    {
+      "id": "mou-classification",
+      "action": "reclassify",
+      "match": { "titleStartsWith": "مذكرة تفاهم", "sourceType": ["instruction"], "maxMatches": 10 },
+      "params": { "sourceType": "mou" },
+      "reason": "Ministry of Justice memoranda of understanding were filed as 'instruction' for want of a type. An MOU binds the signing bodies only; as an 'instruction' it competed with legislation.",
+      "evidence": "scripts/tmp-ingest-mous.ts header (\"source_type='instruction' is the closest fit in the schema's fixed enum\")"
+    },
+    {
+      "id": "diwan-classification",
+      "action": "reclassify",
+      "match": { "titleStartsWith": "قرار الديوان الخاص بتفسير", "sourceType": ["principle"], "maxMatches": 200 },
+      "params": { "sourceType": "interpretation" },
+      "reason": "Decisions of the Special Bureau for the Interpretation of Laws were ingested as 'principle'. They are binding interpretations, a class of their own.",
+      "evidence": "deploy/ingest-all.sh step 4/5 (--type=principle --title-prefix=\"قرار الديوان الخاص بتفسير القانون\")"
+    },
+    {
+      "id": "notary-fee-schedule-classification",
+      "action": "reclassify",
+      "match": { "titleStartsWith": "لائحة أجور أتعاب الكاتب العدل", "sourceType": ["template"], "maxMatches": 2 },
+      "params": { "sourceType": "regulation" },
+      "reason": "A fee schedule issued under the notary legislation was filed as a pleading template (the classifier read every leading \"لائحة\" as \"لائحة دعوى\").",
+      "evidence": "deploy/sources/moj-regulations-ar.txt (listed by moj.gov.jo under its regulations: لائحة_أجور_أتعاب_الكاتب_العدل_المرخص_لسنة_2015.pdf); deploy/ingest-all.sh step 2 (no --type)"
+    },
+    {
+      "id": "newspapers-decision-classification",
+      "action": "reclassify",
+      "match": { "titleStartsWith": "قرار بتحديد الصحف", "sourceType": ["court_decision"], "maxMatches": 2 },
+      "params": { "sourceType": "instruction" },
+      "reason": "An executive decision issued under a law was filed as a court decision (leading \"قرار\"). It is secondary legislation; 'instruction' is the nearest type.",
+      "evidence": "deploy/sources/moj-regulations-ar.txt (listed by moj.gov.jo under its regulations: قرار_بتحديد_الصحف_الاوسع_انتشارا_لنشر_الاعلانات_والتبليغات_القضائية_لسنة_2021.pdf); deploy/ingest-all.sh step 2 (no --type)"
+    },
+    {
+      "id": "jba-decisions-secondary",
+      "action": "set_provenance",
+      "match": { "filePathIncludes": "jba-decisions", "sourceType": ["court_decision"], "maxMatches": 20 },
+      "params": { "provenance": "secondary", "authority": "نقابة المحامين الأردنيين (إعادة نشر)" },
+      "reason": "The Bar Association's \"latest decisions\" page republishes decisions of several courts. Their file names (camscanner1.pdf …) do not match the download list's page URL, so backfill-provenance cannot record this.",
+      "evidence": "deploy/ingest-all.sh step 5/5; deploy/sources/jba-decisions.txt"
+    }
+  ]
+}

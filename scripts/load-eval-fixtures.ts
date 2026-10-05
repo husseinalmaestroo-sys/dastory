@@ -28,8 +28,13 @@ type FixtureSource = {
   jurisdiction?: string;
   court?: string;
   year?: number;
-  /** Phase 2.1: a fixture can be loaded quarantined (a damaged text retrieval must never serve). */
-  integrity_status?: "verified" | "unverified" | "quarantined";
+  /**
+   * Phase 2.1: a fixture can be loaded quarantined (a damaged text retrieval
+   * must never serve). Every other fixture starts 'unchecked', like any
+   * ingested text, and is served only once the ingest's integrity check has
+   * passed it (corpus repair) — the fixtures go through the same gate.
+   */
+  integrity_status?: "quarantined";
   text: string;
 };
 
@@ -59,7 +64,7 @@ export async function loadEvalFixtures(opts: { quiet?: boolean } = {}): Promise<
           s.effective_date,
           s.is_current_version,
           s.jurisdiction ?? "JO",
-          s.integrity_status ?? "unverified",
+          s.integrity_status ?? "unchecked",
         ]
       );
       const id = Number(row!.id);
@@ -67,7 +72,8 @@ export async function loadEvalFixtures(opts: { quiet?: boolean } = {}): Promise<
       writeFileSync(file, s.text, "utf8");
       const res = await ingestSource({ sourceId: id, filePath: file, title: s.title, sourceType: s.source_type, court: s.court ?? null, year: s.year ?? null });
       ids[s.key] = id;
-      if (!opts.quiet) console.log(`  ${s.key.padEnd(16)} id=${id} chunks=${res.chunks}`);
+      const st = await queryOne<{ integrity_status: string }>(`SELECT integrity_status FROM legal_sources WHERE id = $1`, [id]);
+      if (!opts.quiet) console.log(`  ${s.key.padEnd(16)} id=${id} chunks=${res.chunks} integrity=${st?.integrity_status}`);
     }
   } finally {
     rmSync(dir, { recursive: true, force: true });

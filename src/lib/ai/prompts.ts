@@ -627,18 +627,25 @@ export const GENERAL_ANSWER_DISCLAIMER =
  * Shown under every grounded (cited) answer — the one type a lawyer is most
  * likely to trust at face value precisely because it carries citations.
  */
+/**
+ * Under a grounded answer whose every cited text is AUTHORITATIVE: compared
+ * with the Official Gazette (with a recorded reference), integrity passed, not
+ * a fixture (corpus/integrity.ts isAuthoritative). It says exactly that and
+ * no more — the corpus repair removed "مصادر موثّقة", which no record backed.
+ */
 export const GROUNDED_ANSWER_DISCLAIMER =
-  "هذه الإجابة مبنية على مصادر قانونية موثّقة من قاعدة البيانات، ولا تُغني عن استشارة محامٍ مرخّص أو المراجعة المهنية قبل الاعتماد عليها في أي إجراء قانوني أو أمام المحكمة.";
+  "هذه الإجابة مبنية على نصوص قانونية من قاعدة البيانات قورنت بنصها المنشور في الجريدة الرسمية، ولا تُغني عن استشارة محامٍ مرخّص أو المراجعة المهنية قبل الاعتماد عليها في أي إجراء قانوني أو أمام المحكمة.";
 
 /**
- * Phase 2.1: the grounded disclaimer when a cited text has not been checked
- * against the issuing authority's publication (corpus/integrity.ts) — the
- * sources are the database's, not certified copies of the law.
+ * The grounded disclaimer when a cited text has NOT been compared with the
+ * Official Gazette (corpus/integrity.ts) — whatever its provenance: a text
+ * from the Legislation Bureau is an official source, and still not a
+ * Gazette-verified one.
  */
 export const GROUNDED_UNVERIFIED_DISCLAIMER =
-  "هذه الإجابة مبنية على نصوص من قاعدة البيانات القانونية لم يُتحقَّق بعد من مطابقتها للنشر الرسمي للجهة المصدرة؛ راجع النص الرسمي قبل الاعتماد عليها، ولا تُغني عن استشارة محامٍ مرخّص أو المراجعة المهنية قبل أي إجراء قانوني أو أمام المحكمة.";
-/** Appended to another disclaimer when a cited text is unverified. */
-export const UNVERIFIED_SOURCES_SENTENCE = "النصوص المستشهد بها لم يُتحقَّق بعد من مطابقتها للنشر الرسمي.";
+  "هذه الإجابة مبنية على نصوص من قاعدة البيانات القانونية لم تُقارَن بعد بنصها المنشور في الجريدة الرسمية؛ راجع النص الرسمي قبل الاعتماد عليها، ولا تُغني عن استشارة محامٍ مرخّص أو المراجعة المهنية قبل أي إجراء قانوني أو أمام المحكمة.";
+/** Appended to another disclaimer when a cited text is not Gazette-verified. */
+export const UNVERIFIED_SOURCES_SENTENCE = "النصوص المستشهد بها لم تُقارَن بعد بنصها المنشور في الجريدة الرسمية.";
 
 /** Shown under a partially grounded answer: some claims were removed or qualified by grounding.ts. */
 export const PARTIAL_ANSWER_DISCLAIMER =

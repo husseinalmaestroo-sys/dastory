@@ -16,8 +16,10 @@ type Source = {
   chunk_count: number;
   created_at: string;
   provenance: string | null;
-  integrity_status: "verified" | "unverified" | "quarantined" | "replaced";
+  integrity_status: "unchecked" | "passed" | "quarantined" | "replaced";
   integrity_note: string | null;
+  gazette_status: "verified" | "unverified" | null;
+  gazette_reference: string | null;
 };
 
 export function SourcesManager() {
@@ -243,7 +245,7 @@ function Row({
       <td className="p-3">
         <div className="flex flex-wrap gap-1">
           <StatusBadge status={s.status} />
-          <IntegrityBadge status={s.integrity_status} provenance={s.provenance} note={s.integrity_note} />
+          <IntegrityBadge status={s.integrity_status} provenance={s.provenance} note={s.integrity_note} gazette={s.gazette_status} gazetteRef={s.gazette_reference} />
         </div>
       </td>
       <td className="p-3">
@@ -279,22 +281,38 @@ function StatusBadge({ status }: { status: Source["status"] }) {
 }
 
 /**
- * Whether the text can be relied on (Phase 2.1, corpus/integrity.ts): only an
- * official text checked against its publication is authoritative; quarantined
- * and replaced texts are never served. Managed with scripts/corpus-integrity.ts.
+ * Three separate facts (corpus/integrity.ts), shown separately and never
+ * inferred from one another: whether the TEXT passed the integrity checks
+ * (only 'passed' is ever served), where it came from, and whether it was
+ * compared with the Official Gazette. An official source is not thereby
+ * Gazette-verified. Managed with scripts/corpus-integrity.ts.
  */
-function IntegrityBadge({ status, provenance, note }: { status: Source["integrity_status"]; provenance: string | null; note: string | null }) {
+function IntegrityBadge({
+  status,
+  provenance,
+  note,
+  gazette,
+  gazetteRef,
+}: {
+  status: Source["integrity_status"];
+  provenance: string | null;
+  note: string | null;
+  gazette: Source["gazette_status"];
+  gazetteRef: string | null;
+}) {
   const map = {
-    verified: ["متحقق منه", "text-emerald-400 border-emerald-900/60"],
-    unverified: ["غير متحقق منه", "text-amber-400 border-amber-900/60"],
-    quarantined: ["محجوب (تالف)", "text-red-400 border-red-900/60"],
-    replaced: ["مستبدل", "text-muted border-edge"],
+    unchecked: ["لم يُفحص — لا يُستخدم", "text-amber-400 border-amber-900/60"],
+    passed: ["اجتاز فحص سلامة النص", "text-emerald-400 border-emerald-900/60"],
+    quarantined: ["محجوب (تالف) — لا يُستخدم", "text-red-400 border-red-900/60"],
+    replaced: ["مستبدل — لا يُستخدم", "text-muted border-edge"],
   } as const;
-  const [label, cls] = map[status] ?? map.unverified;
-  const origin = provenance === "official" ? "رسمي" : provenance === "secondary" ? "غير رسمي" : provenance === "synthetic" ? "اصطناعي" : "مصدر غير مسجّل";
+  const [label, cls] = map[status] ?? map.unchecked;
+  const origin =
+    provenance === "official" ? "مصدر رسمي" : provenance === "secondary" ? "مصدر ثانوي" : provenance === "synthetic" ? "اصطناعي" : "المصدر غير مسجّل";
+  const gazetteLabel = gazette === "verified" ? "قورن بالجريدة الرسمية" : "لم يُقارن بالجريدة الرسمية";
   return (
-    <span title={note ?? undefined} className={`rounded border px-1.5 py-0.5 text-[10px] ${cls}`}>
-      {label} · {origin}
+    <span title={[note, gazette === "verified" && gazetteRef ? `مرجع الجريدة الرسمية: ${gazetteRef}` : null].filter(Boolean).join(" — ") || undefined} className={`rounded border px-1.5 py-0.5 text-[10px] ${cls}`}>
+      {label} · {origin} · {gazetteLabel}
     </span>
   );
 }

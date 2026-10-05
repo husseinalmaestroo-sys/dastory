@@ -54,8 +54,10 @@ export type RetrievedChunk = {
   provenance?: string | null;
   is_synthetic?: boolean | null;
   source_url?: string | null;
-  /** verified | unverified (quarantined/replaced are never served) — see corpus/integrity.ts. */
+  /** Text integrity: only 'passed' is ever served (unchecked/quarantined/replaced never are) — see corpus/integrity.ts. */
   integrity_status?: string | null;
+  /** Corpus repair: whether the text was compared with the Official Gazette ('verified' / 'unverified'). */
+  gazette_status?: string | null;
   /** Number of stored chunks merged into this one (a long article split by the chunker, re-joined at retrieval). */
   merged_parts?: number;
   /** The exact article/decision the question asked for (the exact-citation arm matched it). Always relevant to the question. */

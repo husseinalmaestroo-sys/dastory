@@ -13,6 +13,15 @@ import { normalizeDigits } from "./clean";
  */
 
 /**
+ * Digits normalised and justification tatweel / diacritics removed: a title
+ * taken from a file name ("قانــــون العفو العام رقـم 5 لسنـــــة 2024") hid its
+ * number from these parsers (corpus repair, 2026-10).
+ */
+function withoutMarks(title: string): string {
+  return normalizeDigits(title).replace(/[\u0640\u064B-\u065F\u0670]/g, "");
+}
+
+/**
  * True when a title names an amending act rather than an original law.
  *
  * Jordanian amending laws are titled "قانون معدّل لقانون X" / "نظام معدل لنظام
@@ -22,7 +31,7 @@ import { normalizeDigits } from "./clean";
  * an amendment.
  */
 export function isAmendingTitle(title: string): boolean {
-  const t = title.trim();
+  const t = withoutMarks(title).trim();
   // "قانون معدل ...", "قانون معدّل ...", "معدل لقانون ...", "نظام معدل لنظام ..."
   //
   // The end-of-token guard is `(?![؀-ۿ])`, NOT `\b`. JavaScript's `\b` is
@@ -40,7 +49,7 @@ export function isAmendingTitle(title: string): boolean {
  * invented here.
  */
 export function parseLawNumber(title: string): string | null {
-  const t = normalizeDigits(title);
+  const t = withoutMarks(title);
   const m = t.match(/رقم\s*[({\[]?\s*(\d{1,5})\s*[)}\]]?/);
   return m ? m[1] : null;
 }
@@ -51,7 +60,7 @@ export function parseLawNumber(title: string): string | null {
  * years so a stray number is not read as one.
  */
 export function parseLawYear(title: string): number | null {
-  const t = normalizeDigits(title);
+  const t = withoutMarks(title);
   const now = new Date().getFullYear();
 
   const framed = t.match(/(?:لسنة|لعام|سنة|عام)\s*(\d{4})/);
@@ -81,7 +90,7 @@ export function parseLawYear(title: string): number | null {
 export function baseLawName(title: string): string | null {
   if (!isAmendingTitle(title)) return null;
 
-  const t = normalizeDigits(title).replace(/\s+/g, " ").trim();
+  const t = withoutMarks(title).replace(/\s+/g, " ").trim();
 
   // Grab the "ل(قانون|نظام|تعليمات) <name>" the amendment refers to.
   const m = t.match(/ل(قانون|نظام|تعليمات)\s+(.+)$/);

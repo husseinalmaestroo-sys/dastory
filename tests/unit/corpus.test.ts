@@ -1,13 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { analyzeInventory, articleSequence, matchRequiredLaw, type InventoryChunks, type InventorySource, type RequiredLaw } from "@/lib/corpus/inventory";
-import { isAuthoritative, sameLawIdentity } from "@/lib/corpus/integrity";
+import { authorityLevel, isAuthoritative, isServableSource, sameLawIdentity } from "@/lib/corpus/integrity";
 import { matchProvenance, provenanceForUrl, storedNamesFor } from "@/lib/corpus/provenance";
 import { fileNameFrom } from "@/lib/ingest/source-files";
 import { foldForSearch } from "@/lib/ingest/clean";
 
-// Phase 2.1 corpus layer: the pure halves (no database). Titles are real
-// Jordanian law names; texts are invented.
+// Phase 2.1 corpus layer (separate states since the 2026-10 corpus repair):
+// the pure halves (no database). Titles are real Jordanian law names; texts
+// are invented.
 
 const src = (over: Partial<InventorySource> & { id: number; title: string }): InventorySource => ({
   source_type: "law",
@@ -17,7 +18,8 @@ const src = (over: Partial<InventorySource> & { id: number; title: string }): In
   provenance: "secondary",
   source_url: "https://www.moj.gov.jo/x.pdf",
   issuing_authority: null,
-  integrity_status: "unverified",
+  integrity_status: "passed",
+  gazette_status: "unverified",
   is_current_version: true,
   supersedes: null,
   amendment_of: null,
@@ -97,29 +99,87 @@ test("inventory: damaged text, vectors and metadata are anomalies; the required-
   assert.ok(global.includes("duplicate_file") && global.includes("multiple_current_versions") && global.includes("orphan_chunks"));
 
   const row = (id: string) => report.coverage.find((c) => c.law.id === id)!;
-  assert.equal(row("penal").status, "served_unverified");
+  assert.equal(row("penal").status, "served_not_gazette_verified");
   assert.deepEqual(row("penal").sourceIds.sort(), [1, 2]);
-  assert.equal(row("labour").status, "served_unverified", "the garbled labour law is still servable until quarantined");
+  // The inventory reports what it sees; the integrity status alone decides
+  // what is served — the check (corpus/check.ts) is what quarantines it.
+  assert.equal(row("labour").status, "served_not_gazette_verified", "a garbled text marked passed is flagged, and served until quarantined");
   assert.ok(row("labour").sourceIds.includes(4), "an amending act belongs to its law");
-  assert.equal(row("arb").status, "quarantined_only");
-  assert.equal(row("arb").servable, false);
+  assert.equal(row("arb").status, "held_back");
+  assert.deepEqual([row("arb").presentInDatabase, row("arb").servable, row("arb").integrity.quarantined], [true, false, 1]);
   assert.ok(report.anomalies.some((a) => a.kind === "law_not_servable" && a.law === "قانون التحكيم"));
-  assert.equal(report.summary.authoritative, 0, "nothing official and verified");
+  assert.equal(report.summary.authoritative, 0, "nothing Gazette-verified");
+  assert.equal(report.summary.byIntegrity.quarantined, 2);
 });
 
-test("coverage: an official, verified, current, embedded source is authoritative; an absent law is unavailable", () => {
+test("coverage: every state on its own — an official text is not Gazette-verified; only a Gazette-verified one is authoritative", () => {
+  const at = (over: Partial<InventorySource>) =>
+    analyzeInventory({
+      sources: [src({ id: 1, title: "قانون العقوبات رقم 16 لسنة 1960", provenance: "official", ...over })],
+      chunks: [chunks(1)],
+      orphanChunks: 0,
+      registry: [PENAL, LABOUR],
+      servedModel: "text-embedding-3-small",
+    });
+  const states = (c: ReturnType<typeof at>["coverage"][number]) =>
+    [c.status, c.presentInDatabase, c.servable, c.officialSource, c.gazetteVerified, c.currentVersion, c.embedded, c.searchable, c.authoritative, c.metadataComplete];
+
+  // From the Legislation Bureau, integrity passed: an OFFICIAL SOURCE — and not Gazette-verified, so not authoritative.
+  const official = at({}).coverage.find((c) => c.law.id === "penal")!;
+  assert.deepEqual(states(official), ["served_not_gazette_verified", true, true, true, false, true, true, true, false, true]);
+  // Compared with the Official Gazette (with a reference): authoritative.
+  const gazette = at({ gazette_status: "verified" }).coverage.find((c) => c.law.id === "penal")!;
+  assert.deepEqual(states(gazette), ["authoritative", true, true, true, true, true, true, true, true, true]);
+  // A secondary republication later compared with the Gazette: authoritative, and still secondary.
+  const republished = at({ provenance: "secondary", gazette_status: "verified" });
+  assert.deepEqual(states(republished.coverage.find((c) => c.law.id === "penal")!).slice(0, 5), ["authoritative", true, true, false, true]);
+  assert.equal(republished.sources[0].authorityLevel, "gazette_verified");
+  // Gazette-verified once, then quarantined: present, held back, nothing claimed.
+  const quarantined = at({ gazette_status: "verified", integrity_status: "quarantined" }).coverage.find((c) => c.law.id === "penal")!;
+  assert.deepEqual(states(quarantined), ["held_back", true, false, false, false, false, false, false, false, false]);
+  // Never checked: present, not served.
+  const unchecked = at({ integrity_status: "unchecked" });
+  assert.equal(unchecked.coverage.find((c) => c.law.id === "penal")!.status, "held_back");
+  assert.ok(unchecked.sources[0].anomalies.some((a) => a.kind === "integrity_unchecked"));
+  // A superseded text only: present and served for history, but no CURRENT VERSION.
+  const old = at({ is_current_version: false }).coverage.find((c) => c.law.id === "penal")!;
+  assert.deepEqual([old.servable, old.currentVersion], [true, false]);
+
+  const labour = at({}).coverage.find((c) => c.law.id === "labour")!;
+  assert.equal(labour.status, "absent");
+  assert.ok(at({}).anomalies.some((a) => a.kind === "missing_law" && a.severity === "critical" && a.law === "قانون العمل"));
+});
+
+test("inventory: damaged titles, incomplete metadata, misfiled classes, unlinked amendments and duplicate content are reported", () => {
   const report = analyzeInventory({
-    sources: [src({ id: 1, title: "قانون العقوبات رقم 16 لسنة 1960", provenance: "official", integrity_status: "verified" })],
-    chunks: [chunks(1)],
+    sources: [
+      src({ id: 1, title: "قانون الملكية العقارية لسنة أحكام عامة" }),
+      src({ id: 2, title: "قانــــون العفو العام رقـم 5 لسنـــــة 2024" }),
+      src({ id: 3, title: "مذكرة تفاهم بين وزارة العدل ونقابة المحامين", source_type: "instruction" }),
+      src({ id: 4, title: "قرار الديوان الخاص بتفسير القوانين رقم 3 لسنة 2010", source_type: "principle" }),
+      src({ id: 5, title: "قانون معدل لقانون العمل رقم 14 لسنة 2019", amendment_of: null }),
+      src({ id: 6, title: "نظام رسوم الكاتب العدل رقم 1 لسنة 2020", file_hash: "h6" }),
+      src({ id: 7, title: "نظام رسوم الكاتب العدل رقم 1 لسنة 2020 (نسخة)", file_hash: "h7" }),
+    ],
+    chunks: [1, 2, 3, 4, 5].map((id) => chunks(id)).concat([chunks(6, { sample_text: CLEAN_TEXT.repeat(2) }), chunks(7, { sample_text: CLEAN_TEXT.repeat(2) })]),
     orphanChunks: 0,
-    registry: [PENAL, LABOUR],
+    registry: [{ id: "rp", name: "قانون الملكية العقارية", kind: "قانون", number: "13", year: 2019, priority: "P1", category: "مدنية", basis: "missing-list" }],
     servedModel: "text-embedding-3-small",
   });
-  const penal = report.coverage.find((c) => c.law.id === "penal")!;
-  assert.deepEqual([penal.status, penal.official, penal.verified, penal.current, penal.embedded, penal.searchable], ["authoritative", true, true, true, true, true]);
-  const labour = report.coverage.find((c) => c.law.id === "labour")!;
-  assert.equal(labour.status, "unavailable");
-  assert.ok(report.anomalies.some((a) => a.kind === "missing_law" && a.severity === "critical" && a.law === "قانون العمل"));
+  const kinds = (id: number) => report.sources.find((s) => s.id === id)!.anomalies.map((a) => a.kind);
+  assert.ok(kinds(1).includes("malformed_title") && kinds(1).includes("metadata_incomplete"), JSON.stringify(kinds(1)));
+  assert.equal(report.sources.find((s) => s.id === 1)!.metadataComplete, false, "no number or year is invented for it");
+  assert.ok(kinds(2).includes("malformed_title"), "tatweel is reported for normalize-titles");
+  assert.equal(report.sources.find((s) => s.id === 2)!.number, "5", "tatweel no longer hides the law number");
+  assert.equal(report.sources.find((s) => s.id === 2)!.year, 2024);
+  assert.ok(kinds(3).includes("source_class_mismatch"));
+  assert.equal(report.sources.find((s) => s.id === 3)!.sourceClass, "mou", "classified as a memorandum even before the reclassification");
+  assert.equal(report.sources.find((s) => s.id === 4)!.sourceClass, "interpretation");
+  assert.ok(kinds(5).includes("amendment_unlinked"));
+  assert.ok(report.anomalies.some((a) => a.kind === "duplicate_content" && a.detail.includes("6, 7")), JSON.stringify(report.anomalies.filter((a) => !a.sourceId)));
+  // The damaged title still belongs to its law, by name.
+  assert.deepEqual(report.coverage[0].sourceIds, [1]);
+  assert.equal(report.coverage[0].metadataComplete, false);
 });
 
 test("required-law matching: by number and year, never a regulation or another law's same number", () => {
@@ -134,11 +194,21 @@ test("required-law matching: by number and year, never a regulation or another l
   assert.deepEqual(matchRequiredLaw({ ...PENAL, id: "c", name: "الدستور", kind: "الدستور", number: undefined, year: undefined }, titles), [5]);
 });
 
-test("authority: official + verified + not a fixture; replacement must be the same law", () => {
-  assert.equal(isAuthoritative({ provenance: "official", integrity_status: "verified", is_synthetic: false }), true);
-  assert.equal(isAuthoritative({ provenance: "official", integrity_status: "unverified", is_synthetic: false }), false);
-  assert.equal(isAuthoritative({ provenance: "secondary", integrity_status: "verified", is_synthetic: false }), false);
-  assert.equal(isAuthoritative({ provenance: "official", integrity_status: "verified", is_synthetic: true }), false);
+test("authority: Gazette-verified + integrity passed + not a fixture — provenance alone never; replacement must be the same law", () => {
+  const s = (provenance: string | null, integrity_status: string, gazette_status: string, is_synthetic = false) => ({ provenance, integrity_status, gazette_status, is_synthetic });
+  // The Legislation Bureau's text: an official source, NOT Gazette-verified.
+  assert.equal(isAuthoritative(s("official", "passed", "unverified")), false);
+  assert.equal(authorityLevel(s("official", "passed", "unverified")), "official_not_verified");
+  assert.equal(isAuthoritative(s("official", "passed", "verified")), true);
+  // A Ministry of Justice republication, later compared with the Gazette: verified, still secondary.
+  assert.equal(isAuthoritative(s("secondary", "passed", "verified")), true);
+  assert.equal(authorityLevel(s("secondary", "passed", "unverified")), "secondary_not_verified");
+  assert.equal(authorityLevel(s(null, "passed", "unverified")), "unrecorded_not_verified");
+  // A Gazette verification never survives a failed text, and never makes a fixture law.
+  assert.equal(isAuthoritative(s("official", "quarantined", "verified")), false);
+  assert.equal(isAuthoritative(s("official", "unchecked", "verified")), false);
+  assert.equal(isAuthoritative(s("official", "passed", "verified", true)), false);
+  assert.equal(authorityLevel(s("synthetic", "passed", "verified", true)), "synthetic");
   assert.equal(sameLawIdentity("قانون العمل رقم 8 لسنة 1996", "قانون العمل وتعديلاته رقم 8 لسنة 1996").ok, true);
   assert.equal(sameLawIdentity("قانون العمل رقم 8 لسنة 1996", "قانون العمل رقم 9 لسنة 1996").ok, false);
   assert.equal(sameLawIdentity("قانون العمل رقم 8 لسنة 1996", "قانون العمل رقم 8 لسنة 1997").ok, false);
@@ -173,4 +243,22 @@ test("provenance: the publisher decides; a stored file finds its URL again (ambi
     ],
     "45.txt is listed under two URLs: ambiguous, not guessed"
   );
+});
+
+test("servable: ready, Jordanian, not a fixture (unless allowed), integrity passed — every other state is never served", () => {
+  const ok = { status: "ready", jurisdiction: "JO", is_synthetic: false, integrity_status: "passed" };
+  assert.equal(isServableSource(ok, false), true);
+  for (const [field, value] of [
+    ["integrity_status", "unchecked"],
+    ["integrity_status", "quarantined"],
+    ["integrity_status", "replaced"],
+    ["status", "processing"],
+    ["status", "failed"],
+    ["jurisdiction", "EG"],
+    ["is_synthetic", true],
+  ] as const) {
+    assert.equal(isServableSource({ ...ok, [field]: value }, false), false, `${field}=${value}`);
+  }
+  assert.equal(isServableSource({ ...ok, is_synthetic: true }, true), true, "fixtures only when ALLOW_SYNTHETIC_CORPUS");
+  assert.equal(isServableSource({ ...ok, is_synthetic: true, integrity_status: "quarantined" }, true), false);
 });

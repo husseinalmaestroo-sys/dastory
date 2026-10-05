@@ -265,7 +265,7 @@ async function main() {
       const n = m[1];
       const backed =
         o.sources.some((s) => s.cited && (s.articleNumber === n || new RegExp(`ماد[ةه]\\s*\\(?\\s*${n}(?!\\d)`).test(normalizeDigits(s.excerpt)))) ||
-        (["law_not_in_corpus", "article_not_in_corpus", "decision_not_in_corpus", "clarification", "out_of_jurisdiction", "no_evidence"].includes(o.mode) && normalizeDigits(c.question ?? "").includes(n));
+        (["law_not_in_corpus", "law_unavailable", "article_not_in_corpus", "decision_not_in_corpus", "clarification", "out_of_jurisdiction", "no_evidence"].includes(o.mode) && normalizeDigits(c.question ?? "").includes(n));
       if (!backed) answer.fabricated++;
     }
 

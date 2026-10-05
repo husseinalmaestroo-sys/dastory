@@ -61,7 +61,7 @@ say "4/5  قرارات الديوان الخاص بتفسير القانون —
 # it never touches a font map, so correct digits and no OCR.
 npm run fetch  -- --list=deploy/sources/jc-diwan-decisions.txt --out=./downloads/jc-diwan --as-text="#MainContent_DivContent"
 npm run fetch  -- --list=deploy/sources/jc-diwan-decisions.txt --out=./downloads/jc-diwan --match=news_new
-npm run ingest -- ./downloads/jc-diwan --type=principle --title-prefix="قرار الديوان الخاص بتفسير القانون" $DRY
+npm run ingest -- ./downloads/jc-diwan --type=interpretation --title-prefix="قرار الديوان الخاص بتفسير القانون" $DRY
 
 # ---------------------------------------------------------------- jba
 say "5/5  مستجدات القرارات — نقابة المحامين"

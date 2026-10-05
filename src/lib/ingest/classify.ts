@@ -1,7 +1,15 @@
 import "server-only";
 import { basename, extname } from "node:path";
+import { normalizeTitle } from "./title";
 
-export type SourceType = "law" | "regulation" | "instruction" | "court_decision" | "principle" | "template";
+/**
+ * Corpus repair (2026-10): 'interpretation' (decisions of the Special Bureau
+ * for the Interpretation of Laws), 'mou' (memoranda of understanding) and
+ * 'secondary' (commentary and other secondary material) are their own types —
+ * before, a memorandum was filed as an 'instruction' and a binding
+ * interpretation as a 'principle' for want of one (corpus/source-class.ts).
+ */
+export type SourceType = "law" | "regulation" | "instruction" | "court_decision" | "principle" | "template" | "interpretation" | "mou" | "secondary";
 
 export const SOURCE_TYPES: SourceType[] = [
   "law",
@@ -10,6 +18,9 @@ export const SOURCE_TYPES: SourceType[] = [
   "court_decision",
   "principle",
   "template",
+  "interpretation",
+  "mou",
+  "secondary",
 ];
 
 export type Classification = {
@@ -36,11 +47,24 @@ export type Classification = {
  * they covered — which is exactly how a dead code path survives a test suite.
  */
 const LEADING: [RegExp, SourceType][] = [
+  // Corpus repair: the two-word kinds first — "مذكرة تفاهم" is neither an
+  // instruction nor a decision, and "قرار الديوان الخاص بتفسير …" is a binding
+  // interpretation, not a court decision.
+  [/^(?:ال)?مذكر[ةه]\s+(?:ال)?تفاهم(?![؀-ۿ])/, "mou"],
+  [/^(?:ال)?قرار\s+(?:ال)?ديوان\s+(?:ال)?خاص\s+بتفسير/, "interpretation"],
   [/^(?:ال)?تعليمات(?![؀-ۿ])/, "instruction"],
-  [/^(?:ال)?لائحة(?![؀-ۿ])/, "template"],
+  // A pleading ("لائحة دعوى", "لائحة جوابية" …) is a drafting template; any
+  // other "لائحة" is a regulatory schedule ("لائحة أجور أتعاب الكاتب العدل
+  // المرخص"), which used to be filed as a template and ranked as one.
+  [/^(?:ال)?لائحة\s+(?:دعوى|الدعوى|جوابية|استئناف|الاستئناف|اعتراض|طعن|تمييز)(?![؀-ۿ])/, "template"],
+  [/^(?:ال)?لائحة(?![؀-ۿ])/, "regulation"],
   [/^(?:ال)?نظام(?![؀-ۿ])/, "regulation"],
   [/^(?:ال)?قانون(?![؀-ۿ])/, "law"],
   [/^(?:ال)?دستور(?![؀-ۿ])/, "law"],
+  // An executive decision issued under a law ("قرار بتحديد الصحف الأوسع
+  // انتشاراً", listed by moj.gov.jo with its regulations) is secondary
+  // legislation, not a court decision — the nearest type is 'instruction'.
+  [/^(?:ال)?قرار\s+ب(?:تحديد|تعيين|تنظيم|اصدار|إصدار|شأن)/, "instruction"],
   [/^(?:ال)?قرار(?![؀-ۿ])/, "court_decision"],
   [/^(?:ال)?حكم(?![؀-ۿ])/, "court_decision"],
   [/^(?:ال)?مبدأ(?![؀-ۿ])/, "principle"],
@@ -60,14 +84,14 @@ const LEADING: [RegExp, SourceType][] = [
 const CONTAINS: [RegExp, SourceType][] = [
   [/تعليمات|taleemat|instruction/i, "instruction"],
   [/مبادئ|مبدأ|اجتهاد|ijtihad|mabda/i, "principle"],
-  [/نماذج|نموذج|لوائح|لائحة|namouzaj|template/i, "template"],
+  [/نماذج|نموذج|لائحة\s+(?:دعوى|الدعوى|جوابية|استئناف)|namouzaj|template/i, "template"],
   // Transliterations included because people name folders "tamyeez"/"bidaya"
   // far more often than they type Arabic into a path.
   [
     /تمييز|استئناف|بداية|قرار|حكم|أحكام|tamyeez|isti'?naf|bidaya|cassation|appeal|qarar|hukm|ahkam|decision/i,
     "court_decision",
   ],
-  [/أنظمة|انظمة|نظام|nizam|regulation/i, "regulation"],
+  [/أنظمة|انظمة|نظام|لوائح|لائحة|nizam|regulation/i, "regulation"],
   [/دستور|dustour|constitution/i, "law"],
   // Last: "قانون" appears inside "قانونية"/"القانوني", which show up in the
   // titles of regulations and instructions constantly.
@@ -92,7 +116,9 @@ export function classifySource(filePath: string, explicit?: string | null): Clas
     return { type: explicit as SourceType, basis: "explicit" };
   }
 
-  const file = basename(filePath, extname(filePath)).replace(/[_-]+/g, " ").trim();
+  // Normalised first: "قانــــون"/"نظـام" (justification tatweel) missed every
+  // leading-word rule and fell through to weaker guesses (corpus repair).
+  const file = normalizeTitle(basename(filePath, extname(filePath)).replace(/[_-]+/g, " "));
 
   for (const [re, t] of LEADING) if (re.test(file)) return { type: t, basis: "filename-leading" };
   for (const [re, t] of CONTAINS) if (re.test(file)) return { type: t, basis: "filename" };

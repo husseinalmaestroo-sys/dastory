@@ -21,7 +21,7 @@ const source = (over: Partial<InventorySource> = {}): InventorySource => ({
   provenance: "official",
   source_url: "https://example.invalid/labour.pdf",
   issuing_authority: null,
-  integrity_status: "unverified",
+  integrity_status: "passed",
   is_current_version: true,
   supersedes: null,
   amendment_of: null,
@@ -48,6 +48,7 @@ const db = (sources: InventorySource[], rows: InventoryChunks[], over: Partial<E
   vectorDim: 1536,
   testVectorChunks: 0,
   inventory: analyzeInventory({ sources, chunks: rows, orphanChunks: 0, registry: [LABOUR], servedModel: "text-embedding-3-small", includeSynthetic: false }),
+  repairs: { ok: true, plan: [], blockers: [] },
   ...over,
 });
 
@@ -61,9 +62,53 @@ test("a real corpus with real providers passes; untagged vectors count as the le
   assert.deepEqual(failing(r), []);
   assert.equal(r.ok, true);
   assert.equal(r.corpus!.visibleChunks, 10);
-  // Findings, not blockers: no verified official text yet.
-  assert.equal(r.checks.find((c) => c.id === "authoritative")!.ok, false);
-  assert.equal(r.checks.find((c) => c.id === "authoritative")!.blocking, false);
+  // Findings, not blockers: no Gazette-verified text yet — an official source is not one.
+  const authoritative = r.checks.find((c) => c.id === "authoritative")!;
+  assert.deepEqual([authoritative.ok, authoritative.blocking], [false, false]);
+  assert.match(authoritative.detail, /Gazette/);
+});
+
+test("corpus repair: a never-checked source, an unapplied manifest repair or a servable launch blocker each block; a reviewer's item does not", () => {
+  const plan = (outcome: "apply" | "conflict" | "review" | "already", id = "lob") => ({
+    id,
+    action: "set_provenance" as const,
+    sourceId: 159,
+    title: "قانون التجارة",
+    outcome,
+    from: null,
+    to: "official",
+    detail: "",
+  });
+  const unchecked = evaluatePreflight({ env: REAL_ENV, db: db([source(), source({ id: 2, title: "قانون التجارة رقم 12 لسنة 1966", file_hash: "h2", integrity_status: "unchecked" })], [chunks(), chunks({ source_id: 2 })]) });
+  assert.deepEqual(failing(unchecked), ["integrity_checked"]);
+  assert.match(unchecked.checks.find((c) => c.id === "integrity_checked")!.detail, /prepare --apply/);
+  assert.equal(unchecked.corpus!.uncheckedSources, 1);
+
+  const none = evaluatePreflight({ env: REAL_ENV, db: db([source({ integrity_status: "unchecked" })], [chunks()]) });
+  assert.match(none.checks.find((c) => c.id === "real_corpus")!.detail, /none of the 1 non-synthetic source\(s\) has passed the integrity check/);
+
+  const blocker = evaluatePreflight({
+    env: REAL_ENV,
+    db: db([source()], [chunks()], { repairs: { ok: true, plan: [], blockers: [{ id: "civil-code-43-1976-corrupted", sourceId: 2, detail: "still servable" }] } }),
+  });
+  assert.deepEqual(failing(blocker), ["known_defects"]);
+  assert.match(blocker.checks.find((c) => c.id === "known_defects")!.detail, /civil-code-43-1976-corrupted/);
+
+  const pending = evaluatePreflight({ env: REAL_ENV, db: db([source()], [chunks()], { repairs: { ok: true, plan: [plan("apply")], blockers: [] } }) });
+  assert.deepEqual(failing(pending), ["repairs_applied"]);
+
+  const review = evaluatePreflight({ env: REAL_ENV, db: db([source()], [chunks()], { repairs: { ok: true, plan: [plan("conflict"), plan("review", "labour-138"), plan("already", "x")], blockers: [] } }) });
+  assert.deepEqual(failing(review), []);
+  const r = review.checks.find((c) => c.id === "repairs_review")!;
+  assert.deepEqual([r.ok, r.blocking], [false, false]);
+  assert.match(r.detail, /lob \(conflict, source 159\); labour-138 \(review/);
+
+  const unreadable = evaluatePreflight({ env: REAL_ENV, db: db([source()], [chunks()], { repairs: { ok: false, error: "Invalid repair manifest" } }) });
+  assert.deepEqual(failing(unreadable), ["known_defects"]);
+
+  const quarantined = evaluatePreflight({ env: REAL_ENV, db: db([source(), source({ id: 2, title: "القانون المدني رقم 43 لسنة 1976", file_hash: "h2", integrity_status: "quarantined" })], [chunks(), chunks({ source_id: 2 })]) });
+  assert.deepEqual(failing(quarantined), [], "a quarantined text is held back, not a reason to refuse the run");
+  assert.equal(quarantined.corpus!.heldBackSources, 1);
 });
 
 test("the deterministic test providers block, whatever the corpus", () => {

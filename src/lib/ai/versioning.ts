@@ -1,7 +1,8 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import { queryOne } from "../db";
-import { SERVABLE_SQL } from "../corpus/integrity";
+import { servableSourceSql } from "../corpus/integrity";
+import { env } from "../env";
 import { logError } from "../error-log";
 import { promptTemplateText } from "./prompts";
 
@@ -41,7 +42,8 @@ export async function corpusVersion(): Promise<string> {
     const row = await queryOne<{ sig: string | null; chunks: string }>(
       `SELECT md5(string_agg(id::text || ':' || extract(epoch from updated_at)::bigint::text, ',' ORDER BY id)) AS sig,
               (SELECT count(*) FROM legal_documents)::text AS chunks
-         FROM legal_sources WHERE status = 'ready' AND integrity_status IN (${SERVABLE_SQL})`
+         FROM legal_sources WHERE ${servableSourceSql("", "$1")}`,
+      [env.allowSyntheticCorpus]
     );
     const value = `c-${createHash("sha256").update(`${row?.sig ?? "empty"}|${row?.chunks ?? "0"}`).digest("hex").slice(0, 12)}`;
     corpusCache = { at: Date.now(), value };

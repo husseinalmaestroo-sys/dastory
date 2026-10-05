@@ -84,8 +84,8 @@ test("the one-command runner and every live script refuse the synthetic database
 test("a non-synthetic law embedded by the test model is refused; the same law with production-model vectors passes", async () => {
   const title = "قانون العمل رقم 8 لسنة 1996";
   const row = await queryOne<{ id: string }>(
-    `INSERT INTO legal_sources (title, source_type, status, effective_date, is_current_version, jurisdiction, language, provenance, source_url, is_synthetic, integrity_status)
-     VALUES ($1, 'law', 'pending', '1996-06-01', true, 'JO', 'ar', 'official', 'https://example.invalid/labour-8-1996.pdf', false, 'unverified') RETURNING id`,
+    `INSERT INTO legal_sources (title, source_type, status, effective_date, is_current_version, jurisdiction, language, provenance, source_url, is_synthetic)
+     VALUES ($1, 'law', 'pending', '1996-06-01', true, 'JO', 'ar', 'official', 'https://example.invalid/labour-8-1996.pdf', false) RETURNING id`,
     [title]
   );
   const id = Number(row!.id);
@@ -94,6 +94,7 @@ test("a non-synthetic law embedded by the test model is refused; the same law wi
   const articles = Array.from({ length: 12 }, (_, i) => `المادة ${i + 1}\nيلتزم صاحب العمل بأحكام هذا القانون في شأن العامل وفق ما تنص عليه هذه المادة ${i + 1} من أحكام وشروط.`).join("\n\n");
   writeFileSync(file, `${title}\n\n${articles}`, "utf8");
   await ingestSource({ sourceId: id, filePath: file, title, sourceType: "law", court: null, year: null });
+  assert.equal((await queryOne<{ s: string }>(`SELECT integrity_status AS s FROM legal_sources WHERE id = $1`, [id]))!.s, "passed", "checked at ingest");
 
   const testVectors = evaluatePreflight({ env: LIVE_ENV, db: await loadPreflightDb(getPool(), LIVE_ENV, REGISTRY) });
   assert.deepEqual(blocking(testVectors), ["embedding_model", "no_test_vectors"], JSON.stringify(testVectors.checks));
@@ -106,10 +107,32 @@ test("a non-synthetic law embedded by the test model is refused; the same law wi
     assert.deepEqual(blocking(r), [], `${model ?? "untagged"}: ${JSON.stringify(r.checks)}`);
     assert.equal(r.ok, true);
     assert.equal(r.corpus!.visibleChunks, r.corpus!.servableChunks);
-    // Still reported: ten P0 laws missing, no verified official text.
+    // Still reported: ten P0 laws missing, no Gazette-verified text (an official source is not one).
     assert.equal(r.checks.find((c) => c.id === "p0_all")!.ok, false);
     assert.equal(r.checks.find((c) => c.id === "authoritative")!.ok, false);
   }
+
+  // Corpus repair: a never-checked text is not served, and a live run would
+  // not measure the corpus as it will be served.
+  await query(`UPDATE legal_sources SET integrity_status = 'unchecked' WHERE id = $1`, [id]);
+  const unchecked = evaluatePreflight({ env: LIVE_ENV, db: await loadPreflightDb(getPool(), LIVE_ENV, REGISTRY) });
+  assert.deepEqual(blocking(unchecked), ["embedding_model", "integrity_checked", "p0_any", "real_corpus"], JSON.stringify(unchecked.checks));
+  assert.match(unchecked.checks.find((c) => c.id === "real_corpus")!.detail, /has passed the integrity check/);
+  await query(`UPDATE legal_sources SET integrity_status = 'passed' WHERE id = $1`, [id]);
+
+  // A launch-blocking defect still servable (here: this law, named as one in a manifest).
+  const manifest = join(dir, "repairs.json");
+  writeFileSync(
+    manifest,
+    JSON.stringify({
+      repairs: [{ id: "blocker-test", action: "quarantine", match: { sourceId: id, titleIncludesAll: ["العمل"] }, launchBlocker: true, reason: "test", evidence: "test" }],
+    })
+  );
+  const blocked = evaluatePreflight({ env: LIVE_ENV, db: await loadPreflightDb(getPool(), LIVE_ENV, REGISTRY, manifest) });
+  assert.deepEqual(blocking(blocked), ["known_defects", "repairs_applied"], JSON.stringify(blocked.checks));
+  // The repository's own manifest names no row of this database: nothing to block.
+  const own = evaluatePreflight({ env: LIVE_ENV, db: await loadPreflightDb(getPool(), LIVE_ENV, REGISTRY) });
+  assert.equal(own.checks.find((c) => c.id === "known_defects")!.ok, true);
   // …and a live run with the test providers is still refused on that corpus.
   const testProviders = evaluatePreflight({ env: { ...LIVE_ENV, CHAT_PROVIDER: "test", EMBEDDING_PROVIDER: "test" }, db: await loadPreflightDb(getPool(), LIVE_ENV, REGISTRY) });
   assert.deepEqual(blocking(testProviders), ["chat_provider", "embedding_provider"]);

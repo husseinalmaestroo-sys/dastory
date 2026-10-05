@@ -1,6 +1,6 @@
 import "server-only";
 import { query } from "../db";
-import { SERVABLE_SQL } from "../corpus/integrity";
+import { servableSourceSql } from "../corpus/integrity";
 import { env } from "../env";
 import { normalizeDigits } from "../ingest/clean";
 import { REDACTION } from "./guard";
@@ -59,7 +59,7 @@ type LawSpan = Span & { lawNumber: string };
 // serve — a Jordanian, ready, non-quarantined source (and a fixture only when
 // fixtures are allowed). A law's year is usually in its title, not in the
 // year column (which court decisions use), so both are accepted.
-const SERVED = `status = 'ready' AND jurisdiction = 'JO' AND integrity_status IN (${SERVABLE_SQL}) AND (is_synthetic = false OR $3::boolean)`;
+const SERVED = servableSourceSql("", "$3");
 
 async function verifyLaw(lawNumber: string, year: number | null): Promise<boolean> {
   const rows = await query(

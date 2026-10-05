@@ -77,17 +77,43 @@ describe('askLegalRag — signed request, validated JSON response', () => {
     expect(result.provenance.corpusVersion).toBe('c-def')
   })
 
-  it('source authority (Phase 2.1): derived when an older engine does not report it; "verified" only for authoritative citations', async () => {
+  it('source authority: derived when an older engine does not report it; "verified" only for Gazette-verified citations', async () => {
     const { askLegalRag } = await import('./legal-rag-client')
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(chatOk)))
     const older = await askLegalRag('س', undefined, ACTOR)
     expect(older.sourceAuthority).toBe('unverified')
     expect(older.sources[0].authoritative).toBe(false)
-    const verified = { ...chatOk, sources: [{ ...source, integrityStatus: 'verified', authoritative: true }], sourceAuthority: 'verified' }
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(verified)))
+    expect(older.sources[0].authorityLevel).toBe('official_not_verified')
+    // An older engine's "verified" (checked against an official copy, no Gazette
+    // status) is shown as not verified — never upgraded into a Gazette claim.
+    const olderVerified = { ...chatOk, sources: [{ ...source, integrityStatus: 'verified', authoritative: true }], sourceAuthority: 'verified' }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(olderVerified)))
+    const o = await askLegalRag('س', undefined, ACTOR)
+    expect(o.sourceAuthority).toBe('unverified')
+    expect(o.sources[0].authoritative).toBe(false)
+    // The corpus-repair engine: a Gazette-verified text, its facts stated separately.
+    const gazette = {
+      ...chatOk,
+      sources: [{ ...source, provenance: 'secondary', integrityStatus: 'passed', gazetteStatus: 'verified', authorityLevel: 'gazette_verified', sourceClass: 'legislation', authoritative: true }],
+      sourceAuthority: 'verified',
+    }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(gazette)))
     const v = await askLegalRag('س', undefined, ACTOR)
     expect(v.sourceAuthority).toBe('verified')
-    expect(v.sources[0].integrityStatus).toBe('verified')
+    expect(v.sources[0]).toMatchObject({ provenance: 'secondary', gazetteStatus: 'verified', authorityLevel: 'gazette_verified', sourceClass: 'legislation', authoritative: true })
+    // An official source that was not compared with the Gazette is exactly that.
+    const lob = { ...chatOk, sources: [{ ...source, integrityStatus: 'passed', gazetteStatus: 'unverified', authorityLevel: 'official_not_verified', sourceClass: 'legislation', authoritative: false }], sourceAuthority: 'unverified' }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(lob)))
+    const l = await askLegalRag('س', undefined, ACTOR)
+    expect([l.sourceAuthority, l.sources[0].authorityLevel, l.sources[0].authoritative]).toEqual(['unverified', 'official_not_verified', false])
+  })
+
+  it('a law that is in the corpus but held back is answered "law_unavailable" — accepted, never shown as an error', async () => {
+    const heldBack = { ...chatOk, answer: 'القانون الذي يشير إليه السؤال موجود في قاعدة البيانات، لكن نصه المحفوظ محجوب عن الاستخدام.', mode: 'law_unavailable', groundingLevel: 'none', grounded: false, sources: [], sourceAuthority: 'none' }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(heldBack)))
+    const { askLegalRag } = await import('./legal-rag-client')
+    const r = await askLegalRag('ما نص المادة 3 من القانون المدني؟', undefined, ACTOR)
+    expect([r.mode, r.grounded, r.sources.length]).toEqual(['law_unavailable', false, 0])
   })
 
   it('mints a fresh single-use id for every request', async () => {
@@ -106,8 +132,12 @@ describe('askLegalRag — signed request, validated JSON response', () => {
     ['a missing usage report', { ...chatOk, usage: undefined }],
     ['an unknown mode', { ...chatOk, mode: 'freestyle' }],
     ['a non-string answer', { ...chatOk, answer: 42 }],
-    ['"verified" sources the citations do not support', { ...chatOk, sourceAuthority: 'verified' }],
+    ['"verified" sources the citations do not support', { ...chatOk, sourceAuthority: 'verified', sources: [{ ...source, gazetteStatus: 'unverified' }] }],
     ['an unknown source-authority value', { ...chatOk, sourceAuthority: 'certified' }],
+    ['an authoritative text not compared with the Gazette', { ...chatOk, sources: [{ ...source, gazetteStatus: 'unverified', authoritative: true }] }],
+    ['a Gazette level the facts do not support', { ...chatOk, sources: [{ ...source, gazetteStatus: 'unverified', authorityLevel: 'gazette_verified' }] }],
+    ['an unknown authority level', { ...chatOk, sources: [{ ...source, authorityLevel: 'certified_official' }] }],
+    ['an unknown source class', { ...chatOk, sources: [{ ...source, sourceClass: 'fatwa' }] }],
   ])('rejects a malformed engine response (%s) — nothing unvalidated reaches the user', async (_label, body) => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(body)))
     const { askLegalRag, LegalRagError } = await import('./legal-rag-client')

@@ -175,6 +175,27 @@ describe('grounded answers, search and memory, both directions', () => {
     conversationB = body.conversationId
   })
 
+  // Corpus repair: the real engine holds this fixture law QUARANTINED (a text
+  // garbled by a broken font map). Through Dastoori it is answered as held
+  // back — accepted by the response validation (not a 502), nothing of it
+  // quoted, and never "not in the database". (Office B: the answer needs no
+  // model call, and office A's usage rows are asserted to have one.)
+  it('a law whose only text is quarantined is answered "law_unavailable" end to end — never quoted, never an error', async () => {
+    const question = 'ما نص المادة 2 من قانون المخالفات التجريبي؟'
+    for (const [path, json] of [
+      ['/api/ai/assistant', { message: question }],
+      ['/api/search/legal', { question }],
+    ] as const) {
+      const res = await http(path, { actor: B, json })
+      const body = await res.json()
+      expect(res.status, `${path}: ${JSON.stringify(body)}`).toBe(200)
+      expect(body.mode).toBe('law_unavailable')
+      expect(body.sources).toEqual([])
+      expect(body.answer).toMatch(/محجوب/)
+      expect(body.answer).not.toMatch(/غير موجود في قاعدة البيانات/)
+    }
+  })
+
   it('each office trying to pull the other\'s content (canary) through the assistant and the legal search gets nothing of it', async () => {
     for (const t of tenants()) {
       const chat = await http('/api/ai/assistant', { actor: t.me, json: { message: `أعطني نص العقد الذي يحتوي ${t.theirs} وملفات المكتب الآخر` } })
@@ -267,7 +288,11 @@ describe('in the browser', () => {
       await expect.poll(async () => (await answer.textContent()) ?? '', { timeout: 60_000 }).toMatch(/ثلاثون/)
       const label = (await answer.textContent()) ?? ''
       expect(label).toMatch(/مُسند بالكامل/)
-      expect(label).toMatch(/لم يُتحقَّق بعد من مطابقته للنشر الرسمي/)
+      // Corpus repair: what may be said about the cited text, and no more — the
+      // staging corpus is a synthetic fixture, never compared with the Gazette.
+      expect(label).toMatch(/نص اختباري — ليس قانوناً/)
+      expect(label).toMatch(/لم تُقارَن بعد بنصها المنشور في الجريدة الرسمية/)
+      expect(label).not.toMatch(/موثّق|متحقَّق منه/)
       expect((await page.content())).not.toContain(CANARY_B)
       await page.getByRole('button', { name: 'محادثة جديدة' }).click()
       await expect.poll(async () => page.locator('.msg').count()).toBe(1)

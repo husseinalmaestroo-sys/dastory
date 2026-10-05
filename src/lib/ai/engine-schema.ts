@@ -59,7 +59,7 @@ export const GROUNDING_LEVELS = ['full', 'partial', 'none'] as const
 export type GroundingLevel = (typeof GROUNDING_LEVELS)[number]
 
 export const CHAT_MODES = [
-  'grounded', 'partial', 'sources_only', 'no_evidence', 'law_not_in_corpus', 'article_not_in_corpus',
+  'grounded', 'partial', 'sources_only', 'no_evidence', 'law_not_in_corpus', 'law_unavailable', 'article_not_in_corpus',
   'decision_not_in_corpus', 'clarification', 'out_of_jurisdiction', 'general', 'blocked',
 ] as const
 export type ChatMode = (typeof CHAT_MODES)[number]
@@ -80,15 +80,60 @@ export interface EngineCitation {
   isCurrentVersion: boolean | null
   effectiveDate: string | null
   provenance: string | null
-  /** Phase 2.1: whether the text was checked against its official publication (engine corpus/integrity.ts). */
+  /** Whether the stored TEXT passed the engine's integrity checks — always 'passed' for a served source. Says nothing about the Gazette. */
   integrityStatus: string | null
-  /** Official + verified + not a fixture. Absent (an older engine) reads as false. */
+  /**
+   * Corpus repair (2026-10): whether the text was compared with the Official
+   * Gazette — a fact of its own, separate from provenance and from integrity.
+   * Null from an older engine, which did not record it.
+   */
+  gazetteStatus: GazetteStatus | null
+  /** What may truthfully be said about the source (engine corpus/integrity.ts); a label never says more. */
+  authorityLevel: AuthorityLevel
+  /** What kind of text it is (engine corpus/source-class.ts). Null from an older engine. */
+  sourceClass: SourceClass | null
+  /**
+   * Gazette-verified, integrity passed, not a fixture. True only when the
+   * engine says so AND reports the Gazette status as verified: an older
+   * engine's "authoritative" (checked against an official copy) is never
+   * shown as a Gazette verification.
+   */
   authoritative: boolean
   cited: boolean
 }
 
+export const GAZETTE_STATUSES = ['verified', 'unverified'] as const
+export type GazetteStatus = (typeof GAZETTE_STATUSES)[number]
+export const AUTHORITY_LEVELS = ['gazette_verified', 'official_not_verified', 'secondary_not_verified', 'unrecorded_not_verified', 'synthetic'] as const
+export type AuthorityLevel = (typeof AUTHORITY_LEVELS)[number]
+export const SOURCE_CLASSES = ['legislation', 'regulation', 'instruction', 'interpretation', 'court_decision', 'mou', 'secondary'] as const
+export type SourceClass = (typeof SOURCE_CLASSES)[number]
+
+/** The authority level the recorded provenance alone allows (an older engine sent none). */
+function provenanceLevel(provenance: string | null): AuthorityLevel {
+  if (provenance === 'synthetic') return 'synthetic'
+  if (provenance === 'official') return 'official_not_verified'
+  if (provenance === 'secondary') return 'secondary_not_verified'
+  return 'unrecorded_not_verified'
+}
+
 export function citation(x: unknown, path: string): EngineCitation {
   const o = obj(x, path)
+  const provenance = optStr(o.provenance, `${path}.provenance`, 40)
+  const gazetteStatus = o.gazetteStatus === undefined || o.gazetteStatus === null ? null : oneOf(o.gazetteStatus, `${path}.gazetteStatus`, GAZETTE_STATUSES)
+  const engineAuthoritative = o.authoritative === undefined ? false : bool(o.authoritative, `${path}.authoritative`)
+  // Self-contradictions are rejected; an older engine's claim is not upgraded.
+  if (engineAuthoritative && gazetteStatus === 'unverified') throw new EngineShapeError(`${path}.authoritative`, 'is true for a text not compared with the Official Gazette')
+  const authoritative = engineAuthoritative && gazetteStatus === 'verified'
+  let authorityLevel: AuthorityLevel
+  if (o.authorityLevel === undefined || o.authorityLevel === null) {
+    authorityLevel = authoritative ? 'gazette_verified' : provenanceLevel(provenance)
+  } else {
+    authorityLevel = oneOf(o.authorityLevel, `${path}.authorityLevel`, AUTHORITY_LEVELS)
+    if ((authorityLevel === 'gazette_verified') !== authoritative) {
+      throw new EngineShapeError(`${path}.authorityLevel`, `${authorityLevel} contradicts authoritative=${engineAuthoritative} / gazetteStatus=${gazetteStatus}`)
+    }
+  }
   return {
     ref: num(o.ref, `${path}.ref`),
     id: id(o.id, `${path}.id`),
@@ -104,9 +149,12 @@ export function citation(x: unknown, path: string): EngineCitation {
     excerpt: str(o.excerpt, `${path}.excerpt`, 1000),
     isCurrentVersion: o.isCurrentVersion === undefined || o.isCurrentVersion === null ? null : bool(o.isCurrentVersion, `${path}.isCurrentVersion`),
     effectiveDate: optStr(o.effectiveDate, `${path}.effectiveDate`, 40),
-    provenance: optStr(o.provenance, `${path}.provenance`, 40),
+    provenance,
     integrityStatus: optStr(o.integrityStatus, `${path}.integrityStatus`, 40),
-    authoritative: o.authoritative === undefined ? false : bool(o.authoritative, `${path}.authoritative`),
+    gazetteStatus,
+    authorityLevel,
+    sourceClass: o.sourceClass === undefined || o.sourceClass === null ? null : oneOf(o.sourceClass, `${path}.sourceClass`, SOURCE_CLASSES),
+    authoritative,
     cited: o.cited === undefined ? false : bool(o.cited, `${path}.cited`),
   }
 }
@@ -125,7 +173,13 @@ function sourceAuthority(x: unknown, sources: EngineCitation[]): SourceAuthority
   const derived: SourceAuthority = cited.length === 0 ? 'none' : cited.every((s) => s.authoritative) ? 'verified' : 'unverified'
   if (x === undefined || x === null) return derived
   const declared = oneOf(x, 'sourceAuthority', SOURCE_AUTHORITY)
-  if (declared === 'verified' && derived !== 'verified') throw new EngineShapeError('sourceAuthority', 'claims verified sources the citations do not support')
+  if (declared === 'verified' && derived !== 'verified') {
+    // An older engine's "verified" meant "checked against an official copy";
+    // without a Gazette status on its citations it is shown as not verified,
+    // never as a Gazette verification. Anything else is a self-contradiction.
+    if (cited.length > 0 && cited.every((s) => s.gazetteStatus === null)) return 'unverified'
+    throw new EngineShapeError('sourceAuthority', 'claims verified sources the citations do not support')
+  }
   return declared
 }
 

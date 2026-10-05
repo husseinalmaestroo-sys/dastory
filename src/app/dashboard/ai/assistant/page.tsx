@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { SectionHeader } from '@/components/dashboard/ui'
 import type { ChatMessage } from '@/lib/dashboard/types'
+import { citedSourcesLabel } from '@/lib/ai/source-labels'
 
 const WELCOME: ChatMessage = {
   role: 'a',
@@ -37,13 +38,10 @@ export default function AiAssistantPage() {
       if (res.status === 409) { setError(data.error || 'هذا السؤال قيد المعالجة بالفعل'); return }
       if (!res.ok) { setError(data.error || 'تعذّر الحصول على رد'); return }
       if (typeof data.conversationId === 'string') setConversationId(data.conversationId)
-      const cited = Array.isArray(data.sources) ? data.sources.filter((s: { cited?: boolean }) => s.cited).length : 0
-      // Phase 2.1: "verified" only when every cited text was checked against its
-      // official publication — otherwise the label says the texts are the database's.
-      const origin =
-        data.sourceAuthority === 'verified'
-          ? `${cited} مصدر رسمي متحقَّق منه`
-          : `${cited} مصدر من قاعدة البيانات، لم يُتحقَّق بعد من مطابقته للنشر الرسمي`
+      // Corpus repair: what may be said about each cited text, from the
+      // engine's recorded facts only — "from an official source" is not
+      // "compared with the Official Gazette" (lib/ai/source-labels.ts).
+      const origin = citedSourcesLabel(Array.isArray(data.sources) ? data.sources : [])
       const groundNote =
         data.groundingLevel === 'full'
           ? `مُسند بالكامل (${origin}) — ${data.disclaimer ?? ''}`

@@ -1,0 +1,46 @@
+{
+ "_what": "Phase 2.4 real-corpus retrieval probes. PRE-REGISTERED on 2026-10-05, before any run against the production corpus or a copy of it (git history shows the commit date). Run by scripts/live-probes.ts; a result is labelled LIVE only when the live preflight passes.",
+ "_gold": "STRUCTURAL ONLY — nothing here encodes legal content. A probe's gold is (a) the law it names, resolved at run time against the registry (deploy/sources/required-laws.json) and the corpus titles, (b) the article number it names, which must rank first IF the stored text of that law contains it (if not, the expected outcome is 'article_not_in_corpus'), or (c) the behaviour the system is designed for (a held-back law is 'unavailable'). An article named with no law (ambiguousArticle) asks for clarification when two or more servable texts hold it, is answered from the one text that holds it (which must rank first), and has no evidence when none does. Topic questions are scored at law level only. The expected outcome of every probe is fixed from the database before any probe runs (src/lib/eval/probes.ts expectationFor).",
+ "_rules": [
+  "Do not edit expectations after a live run. A structural error found later (a probe that cannot run) is fixed in a new entry under _changes, with the date and the reason; the original stays.",
+  "Safety expectations (no held-back text retrieved, legislation before memoranda) are hard: one violation fails the run."
+ ],
+ "_changes": [
+  { "date": "2026-10-05", "beforeAnyLiveRun": true, "probes": ["p05", "p22"], "was": "expectModes: [\"clarification\"]", "now": "ambiguousArticle: \"28\" / \"2\"", "reason": "Found testing the runner on the stand-in database, before the file was committed and before any run on the production corpus or a copy of it: clarification is the designed behaviour only when two or more servable texts hold the article; with one the question is answered from it, with none there is no evidence. The expected outcome now comes from the database, like every other structural gold." }
+ ],
+ "k": 8,
+ "probes": [
+  { "id": "p01", "category": "exact_law_name", "question": "ما هو قانون العمل الأردني رقم 8 لسنة 1996؟", "law": "labour" },
+  { "id": "p02", "category": "exact_law_name", "question": "ما موضوع قانون الشركات رقم 22 لسنة 1997؟", "law": "companies" },
+  { "id": "p03", "category": "law_and_article", "question": "ما نص المادة 28 من قانون العمل؟", "law": "labour", "article": "28" },
+  { "id": "p04", "category": "law_and_article", "question": "ما نص المادة 5 من قانون التجارة؟", "law": "trade", "article": "5" },
+  { "id": "p05", "category": "article_only", "question": "ما نص المادة 28؟", "ambiguousArticle": "28" },
+  { "id": "p06", "category": "arabic_indic_digits", "question": "ما نص المادة ٢٨ من قانون العمل؟", "law": "labour", "article": "28" },
+  { "id": "p07", "category": "arabic_indic_digits", "question": "ما نص المادة ٥ من قانون التجارة الأردني رقم ١٢ لسنة ١٩٦٦؟", "law": "trade", "article": "5" },
+  { "id": "p08", "category": "morphology", "question": "ما حقوق العاملات أثناء إجازة الأمومة في قانون العمل؟", "law": "labour" },
+  { "id": "p09", "category": "morphology", "question": "هل يحق للمستخدَمين المطالبة بأجور العمل الإضافي وفق قانون العمل؟", "law": "labour" },
+  { "id": "p10", "category": "provisos", "question": "متى يجوز لصاحب العمل إنهاء عقد العامل دون إشعار وفق قانون العمل؟", "law": "labour", "articleIntegrity": true },
+  { "id": "p11", "category": "provisos", "question": "ما الاستثناءات من مدة الإشعار عند إنهاء عقد العمل غير محدد المدة؟", "law": "labour", "articleIntegrity": true },
+  { "id": "p12", "category": "definitions", "question": "ما تعريف العامل في قانون العمل الأردني؟", "law": "labour" },
+  { "id": "p13", "category": "definitions", "question": "ما المقصود بالتاجر في قانون التجارة؟", "law": "trade" },
+  { "id": "p14", "category": "amended_articles", "question": "ما الذي عدّله القانون المعدل لقانون العقوبات رقم 10 لسنة 2022؟", "law": "penal" },
+  { "id": "p15", "category": "amended_articles", "question": "ما تعديلات قانون أصول المحاكمات المدنية لسنة 2023؟", "law": "civil-procedure" },
+  { "id": "p16", "category": "historical_version", "question": "ما نص المادة 2 من قانون العقوبات رقم 16 لسنة 1960 كما كان قبل التعديل؟", "law": "penal", "historical": true },
+  { "id": "p17", "category": "historical_version", "question": "ما عقوبة السرقة في قانون العقوبات القديم قبل تعديلات 2022؟", "law": "penal", "historical": true },
+  { "id": "p18", "category": "false_premise", "question": "ما رقم المادة في قانون العمل التي تجيز تشغيل العامل تسعين ساعة أسبوعياً دون أجر إضافي؟", "law": "labour", "noFabricatedCitation": true },
+  { "id": "p19", "category": "false_premise", "question": "لماذا ألغى قانون الشركات الأردني الشركات ذات المسؤولية المحدودة؟", "law": "companies", "noFabricatedCitation": true },
+  { "id": "p20", "category": "unavailable_law", "question": "ما نص المادة 3 من القانون المدني؟", "law": "civil", "expectHeldBackOrServableClean": true },
+  { "id": "p21", "category": "unavailable_law", "question": "ما أحكام ضمان العيوب الخفية في القانون المدني الأردني؟", "law": "civil", "expectHeldBackOrServableClean": true },
+  { "id": "p22", "category": "cross_law_ambiguity", "question": "ما نص المادة 2 من القانون؟", "ambiguousArticle": "2" },
+  { "id": "p23", "category": "cross_law_ambiguity", "question": "ما مدة التقادم في المادة 138؟", "expectModes": ["clarification", "grounded", "partial", "sources_only", "no_evidence"] },
+  { "id": "p24", "category": "decision_query", "question": "ما قرار الديوان الخاص بتفسير القوانين رقم 30؟", "titleIncludes": ["تفسير", "30"], "decisionSeeking": true },
+  { "id": "p25", "category": "decision_query", "question": "ما اجتهاد المحاكم في الفصل التعسفي للعامل؟", "decisionSeeking": true, "law": "labour" },
+  { "id": "p26", "category": "regulation_query", "question": "ما رسوم الكاتب العدل وفق نظام رسوم الكاتب العدل؟", "titleIncludes": ["نظام", "رسوم", "الكاتب العدل"] },
+  { "id": "p27", "category": "regulation_query", "question": "ما أجور أتعاب الكاتب العدل المرخص؟", "titleIncludes": ["الكاتب العدل"] },
+  { "id": "p28", "category": "class_ordering", "question": "ما إجراءات الربط الإلكتروني بين المحاكم والمحامين في التبليغ؟", "legislationFirst": true },
+  { "id": "p29", "category": "class_ordering", "question": "ما مذكرة التفاهم بين وزارة العدل ونقابة المحامين حول الربط الإلكتروني؟", "mouAsked": true, "titleIncludes": ["مذكرة تفاهم"] },
+  { "id": "p30", "category": "not_proven_law", "question": "ما نص المادة 2 من قانون البينات؟", "law": "evidence", "expectModesIfAbsent": ["law_not_in_corpus", "law_unavailable"] },
+  { "id": "p31", "category": "not_proven_law", "question": "ما مدة الإخلاء في قانون المالكين والمستأجرين؟", "law": "owners-tenants", "expectModesIfAbsent": ["law_not_in_corpus", "law_unavailable", "no_evidence"] },
+  { "id": "p32", "category": "not_proven_law", "question": "ما نسبة ضريبة الدخل على الشركات في قانون ضريبة الدخل؟", "law": "income-tax", "expectModesIfAbsent": ["law_not_in_corpus", "law_unavailable", "no_evidence"] }
+ ]
+}

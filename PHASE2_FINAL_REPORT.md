@@ -158,6 +158,17 @@ Every row has a regression test, and the broader suites were re-run afterwards (
 
 ---
 
+> **Superseded by the corpus repair (2026-10-05): rows P21-16 and P21-26.**
+> - **"Authoritative" changed meaning.** It now means: compared with the Official Gazette (with a recorded reference), integrity check passed, and not a fixture.
+>   - It no longer means "official provenance + verified".
+>   - An official provenance alone, such as a Legislation Bureau copy, is not a Gazette verification.
+> - **Integrity and Gazette verification are now separate columns.** Phase 2.1's `integrity_status = verified` migrates to integrity `passed`. It does not migrate to Gazette-verified.
+> - **The labels changed.**
+>   - The assistant now states each cited source's authority level: "من جهة نشر رسمية — لم يُقارن بالجريدة الرسمية" and similar.
+>   - The disclaimer no longer says "مصادر موثّقة".
+>
+> Details in `PHASE2_CORPUS_REPAIR_REPORT.md`.
+
 ## 3. What was tested
 
 **Final regression.** Everything below was run on the committed trees, after the last change. The only exception is the report commit itself; §18 records its CI.
@@ -195,6 +206,22 @@ Every row has a regression test, and the broader suites were re-run afterwards (
 | Inventory and coverage matrix | Built and tested; run on the test database (below) | **FIXED / TESTED** |
 | Provenance rules | `lob.gov.jo`, `pm.gov.jo` and `jc.jo` are official. `moj.gov.jo` and `jba.org.jo` are secondary: served, labelled, never authoritative. | **FIXED** |
 | Required-law registry (`deploy/sources/required-laws.json`) | Law numbers and years are not yet checked against the Official Gazette | **UNVERIFIED** |
+
+> **Correction (2026-10-05).** `PHASE2_REPORT.md` said no record showed that 7 of the 10 "missing" core laws were ever ingested. That was wrong.
+>
+> **What the repository records.**
+> - **Four were retrieved.** Saved historical retrieval results (`benchmark/comparison-snapshot-*.json`) show chunks retrieved from:
+>   - Personal Status;
+>   - Arbitration;
+>   - Consumer Protection;
+>   - Real Property (under a damaged title).
+> - **Three are still not proven present:** Evidence 30/1952, Landlords & Tenants 11/1994, Income Tax 34/2014.
+>
+> **States are kept separate from now on.** None is inferred from another: PRESENT / RETRIEVED, DATABASE VERIFIED, OFFICIAL SOURCE, GAZETTE VERIFIED, CURRENT VERSION, SEARCHABLE, EMBEDDED, AUTHORITATIVE.
+> - For the four retrieved laws, only PRESENT / RETRIEVED (historical) is established.
+> - No law in this report is DATABASE VERIFIED, GAZETTE VERIFIED or AUTHORITATIVE.
+>
+> See `PHASE2_CORPUS_REPAIR_REPORT.md` for the per-law table, and for the corpus repairs made after this report.
 
 **Inventory run on the test database** (`npm run corpus:inventory`, synthetic corpus). It shows the tooling detects what it must:
 

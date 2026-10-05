@@ -65,7 +65,7 @@ This one file holds the six required Phase 2 outputs, following the single-file 
 | **Without exposing another office's information** | **PROVEN at staging level** | See the notes after this table. |
 | **Without fabricating citations** | Blocked mechanically. **Not proven with a real model.** | Every citation is checked after generation: it must exist, be in range, and match the cited source on quotes, figures, law name and URL. All 10 deliberately fabricated model outputs were caught, and the offline run had 0 fabricated citations. No real model was ever run. |
 | **Without hallucinating, or presenting unsupported claims as facts** | **NOT PROVEN** | Support is judged by a lexical heuristic, which cannot see a negation or a dropped condition. Offline, **3 of 16** answers labelled grounded cited an article that does not answer the question. The LLM self-verification judge never ran with a real model. |
-| **Retrieving and explaining legal information correctly** | **NOT PROVEN** | The real corpus could not be inspected. The engine repository's own notes record a character-corrupted Civil Code, a Penal Code re-ingested from a secondary source, and core laws still to be ingested. No legal gold has been verified. |
+| **Retrieving and explaining legal information correctly** | **NOT PROVEN** | The real corpus could not be inspected. The engine repository's own notes record a character-corrupted Civil Code, a Penal Code re-ingested from a secondary source, and a 2026-07-18 list of core laws still to be ingested (later notes say they were ingested on 2026-07-19; three are still not proven present — see the correction in §6). No legal gold has been verified. |
 
 Notes on the tenant row:
 - The engine keeps no tenant content for Dastoori calls.
@@ -100,7 +100,7 @@ Notes on the tenant row:
 
 Notes on the verdict rows:
 - **CI evidence.** Engine CI (`ai-engine`): runs 36251364983, 36267372754 and 36267983462, all green. Dastoori CI: run 36267708955 on `941c0fa` green, Docker job included. Details in [4.7](#eval-suites).
-- **RAG shortfalls known from the engine repository itself:** a character-corrupted Civil Code, a Penal Code re-ingested from a secondary source, and core laws still to ingest.
+- **RAG shortfalls known from the engine repository itself:** a character-corrupted Civil Code, a Penal Code re-ingested from a secondary source, and a 2026-07-18 list of core laws still to ingest (corrected in §6: four of them appear in historical retrieval results; three are still not proven present).
 - **RAG offline measurement.** Recall@8 was 0.82, against a proposed gate of 0.85. This is NOT REPRESENTATIVE.
 
 What the verdict words mean:
@@ -314,7 +314,39 @@ Details in [Part 2](#ai-security-report).
 
 Notes on the missing-laws list:
 - `benchmark/rerank-eval.json` (later) records Commercial (id 159), Labour (id 160) and Companies (id 161) as re-ingested from lob.gov.jo `.txt` and verified clean.
-- No record shows the other 7 laws were ever ingested.
+- ~~No record shows the other 7 laws were ever ingested.~~ **Corrected 2026-10-05 — this statement was wrong.** See the correction note below.
+
+> **Correction (2026-10-05).** The repository does record four of those seven laws.
+>
+> **What the records show.**
+> - **Four laws were retrieved.** Saved historical retrieval results (`benchmark/comparison-snapshot-before.json`, `comparison-snapshot-after.json`) contain chunks retrieved from:
+>   - **Personal Status** ("قانون الأحوال الشخصية الأردني");
+>   - **Arbitration** ("قانون التحكيم");
+>   - **Consumer Protection** ("قانون حماية المستهلك");
+>   - **Real Property** (stored under a damaged title, "قانون الملكية العقارية لسنة أحكام عامة").
+> - **The engine's code says all ten were ingested.** Its comments state that "the 10 laws" were ingested on 2026-07-19 (`src/lib/search/query-understanding.ts`, `src/lib/ingest/legal-topics.ts`, `src/lib/search/legal-ontology.ts`).
+>
+> **Still not proven present** from any available evidence:
+> - Evidence 30/1952;
+> - Landlords & Tenants 11/1994;
+> - Income Tax 34/2014.
+>
+> **Being retrieved is not the same as being verified present.** Each state below is separate, and none is inferred from another. Of the four retrieved laws, the only state supported by evidence is PRESENT / RETRIEVED (historical):
+>
+> | State | Status for the four retrieved laws |
+> |---|---|
+> | PRESENT / RETRIEVED (historical) | Yes |
+> | DATABASE VERIFIED (confirmed by a query against today's database) | Not established |
+> | OFFICIAL SOURCE (recorded official publisher) | Not established |
+> | GAZETTE VERIFIED | Not established |
+> | CURRENT VERSION | Not established |
+> | SEARCHABLE | Not established |
+> | EMBEDDED | Not established |
+> | AUTHORITATIVE | Not established |
+>
+> **Their number and year are not established either.** The stored titles do not carry them.
+>
+> The full per-law table, and what each state requires, is in `PHASE2_CORPUS_REPAIR_REPORT.md`.
 
 **What this means.**
 - **No coverage check.** Nobody has checked coverage against the intended domain. The 10-law list shows the gaps were known.

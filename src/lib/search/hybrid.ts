@@ -998,7 +998,7 @@ const MAX_MERGED_CHARS = 6000;
 /** Room for the exception/condition sentences an excerpt would otherwise cut off. */
 const PROVISO_BUDGET = 1500;
 // An exception or a condition attached to a rule.
-const PROVISO_RE = /(?:^|[\s،,(])(?:و|ف)?(?:إلا|الا|ما\s+لم|باستثناء|استثناء|يستثنى|ما\s+عدا|بشرط|شريطة|على\s+أن|مع\s+مراعاة|على\s+الرغم|خلافاً|خلافا)(?=[\s،,])/;
+export const PROVISO_RE = /(?:^|[\s،,(])(?:و|ف)?(?:إلا|الا|ما\s+لم|باستثناء|استثناء|يستثنى|ما\s+عدا|بشرط|شريطة|على\s+أن|مع\s+مراعاة|على\s+الرغم|خلافاً|خلافا)(?=[\s،,])/;
 
 /** Sentences of an article, whole (split after . ؛ ! ؟). */
 function splitSentences(text: string): string[] {

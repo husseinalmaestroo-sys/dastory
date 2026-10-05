@@ -54,8 +54,8 @@ import "dotenv/config";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join, extname, resolve } from "node:path";
 import { createHash } from "node:crypto";
-import { Pool } from "pg";
-import { poolConfig } from "../src/lib/pg-ssl";
+import { assertMayMutate, describeTarget, targetLine } from "../src/lib/db-target";
+import { createPool } from "../src/lib/db-pool";
 import { ingestSource } from "../src/lib/ingest/pipeline";
 import { titleFromPath, pickBestTitled } from "../src/lib/ingest/title";
 import { classifySource, SOURCE_TYPES } from "../src/lib/ingest/classify";
@@ -143,6 +143,11 @@ async function main() {
   const opts = parseArgs();
 
   if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is not set.");
+  // Phase 2.4: an ingest writes; it is refused on an undeclared remote database
+  // and on production without --confirm-production (src/lib/db-target.ts).
+  const target = describeTarget(process.env.DATABASE_URL);
+  console.log(`Target: ${targetLine(target)}`);
+  if (!opts.dryRun) assertMayMutate(target, { confirmProduction: process.argv.includes("--confirm-production"), what: "ingest" });
   if (!opts.dryRun && !process.env.OPENAI_API_KEY) {
     throw new Error("OPENAI_API_KEY is not set — ingest calls the embedding API.");
   }
@@ -155,7 +160,7 @@ async function main() {
   console.log(`Found ${files.length} document(s) (.pdf, .txt).`);
   if (files.length === 0) return;
 
-  const pool = new Pool(poolConfig(process.env.DATABASE_URL!));
+  const pool = createPool(process.env.DATABASE_URL!);
 
   // Hash everything up front so the plan printed below is the real plan —
   // dry-run must not lie about what it would skip.

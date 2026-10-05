@@ -1,5 +1,6 @@
 import "server-only";
 import { env } from "../env";
+import { proxiedFetch } from "../net/proxy";
 
 /**
  * Cross-encoder reranking, behind one seam.
@@ -44,7 +45,8 @@ async function postJson(url: string, key: string, body: unknown): Promise<unknow
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
   try {
-    const res = await fetch(url, {
+    // Through the environment's HTTPS proxy when one is set (net/proxy.ts).
+    const res = await proxiedFetch(url, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${key}`,

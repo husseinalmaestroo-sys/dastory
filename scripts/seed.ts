@@ -12,8 +12,8 @@
  * via the admin dashboard before anyone relies on an answer.
  */
 import "dotenv/config";
-import { Pool } from "pg";
-import { poolConfig } from "../src/lib/pg-ssl";
+import { createPool } from "../src/lib/db-pool";
+import { describeTarget, targetLine } from "../src/lib/db-target";
 import { chunkLegalText } from "../src/lib/ingest/chunk";
 import { cleanText, foldForSearch } from "../src/lib/ingest/clean";
 import { getEmbeddingProvider } from "../src/lib/ai";
@@ -80,7 +80,13 @@ async function main() {
   if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is not set.");
   if (!process.env.OPENAI_API_KEY) throw new Error("OPENAI_API_KEY is not set — seeding calls the embedding API.");
 
-  const pool = new Pool(poolConfig(process.env.DATABASE_URL));
+  // Phase 2.4: sample texts go only into a local or declared staging database —
+  // never production, never the branch the live verification runs on.
+  const target = describeTarget(process.env.DATABASE_URL);
+  console.log(`Target: ${targetLine(target)}`);
+  if (target.environment !== "local" && target.environment !== "staging") throw new Error(`Refusing to seed sample texts into ${targetLine(target)}.`);
+
+  const pool = createPool(process.env.DATABASE_URL);
   const provider = getEmbeddingProvider();
 
   for (const s of SAMPLES) {

@@ -3,6 +3,7 @@ import { env } from "../env";
 import { isRetryableStatus, linkSignal } from "./deadline";
 import { currentSignal } from "./usage-meter";
 import type { EmbeddingProvider, EmbedResult } from "./provider";
+import { proxiedFetch } from "../net/proxy";
 
 /**
  * Voyage AI embeddings — Anthropic's recommended embedding partner, since
@@ -36,7 +37,8 @@ async function postBatch(batch: string[], kind: "document" | "query"): Promise<V
     const timer = setTimeout(() => ctrl.abort(), env.embedTimeoutMs);
     let status: number | undefined;
     try {
-      const res = await fetch(API, {
+      // Through the environment's HTTPS proxy when one is set (net/proxy.ts).
+      const res = await proxiedFetch(API, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${env.voyageApiKey}`,

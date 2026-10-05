@@ -29,7 +29,24 @@ say "Applying migrations"
 # Postgres is on Neon now (see docker-compose.yml) — no local db container to
 # start first. scripts/migrate.ts applies db/schema.sql idempotently, so this
 # is a no-op when the corpus DB is already provisioned.
-docker compose run --rm app npx tsx scripts/migrate.ts
+#
+# Phase 2.4: migrate.ts refuses production unless told it is production. This
+# script deploys production by definition, so the operator confirms it — after
+# the same migration and corpus preparation were run and reviewed on a Neon
+# branch (PHASE2_CORPUS_REPAIR_REPORT.md §10).
+if [[ "${CONFIRM_PRODUCTION:-}" != "yes" ]]; then
+  echo "Set CONFIRM_PRODUCTION=yes to migrate PRODUCTION — only after the same commands ran on a Neon branch." >&2
+  exit 1
+fi
+docker compose run --rm app npx tsx scripts/migrate.ts --confirm-production
+
+say "Preparing the corpus"
+# Since the corpus repair (2026-10) nothing is served until it has passed the
+# integrity check, and the first migration to that schema leaves every older
+# text 'unchecked' — the app still running serves nothing until this step has
+# run. Same decisions as the reviewed dry run on the branch (same data); a
+# no-op on later deploys except for texts not yet checked.
+docker compose run --rm app npm run -s corpus:integrity -- prepare --apply --confirm-production
 
 say "Starting app"
 docker compose up -d app

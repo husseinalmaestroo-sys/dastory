@@ -3,7 +3,10 @@
  * corpus repair). Every change is logged in corpus_integrity_events with its
  * kind, who, why and against what; nothing is deleted.
  *
- * Bulk commands are DRY RUNS unless --apply is given.
+ * Bulk commands are DRY RUNS unless --apply is given. Every command prints
+ * its target database (host, database, environment — never credentials);
+ * every write is refused on an undeclared remote database, and on production
+ * without --confirm-production (src/lib/db-target.ts, Phase 2.4).
  *
  *   npm run corpus:integrity -- prepare        [--apply]   apply-repairs, backfill-provenance, normalize-titles,
  *                                                          then check — in that order (what a deploy runs)
@@ -42,8 +45,10 @@ import { runIntegrityCheck } from "../src/lib/corpus/check";
 import { replaceSource, setGazetteStatus, setIntegrity } from "../src/lib/corpus/integrity";
 import { autoQuarantine, backfillProvenance, normalizeTitles } from "../src/lib/corpus/maintenance";
 import { applyRepairs, type RepairPlanRow } from "../src/lib/corpus/repairs";
+import { assertMayMutate, describeTarget, targetLine } from "../src/lib/db-target";
 
-const BOOLEAN_FLAGS = new Set(["--apply", "--dry-run", "--recheck"]);
+const BOOLEAN_FLAGS = new Set(["--apply", "--dry-run", "--recheck", "--confirm-production"]);
+const SINGLE_SOURCE_WRITES = new Set(["quarantine", "pass", "gazette-verify", "gazette-unverify", "replace"]);
 
 function arg(name: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`);
@@ -107,6 +112,11 @@ async function check(): Promise<void> {
 
 async function main() {
   const [cmd, a, b] = positional(process.argv.slice(2));
+  const target = describeTarget(process.env.DATABASE_URL ?? "");
+  console.log(`Target: ${targetLine(target)}`);
+  if ((apply && cmd !== "history") || SINGLE_SOURCE_WRITES.has(cmd)) {
+    assertMayMutate(target, { confirmProduction: process.argv.includes("--confirm-production"), what: `corpus:integrity ${cmd}` });
+  }
   const actor = arg("actor");
   const reason = arg("reason");
   const evidence = arg("evidence");

@@ -1,6 +1,7 @@
 import "server-only";
 import OpenAI from "openai";
 import { env } from "../env";
+import { proxyAgentFor } from "../net/proxy";
 import { isRetryableStatus, linkSignal, withDeadline, withIdleTimeout } from "./deadline";
 import { currentSignal } from "./usage-meter";
 import type { ChatProvider, EmbeddingProvider, ChatMessage, ChatResult, EmbedResult } from "./provider";
@@ -11,7 +12,10 @@ import type { ChatProvider, EmbeddingProvider, ChatMessage, ChatResult, EmbedRes
 // deadline.ts for the retry policy.
 let _client: OpenAI | null = null;
 function client(): OpenAI {
-  if (!_client) _client = new OpenAI({ apiKey: env.openaiApiKey, maxRetries: 0, timeout: env.chatTimeoutMs });
+  // Phase 2.4: through the environment's HTTPS proxy when one is set — the SDK
+  // would otherwise connect directly, around the egress policy (net/proxy.ts).
+  const host = new URL(process.env.OPENAI_BASE_URL || "https://api.openai.com/v1").hostname;
+  if (!_client) _client = new OpenAI({ apiKey: env.openaiApiKey, maxRetries: 0, timeout: env.chatTimeoutMs, httpAgent: proxyAgentFor(host) });
   return _client;
 }
 

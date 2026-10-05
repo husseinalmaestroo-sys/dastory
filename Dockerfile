@@ -49,6 +49,11 @@ COPY --from=build /app/package.json ./package.json
 COPY --from=build /app/db ./db
 COPY --from=build /app/scripts ./scripts
 COPY --from=build /app/tsconfig.json ./tsconfig.json
+# deploy/deploy.sh runs scripts/migrate.ts and the corpus preparation in this
+# image; both import src/lib (and the preparation reads deploy/sources).
+# Without these the migration failed with "Cannot find module '../src/lib/…'".
+COPY --from=build /app/src ./src
+COPY --from=build /app/deploy/sources ./deploy/sources
 
 RUN mkdir -p /data/storage && chown -R node:node /data /app
 USER node

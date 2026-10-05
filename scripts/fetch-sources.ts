@@ -50,6 +50,8 @@ import "dotenv/config";
 import { mkdir, writeFile, stat, readFile } from "node:fs/promises";
 import { fileNameFrom } from "../src/lib/ingest/source-files";
 import { join, resolve } from "node:path";
+// Phase 2.4: downloads go through the environment's HTTPS proxy when one is set, never around it.
+import { proxiedFetch } from "../src/lib/net/proxy";
 
 const UA = "ai-legal-assistant/0.1 (legal research corpus builder; contact: site admin)";
 
@@ -125,7 +127,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
  */
 async function loadDisallows(origin: string): Promise<string[]> {
   try {
-    const res = await fetch(`${origin}/robots.txt`, { headers: { "User-Agent": UA } });
+    const res = await proxiedFetch(`${origin}/robots.txt`, { headers: { "User-Agent": UA } });
     if (!res.ok) return [];
     const text = await res.text();
 
@@ -238,7 +240,7 @@ async function main() {
     process.stdout.write(`  fetching ${listing} ... `);
     let html: string;
     try {
-      const res = await fetch(listing, { headers: { "User-Agent": UA, Accept: "text/html" } });
+      const res = await proxiedFetch(listing, { headers: { "User-Agent": UA, Accept: "text/html" } });
       if (!res.ok) {
         console.log(`HTTP ${res.status}`);
         // 403 from a WAF looks identical to a real block. Say so, because the
@@ -309,7 +311,7 @@ async function main() {
 
     process.stdout.write(`${label.padEnd(66)}`);
     try {
-      const res = await fetch(url, { headers: { "User-Agent": UA } });
+      const res = await proxiedFetch(url, { headers: { "User-Agent": UA } });
       if (!res.ok) {
         console.log(`HTTP ${res.status}`);
         failed++;
@@ -383,7 +385,7 @@ async function fetchAsText(opts: Opts, selector: string) {
 
     process.stdout.write(`${label.padEnd(26)}`);
     try {
-      const res = await fetch(url, { headers: { "User-Agent": UA, Accept: "text/html" } });
+      const res = await proxiedFetch(url, { headers: { "User-Agent": UA, Accept: "text/html" } });
       if (!res.ok) {
         console.log(`HTTP ${res.status}`);
         failed++;

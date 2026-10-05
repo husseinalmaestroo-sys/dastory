@@ -92,8 +92,11 @@ let inFlight: Promise<PurgeReport | null> | null = null;
  * when it did not run. `force` is for tests and the CLI.
  */
 export function runRetentionIfDue(opts: { force?: boolean } = {}): Promise<PurgeReport | null> {
-  if (!opts.force && (!env.autoRetention || Date.now() - lastAttempt < AUTO_PURGE_INTERVAL_HOURS * 3_600_000)) return Promise.resolve(null);
+  // A purge already running is joined, never reported as "not due": checked
+  // first, since the attempt that started it has just reset the interval clock
+  // (found over a slower transport, where the purge outlives the request).
   if (inFlight) return inFlight;
+  if (!opts.force && (!env.autoRetention || Date.now() - lastAttempt < AUTO_PURGE_INTERVAL_HOURS * 3_600_000)) return Promise.resolve(null);
   lastAttempt = Date.now();
   inFlight = (async () => {
     const client = await getPool().connect();

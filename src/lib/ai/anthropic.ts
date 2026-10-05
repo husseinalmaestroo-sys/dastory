@@ -1,6 +1,7 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { env } from "../env";
+import { proxiedFetch } from "../net/proxy";
 import { linkSignal, withDeadline, withIdleTimeout } from "./deadline";
 import type { ChatProvider, ChatMessage, ChatResult } from "./provider";
 
@@ -13,7 +14,8 @@ import type { ChatProvider, ChatMessage, ChatResult } from "./provider";
 // it ever appearing in usage. See deadline.ts for the retry policy.
 let _client: Anthropic | null = null;
 function client(): Anthropic {
-  if (!_client) _client = new Anthropic({ apiKey: env.anthropicApiKey, maxRetries: 0, timeout: env.chatTimeoutMs });
+  // Phase 2.4: fetch through the environment's HTTPS proxy when one is set (net/proxy.ts).
+  if (!_client) _client = new Anthropic({ apiKey: env.anthropicApiKey, maxRetries: 0, timeout: env.chatTimeoutMs, fetch: proxiedFetch });
   return _client;
 }
 

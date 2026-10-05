@@ -28,8 +28,7 @@
  * on the ingest list, not in the ontology.
  */
 import "dotenv/config";
-import { Pool } from "pg";
-import { poolConfig } from "../src/lib/pg-ssl";
+import { createPool } from "../src/lib/db-pool";
 import { expandWithOntology } from "../src/lib/search/legal-ontology";
 
 type Row = { query: string; times: number; avg_hits: number; last_seen: string };
@@ -42,7 +41,7 @@ async function main() {
   const since = get("since") ? Number(get("since")) : null;
 
   if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is not set.");
-  const pool = new Pool(poolConfig(process.env.DATABASE_URL));
+  const pool = createPool(process.env.DATABASE_URL);
 
   // Group by the normalised query text so the same question asked ten ways
   // does not scatter across ten rows.

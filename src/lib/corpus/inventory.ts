@@ -529,13 +529,46 @@ export function matchRequiredLaw(law: RequiredLaw, titles: { id: number; folded:
 
 type Q = { query: (sql: string, params?: unknown[]) => Promise<{ rows: Record<string, unknown>[] }> };
 
-/** Reads what analyzeInventory needs. Text samples are the first ~12k characters of each source. */
+/**
+ * What a column reads as when the database predates it (Phase 2.4: the
+ * "before" inventory is taken BEFORE db:migrate, on whatever schema the
+ * database has). Each default is the truthful reading of its absence: a text
+ * with no integrity column was never checked, one with no Gazette column was
+ * never compared, no jurisdiction column means the Jordan-only corpus.
+ */
+const SOURCE_COLUMN_DEFAULTS: Record<string, string> = {
+  jurisdiction: "'JO'::text",
+  language: "'ar'::text",
+  provenance: "NULL::text",
+  source_url: "NULL::text",
+  issuing_authority: "NULL::text",
+  integrity_status: "'unchecked'::text",
+  gazette_status: "'unverified'::text",
+  is_current_version: "true",
+  supersedes: "NULL::bigint",
+  amendment_of: "NULL::bigint",
+  replaced_by: "NULL::bigint",
+  law_number: "NULL::text",
+  year: "NULL::int",
+  effective_date: "NULL::date",
+  file_hash: "NULL::text",
+  is_synthetic: "false",
+};
+
+/** Reads what analyzeInventory needs. Text samples are the first ~12k characters of each source. Works on any schema version. */
 export async function loadInventoryInput(db: Q): Promise<{ sources: InventorySource[]; chunks: InventoryChunks[]; orphanChunks: number }> {
+  const present = new Set(
+    (await db.query(`SELECT table_name AS t, column_name AS c FROM information_schema.columns WHERE table_schema = 'public'`)).rows.map((r) => `${r.t}.${r.c}`)
+  );
+  const col = (c: string, cast = "") => (present.has(`legal_sources.${c}`) ? `${c}${cast}` : `${SOURCE_COLUMN_DEFAULTS[c] ?? "NULL"}${cast}`);
   const sources = (
     await db.query(
-      `SELECT id, title, source_type, status, jurisdiction, language, provenance, source_url, issuing_authority,
-              integrity_status, gazette_status, is_current_version, supersedes, amendment_of, replaced_by, law_number, year,
-              effective_date::text AS effective_date, file_hash, chunk_count, is_synthetic
+      `SELECT id, title, source_type, status, ${col("jurisdiction")} AS jurisdiction, ${col("language")} AS language,
+              ${col("provenance")} AS provenance, ${col("source_url")} AS source_url, ${col("issuing_authority")} AS issuing_authority,
+              ${col("integrity_status")} AS integrity_status, ${col("gazette_status")} AS gazette_status,
+              ${col("is_current_version")} AS is_current_version, ${col("supersedes")} AS supersedes, ${col("amendment_of")} AS amendment_of,
+              ${col("replaced_by")} AS replaced_by, ${col("law_number")} AS law_number, ${col("year")} AS year,
+              ${col("effective_date", "::text")} AS effective_date, ${col("file_hash")} AS file_hash, chunk_count, ${col("is_synthetic")} AS is_synthetic
          FROM legal_sources ORDER BY id`
     )
   ).rows.map((r) => ({
@@ -552,7 +585,7 @@ export async function loadInventoryInput(db: Q): Promise<{ sources: InventorySou
       `SELECT source_id,
               count(*)::int AS chunks,
               count(embedding)::int AS embedded,
-              COALESCE(array_agg(DISTINCT embedding_model) FILTER (WHERE embedding IS NOT NULL AND embedding_model IS NOT NULL), '{}') AS models,
+              ${present.has("legal_documents.embedding_model") ? "COALESCE(array_agg(DISTINCT embedding_model) FILTER (WHERE embedding IS NOT NULL AND embedding_model IS NOT NULL), '{}')" : "'{}'::text[]"} AS models,
               array_agg(article_number ORDER BY chunk_index) AS articles,
               left(string_agg(chunk_text, E'\\n' ORDER BY chunk_index), 12000) AS sample_text
          FROM legal_documents GROUP BY source_id`

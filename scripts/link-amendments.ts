@@ -23,8 +23,8 @@
  *   npx tsx scripts/link-amendments.ts --apply    # write the links
  */
 import "dotenv/config";
-import { Pool } from "pg";
-import { poolConfig } from "../src/lib/pg-ssl";
+import { createPool } from "../src/lib/db-pool";
+import { assertMayMutate, describeTarget, targetLine } from "../src/lib/db-target";
 import { foldForSearch } from "../src/lib/ingest/clean";
 import { isAmendingTitle, parseLawNumber, parseLawYear, baseLawName } from "../src/lib/ingest/law-identity";
 
@@ -58,7 +58,12 @@ async function main() {
   const apply = process.argv.includes("--apply");
   if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is not set.");
 
-  const pool = new Pool(poolConfig(process.env.DATABASE_URL));
+  const target = describeTarget(process.env.DATABASE_URL);
+  console.log(`Target: ${targetLine(target)}`);
+  // Phase 2.4: the dry run reads anywhere; --apply refuses an undeclared remote
+  // database, and production without --confirm-production (src/lib/db-target.ts).
+  if (apply) assertMayMutate(target, { confirmProduction: process.argv.includes("--confirm-production"), what: "link-amendments --apply" });
+  const pool = createPool(process.env.DATABASE_URL);
 
   const { rows } = await pool.query<Row>(
     `SELECT id, title, source_type, law_number, year, amendment_of

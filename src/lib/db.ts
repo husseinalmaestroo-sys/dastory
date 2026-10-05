@@ -1,7 +1,7 @@
 import "server-only";
 import { Pool, type QueryResultRow } from "pg";
 import { env } from "./env";
-import { poolConfig } from "./pg-ssl";
+import { createPool } from "./db-pool";
 
 // One pool per process, created on first query rather than at import.
 //
@@ -15,8 +15,9 @@ const globalForDb = globalThis as unknown as { _pgPool?: Pool };
 export function getPool(): Pool {
   if (globalForDb._pgPool) return globalForDb._pgPool;
 
-  const pool = new Pool({
-    ...poolConfig(env.databaseUrl),
+  // Phase 2.4: over the configured transport (db-pool.ts) — TCP by default,
+  // or Neon's WebSocket transport where port 5432 is filtered.
+  const pool = createPool(env.databaseUrl, {
     // Postgres is Neon (managed, remote — eu-central-1), not co-located with
     // the app's Hostinger VPS, so this has nothing to do with sharing a box's
     // RAM. What it actually bounds is concurrent connections against Neon's

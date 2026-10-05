@@ -15,6 +15,11 @@ cd "$(dirname "$0")/.."
 
 DRY=""
 [[ "${1:-}" == "--dry-run" ]] && DRY="--dry-run"
+# Phase 2.4: the writing commands print their target and refuse an undeclared
+# remote database (set DATABASE_ENVIRONMENT) — and production unless confirmed,
+# as in deploy.sh: CONFIRM_PRODUCTION=yes bash deploy/ingest-all.sh
+CONFIRM=""
+[[ "${CONFIRM_PRODUCTION:-}" == "yes" ]] && CONFIRM="--confirm-production"
 
 say() { echo -e "\n\033[1;33m==> $1\033[0m"; }
 
@@ -31,12 +36,12 @@ if [[ -z "${DATABASE_URL:-}" ]]; then
 fi
 
 say "Applying migrations"
-npm run db:migrate
+npm run db:migrate -- $CONFIRM
 
 # ---------------------------------------------------------------- laws
 say "1/5  القوانين — 24 laws"
 npm run fetch  -- --list=deploy/sources/moj-laws-ar.txt --out=./downloads/moj-laws
-npm run ingest -- ./downloads/moj-laws --type=law $DRY
+npm run ingest -- ./downloads/moj-laws --type=law $DRY $CONFIRM
 
 # ---------------------------------------------------------------- regulations
 say "2/5  الأنظمة والتعليمات — 35 files"
@@ -44,7 +49,7 @@ say "2/5  الأنظمة والتعليمات — 35 files"
 # both under one section). classify.ts reads the type from each filename's
 # leading word. Forcing --type=regulation here would mislabel 8 instructions.
 npm run fetch  -- --list=deploy/sources/moj-regulations-ar.txt --out=./downloads/moj-regs
-npm run ingest -- ./downloads/moj-regs $DRY
+npm run ingest -- ./downloads/moj-regs $DRY $CONFIRM
 
 # ---------------------------------------------------------------- constitution
 say "3/5  الدستور — 10 chapters"
@@ -52,7 +57,7 @@ say "3/5  الدستور — 10 chapters"
 # name says what they are (so the classifier refuses to guess), and "الفصل07"
 # alone is meaningless on a citation card.
 npm run fetch  -- --list=deploy/sources/moj-constitution-ar.txt --out=./downloads/moj-dustour
-npm run ingest -- ./downloads/moj-dustour --type=law --title-prefix="الدستور الأردني" $DRY
+npm run ingest -- ./downloads/moj-dustour --type=law --title-prefix="الدستور الأردني" $DRY $CONFIRM
 
 # ---------------------------------------------------------------- diwan
 say "4/5  قرارات الديوان الخاص بتفسير القانون — 78 texts + attachments"
@@ -61,7 +66,7 @@ say "4/5  قرارات الديوان الخاص بتفسير القانون —
 # it never touches a font map, so correct digits and no OCR.
 npm run fetch  -- --list=deploy/sources/jc-diwan-decisions.txt --out=./downloads/jc-diwan --as-text="#MainContent_DivContent"
 npm run fetch  -- --list=deploy/sources/jc-diwan-decisions.txt --out=./downloads/jc-diwan --match=news_new
-npm run ingest -- ./downloads/jc-diwan --type=interpretation --title-prefix="قرار الديوان الخاص بتفسير القانون" $DRY
+npm run ingest -- ./downloads/jc-diwan --type=interpretation --title-prefix="قرار الديوان الخاص بتفسير القانون" $DRY $CONFIRM
 
 # ---------------------------------------------------------------- jba
 say "5/5  مستجدات القرارات — نقابة المحامين"
@@ -69,7 +74,7 @@ say "5/5  مستجدات القرارات — نقابة المحامين"
 # nothing, and the classifier stops rather than guess. Mixed courts — review
 # each in /admin afterwards to set court, decision number and year.
 npm run fetch  -- --list=deploy/sources/jba-decisions.txt --out=./downloads/jba-decisions --match=eb_list_page
-npm run ingest -- ./downloads/jba-decisions --type=court_decision $DRY
+npm run ingest -- ./downloads/jba-decisions --type=court_decision $DRY $CONFIRM
 
 # ----------------------------------------------------------------
 if [[ -n "$DRY" ]]; then

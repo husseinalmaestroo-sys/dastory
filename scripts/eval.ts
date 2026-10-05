@@ -78,6 +78,9 @@ async function main() {
       process.exit(2);
     }
     preflight = pre;
+    // Phase 2.4: a measurement never purges the database it measures —
+    // runAiRequest would start the retention purge on the live target.
+    process.env.AUTO_RETENTION = "false";
   }
   const { loadEvalFixtures } = await import("./load-eval-fixtures");
   const { runChatPipeline } = await import("../src/lib/ai/pipelines/chat");

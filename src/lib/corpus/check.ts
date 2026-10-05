@@ -38,8 +38,10 @@ const CHUNK_MIN_ARABIC = 600;
 const MAX_GARBLED_CHUNK_SHARE = 0.1;
 /** Share of article numbers (up to the highest) that may be missing in a statute. */
 const MAX_MISSING_ARTICLE_RATIO = 0.2;
+/** Below this many Arabic letters a vocabulary-only quarantine gets a review hint (see integrityVerdict). */
+const SHORT_TEXT_ARABIC = 1500;
 
-export type IntegrityFindingKind = "empty_source" | "garbled_text" | "garbled_chunks" | "article_gaps";
+export type IntegrityFindingKind = "empty_source" | "garbled_text" | "garbled_chunks" | "article_gaps" | "short_text_review";
 export type IntegrityFinding = { kind: IntegrityFindingKind; blocking: boolean; detail: string };
 export type IntegrityVerdict = { verdict: "passed" | "quarantined"; findings: IntegrityFinding[] };
 
@@ -96,8 +98,22 @@ export function integrityVerdict(input: {
     return { verdict: "quarantined", findings: [{ kind: "empty_source", blocking: true, detail: "no chunks" }] };
   }
 
-  const whole = assessArabicText(input.chunkTexts.join("\n"));
-  if (whole.garbled) findings.push({ kind: "garbled_text", blocking: true, detail: whole.reason ?? "garbled" });
+  const all = input.chunkTexts.join("\n");
+  const whole = assessArabicText(all);
+  if (whole.garbled) {
+    findings.push({ kind: "garbled_text", blocking: true, detail: whole.reason ?? "garbled" });
+    // Phase 2.4: the vocabulary test was calibrated on whole laws (ingest/
+    // quality.ts). On a short text with no shredding it is weaker evidence:
+    // the text stays quarantined, and the reviewer is told where to look.
+    const arabic = (all.match(/[؀-ۿ]/g) ?? []).length;
+    if (arabic < SHORT_TEXT_ARABIC && whole.orphanLetterRatio <= 0.05 && whole.distinctCommonWords >= 1) {
+      findings.push({
+        kind: "short_text_review",
+        blocking: false,
+        detail: `short text (${arabic} Arabic letters, ${whole.distinctCommonWords} common word(s), no shredding): the vocabulary test is calibrated on whole laws — read it before trusting the quarantine; a sound text is passed only by a reviewer (corpus:integrity pass)`,
+      });
+    }
+  }
 
   const sizeable = input.chunkTexts.filter((t) => (t.match(/[؀-ۿ]/g) ?? []).length >= CHUNK_MIN_ARABIC);
   const garbled = sizeable.filter(isGarbledChunk).length;

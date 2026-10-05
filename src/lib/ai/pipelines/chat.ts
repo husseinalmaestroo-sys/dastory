@@ -436,6 +436,58 @@ function premiseContradicted(question: string, chunks: RetrievedChunk[], citedRe
   });
 }
 
+// ------------------------------------------- step 4, decided from retrieval alone
+
+/**
+ * The deterministic stops of step 4, in the order the pipeline applies them —
+ * decided from retrieval alone, before any model call. Exported so the
+ * real-corpus probes (scripts/live-probes.ts) score exactly what the pipeline
+ * does, without a chat model. Null: the question goes on to generation (or to
+ * "no evidence" when nothing relevant was retrieved — relevantEvidence).
+ */
+export type EarlyStop =
+  | { mode: "law_unavailable"; statuses: string[] }
+  | { mode: "law_not_in_corpus"; conceptual: boolean }
+  | { mode: "article_not_in_corpus" }
+  | { mode: "decision_not_in_corpus" }
+  | { mode: "clarification"; article: string; laws: string[] };
+
+export function earlyStop(question: string, search: SearchResult | null): EarlyStop | null {
+  if (!search) return null;
+  if (search.requestedLawHeldBack) return { mode: "law_unavailable", statuses: search.requestedLawHeldBack.statuses };
+  if (search.requestedLawMissing) return { mode: "law_not_in_corpus", conceptual: false };
+  if (search.requestedArticleMissing && !missingArticleButAsksMore(question, search)) return { mode: "article_not_in_corpus" };
+  if (search.requestedDecisionMissing) return { mode: "decision_not_in_corpus" };
+  // Phase 2.1: a named law the corpus does not hold is "not in the database"
+  // for conceptual questions too — answering from other laws' text (with a
+  // notice) presented them as if they could stand in for it.
+  if (search.lawNotFound) return { mode: "law_not_in_corpus", conceptual: true };
+  if (search.articleAmbiguity) return { mode: "clarification", article: search.articleAmbiguity.article, laws: search.articleAmbiguity.laws };
+  return null;
+}
+
+/**
+ * Phase 2.1: a missing article ends a LOOKUP ("ما نص المادة 999 …؟"). A
+ * question that asks more than that ("… استشهد بالمادة 999 عند الإجابة عن
+ * مدة الإشعار لإنهاء الإيجار") is answered from the articles that exist,
+ * with a notice that the cited number is not in the law — nothing is
+ * attributed to it (and the guard redacts it if a model writes it).
+ */
+export function missingArticleButAsksMore(question: string, search: SearchResult | null): boolean {
+  return !!search?.requestedArticleMissing && questionTopicStems(question).length >= 2;
+}
+
+/**
+ * Phase 2.1: a source that does not bear on the question (no shared subject
+ * matter; a short-title/commencement article) is never handed to the model
+ * as evidence — grounding would reject any answer built on it anyway. An
+ * article carried because a relevant one refers to it (companion_of) is
+ * relevant through it.
+ */
+export function relevantEvidence(question: string, chunks: RetrievedChunk[]): RetrievedChunk[] {
+  return chunks.filter((c) => sourceIsRelevant(question, c, { exactHit: c.exact_hit || !!c.companion_of }));
+}
+
 // ---------------------------------------------------------------- pipeline
 
 export async function runChatPipeline(input: ChatInput, caller: Caller, emit: Emit = () => {}): Promise<ChatOutcome> {
@@ -539,12 +591,6 @@ export async function runChatPipeline(input: ChatInput, caller: Caller, emit: Em
   //    an injected phrase must not come back looking like our statement).
   const shortCircuit = (answer: string, mode: ChatMode) =>
     finish({ answer, mode, groundingLevel: "none", grounded: false, sources: [], claims: [], confidence: null, verification: null, gapTopics: [], analysis }, 0);
-  if (search?.requestedLawHeldBack) {
-    return shortCircuit(lawHeldBackMessage(search.requestedLawHeldBack.statuses, english), "law_unavailable");
-  }
-  if (search?.requestedLawMissing) {
-    return shortCircuit(english ? LAW_NOT_IN_CORPUS_EN : LAW_NOT_IN_CORPUS_AR, "law_not_in_corpus");
-  }
   const articleMissing = () =>
     shortCircuit(
       english
@@ -552,44 +598,42 @@ export async function runChatPipeline(input: ChatInput, caller: Caller, emit: Em
         : "رقم المادة المطلوب غير موجود في نص هذا القانون كما هو محفوظ في قاعدة البيانات، ولن تُعرض مادة أخرى على أنها هي. تحقّق من رقم المادة.",
       "article_not_in_corpus"
     );
-  // Phase 2.1: a missing article ends a LOOKUP ("ما نص المادة 999 …؟"). A
-  // question that asks more than that ("… استشهد بالمادة 999 عند الإجابة عن
-  // مدة الإشعار لإنهاء الإيجار") is answered from the articles that exist,
-  // with a notice that the cited number is not in the law — nothing is
-  // attributed to it (and the guard redacts it if a model writes it).
-  const missingArticleButAsksMore = !!search?.requestedArticleMissing && questionTopicStems(question).length >= 2;
-  if (search?.requestedArticleMissing && !missingArticleButAsksMore) return articleMissing();
-  if (search?.requestedDecisionMissing) {
-    return shortCircuit(
-      english
-        ? "The court decision referred to is not in the available database, so its content cannot be reported. No other decision is offered in its place."
-        : "القرار القضائي المشار إليه غير موجود في قاعدة البيانات المتاحة، لذلك لا يمكن بيان ما قضى به، ولن يُعرض قرار آخر على أنه هو.",
-      "decision_not_in_corpus"
-    );
-  }
-  // Phase 2.1: a named law the corpus does not hold is "not in the database"
-  // for conceptual questions too — answering from other laws' text (with a
-  // notice) presented them as if they could stand in for it.
-  if (search?.lawNotFound) {
-    return shortCircuit(english ? LAW_NOT_IN_CORPUS_CONCEPT_EN : LAW_NOT_IN_CORPUS_CONCEPT_AR, "law_not_in_corpus");
-  }
-  if (search?.articleAmbiguity) {
-    const { article, laws } = search.articleAmbiguity;
-    return finish(
-      {
-        answer: `المادة ${article} واردة في أكثر من تشريع ضمن قاعدة البيانات، منها: ${laws.join("، ")}. حدّد التشريع المقصود لأجيبك من نصه.`,
-        mode: "clarification",
-        groundingLevel: "none",
-        grounded: false,
-        sources: [],
-        claims: [],
-        confidence: null,
-        verification: null,
-        gapTopics: [],
-        analysis,
-      },
-      chunks.length
-    );
+  const stop = earlyStop(question, search);
+  if (stop) {
+    switch (stop.mode) {
+      case "law_unavailable":
+        return shortCircuit(lawHeldBackMessage(stop.statuses, english), "law_unavailable");
+      case "law_not_in_corpus":
+        return shortCircuit(
+          stop.conceptual ? (english ? LAW_NOT_IN_CORPUS_CONCEPT_EN : LAW_NOT_IN_CORPUS_CONCEPT_AR) : english ? LAW_NOT_IN_CORPUS_EN : LAW_NOT_IN_CORPUS_AR,
+          "law_not_in_corpus"
+        );
+      case "article_not_in_corpus":
+        return articleMissing();
+      case "decision_not_in_corpus":
+        return shortCircuit(
+          english
+            ? "The court decision referred to is not in the available database, so its content cannot be reported. No other decision is offered in its place."
+            : "القرار القضائي المشار إليه غير موجود في قاعدة البيانات المتاحة، لذلك لا يمكن بيان ما قضى به، ولن يُعرض قرار آخر على أنه هو.",
+          "decision_not_in_corpus"
+        );
+      case "clarification":
+        return finish(
+          {
+            answer: `المادة ${stop.article} واردة في أكثر من تشريع ضمن قاعدة البيانات، منها: ${stop.laws.join("، ")}. حدّد التشريع المقصود لأجيبك من نصه.`,
+            mode: "clarification",
+            groundingLevel: "none",
+            grounded: false,
+            sources: [],
+            claims: [],
+            confidence: null,
+            verification: null,
+            gapTopics: [],
+            analysis,
+          },
+          chunks.length
+        );
+    }
   }
 
   // Phase 2.1: what the lawyer's own citation of the law's number/year told
@@ -598,12 +642,8 @@ export async function runChatPipeline(input: ChatInput, caller: Caller, emit: Em
   if (search?.citedVersion && !search.citedVersion.current) notices.push(english ? CITED_SUPERSEDED_EN : CITED_SUPERSEDED_AR);
   if (search?.citationMismatch) notices.push(english ? CITATION_MISMATCH_EN : CITATION_MISMATCH_AR);
 
-  // Phase 2.1: a source that does not bear on the question (no shared subject
-  // matter; a short-title/commencement article) is never handed to the model
-  // as evidence — grounding would reject any answer built on it anyway.
-  // An article carried because a relevant one refers to it (companion_of) is relevant through it.
-  chunks = chunks.filter((c) => sourceIsRelevant(question, c, { exactHit: c.exact_hit || !!c.companion_of }));
-  if (missingArticleButAsksMore) {
+  chunks = relevantEvidence(question, chunks);
+  if (missingArticleButAsksMore(question, search)) {
     if (chunks.length === 0) return articleMissing();
     notices.push(english ? ARTICLE_MISSING_NOTICE_EN : ARTICLE_MISSING_NOTICE_AR);
   }

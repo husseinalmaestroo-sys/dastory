@@ -18,6 +18,7 @@ import { join, resolve } from "node:path";
 import { query, queryOne, getPool } from "../src/lib/db";
 import { ingestSource } from "../src/lib/ingest/pipeline";
 import { parseLawNumber } from "../src/lib/ingest/law-identity";
+import { describeTarget, targetLine } from "../src/lib/db-target";
 
 type FixtureSource = {
   key: string;
@@ -41,6 +42,12 @@ type FixtureSource = {
 export async function loadEvalFixtures(opts: { quiet?: boolean } = {}): Promise<Record<string, number>> {
   if (process.env.NODE_ENV === "production" && process.env.ALLOW_TEST_PROVIDERS !== "true") {
     throw new Error("Refusing to load synthetic fixtures with NODE_ENV=production.");
+  }
+  // Phase 2.4: fixtures go only into a local or declared staging database —
+  // never production, never the Neon branch the live verification runs on.
+  const target = describeTarget(process.env.DATABASE_URL ?? "");
+  if (target.environment !== "local" && target.environment !== "staging") {
+    throw new Error(`Refusing to load synthetic fixtures into ${targetLine(target)}.`);
   }
   const corpus = JSON.parse(readFileSync(resolve(__dirname, "../eval/fixtures/corpus.json"), "utf8")) as { sources: FixtureSource[] };
   const dir = mkdtempSync(join(tmpdir(), "eval-fixtures-"));

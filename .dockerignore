@@ -16,3 +16,7 @@ storage
 npm-debug.log*
 README.md
 deploy
+# …except the source lists and manifests: the corpus preparation that
+# deploy/deploy.sh runs in this image reads them (repair manifest,
+# required-law registry, download lists for provenance).
+!deploy/sources

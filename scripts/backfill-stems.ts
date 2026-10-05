@@ -8,14 +8,19 @@
  *   npx tsx --tsconfig scripts/tsconfig.verify.json scripts/backfill-stems.ts
  */
 import "dotenv/config";
-import { Pool } from "pg";
-import { poolConfig } from "../src/lib/pg-ssl";
+import { createPool } from "../src/lib/db-pool";
+import { assertMayMutate, describeTarget, targetLine } from "../src/lib/db-target";
 import { stemArabicText } from "../src/lib/search/arabic-stem";
 
 const BATCH = 500;
 
 async function main() {
-  const pool = new Pool(poolConfig(process.env.DATABASE_URL!));
+  // Phase 2.4: refuses an undeclared remote database, and production without
+  // --confirm-production (src/lib/db-target.ts).
+  const target = describeTarget(process.env.DATABASE_URL ?? "");
+  console.log(`Target: ${targetLine(target)}`);
+  assertMayMutate(target, { confirmProduction: process.argv.includes("--confirm-production"), what: "backfill-stems" });
+  const pool = createPool(process.env.DATABASE_URL!);
 
   const { rows: countRows } = await pool.query<{ n: string }>(`SELECT count(*) AS n FROM legal_documents`);
   const total = Number(countRows[0].n);

@@ -203,6 +203,12 @@ test("source classes: a memorandum, a secondary text or a decision never outrank
   assert.ok(classTier("instruction") < classTier("interpretation") && classTier("interpretation") < classTier("court_decision") && classTier("court_decision") < classTier("mou"));
   assert.equal(expectedSourceType("instruction", "مذكرة تفاهم بين …"), "mou");
   assert.equal(expectedSourceType("principle", "قرار الديوان الخاص بتفسير القوانين"), "interpretation");
+  // The production corpus filed them as court decisions (live run, 2026-10-06: ids 71-150).
+  assert.equal(sourceClassOf("court_decision", "قرار الديوان الخاص بتفسير القوانين — 30"), "interpretation");
+  assert.equal(expectedSourceType("court_decision", "قرار الديوان الخاص بتفسير القوانين — 30"), "interpretation", "the class audit flags them");
+  assert.equal(sourceClassOf("court_decision", "قرار المحكمة الادارية العليا"), "court_decision", "a court decision stays one");
+  assert.equal(expectedSourceType("court_decision", "قرار المحكمة الادارية العليا"), null);
+  assert.equal(expectedSourceType("interpretation", "قرار الديوان الخاص بتفسير القوانين — 30"), null, "already right: nothing to flag");
 
   // In score order: the memorandum and the decision are lexically closer than the law.
   const ranked = [

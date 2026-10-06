@@ -20,17 +20,21 @@ import { foldForSearch } from "../ingest/clean";
  * The class comes from the stored source_type; for rows filed before the
  * 'interpretation' and 'mou' types existed it also reads an unambiguous title
  * prefix ("مذكرة تفاهم", "قرار الديوان الخاص بتفسير"), so the safety rules
- * below hold before the repair manifest has reclassified them.
+ * below hold before the repair manifest has reclassified them. Interpretation
+ * decisions were filed as 'principle' in the repository's records and as
+ * 'court_decision' in the production corpus (live run, 2026-10-06: ids 71-150).
  */
 export type SourceClass = "legislation" | "regulation" | "instruction" | "interpretation" | "court_decision" | "mou" | "secondary";
 
 const MOU_TITLE = /^(?:ال)?مذكر[هة]\s+(?:ال)?تفاهم/;
 const DIWAN_TITLE = /^قرار\s+(?:ال)?ديوان\s+(?:ال)?خاص\s+بتفسير/;
+/** The types an interpretation decision was filed under before its own type existed. */
+const DIWAN_FILED_AS = new Set(["principle", "court_decision"]);
 
 export function sourceClassOf(sourceType: string | null | undefined, title?: string | null): SourceClass {
   const t = title ? foldForSearch(title).trim() : "";
   if (sourceType === "mou" || MOU_TITLE.test(t)) return "mou";
-  if (sourceType === "interpretation" || (sourceType === "principle" && DIWAN_TITLE.test(t))) return "interpretation";
+  if (sourceType === "interpretation" || (DIWAN_FILED_AS.has(sourceType ?? "") && DIWAN_TITLE.test(t))) return "interpretation";
   switch (sourceType) {
     case "law":
       return "legislation";
@@ -81,7 +85,7 @@ export const SOURCE_CLASS_LABEL_AR: Record<SourceClass, string> = {
 export function expectedSourceType(sourceType: string, title: string): string | null {
   const t = foldForSearch(title).trim();
   if (MOU_TITLE.test(t) && sourceType !== "mou") return "mou";
-  if (DIWAN_TITLE.test(t) && sourceType === "principle") return "interpretation";
+  if (DIWAN_TITLE.test(t) && DIWAN_FILED_AS.has(sourceType)) return "interpretation";
   return null;
 }
 

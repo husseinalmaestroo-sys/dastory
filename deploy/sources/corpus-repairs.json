@@ -90,10 +90,10 @@
     {
       "id": "diwan-classification",
       "action": "reclassify",
-      "match": { "titleStartsWith": "قرار الديوان الخاص بتفسير", "sourceType": ["principle"], "maxMatches": 200 },
+      "match": { "titleStartsWith": "قرار الديوان الخاص بتفسير", "sourceType": ["principle", "court_decision"], "maxMatches": 200 },
       "params": { "sourceType": "interpretation" },
-      "reason": "Decisions of the Special Bureau for the Interpretation of Laws were ingested as 'principle'. They are binding interpretations, a class of their own.",
-      "evidence": "deploy/ingest-all.sh step 4/5 (--type=principle --title-prefix=\"قرار الديوان الخاص بتفسير القانون\")"
+      "reason": "Decisions of the Special Bureau for the Interpretation of Laws were ingested as 'principle' (the repository's records) or 'court_decision' (the production corpus). They are binding interpretations, a class of their own.",
+      "evidence": "deploy/ingest-all.sh step 4/5 (--type=principle --title-prefix=\"قرار الديوان الخاص بتفسير القانون\"); live run 2026-10-06 on a branch of production: ids 71-150 typed court_decision, which this entry did not match (evidence/live-20261006/prepare-dry-run.txt)"
     },
     {
       "id": "notary-fee-schedule-classification",

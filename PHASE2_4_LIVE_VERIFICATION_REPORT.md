@@ -3,25 +3,30 @@
 **Date:** 2026-10-05 to 2026-10-06.
 
 **Commits.**
-- Engine `ailegal_hussein`: `c9793d0` (the pre-registered probes, committed alone and before any live run), then `5efbca1` (this phase's tooling), then `47d2036` (README and script comments only: when the guard refuses). Branch `claude/ailegal-hussein-phase2`, parent `901ef9f`.
-- Dastoori: the commit carrying this report, branch `claude/hopeful-ritchie-gip3i7` (parent `01b22a7`). No Dastoori code changed in this phase.
+- Engine `ailegal_hussein`: `c9793d0` (the pre-registered probes, committed alone and before any live run), then `5efbca1` (this phase's tooling), then `47d2036` (README and script comments only: when the guard refuses), then `a1e22b0` (the evidence of the branch run, §3a). Branch `claude/ailegal-hussein-phase2`, parent `901ef9f`.
+- Dastoori: `d7634c8` (this report), then the commit carrying the branch-run update; branch `claude/hopeful-ritchie-gip3i7` (parent `01b22a7`). No Dastoori code changed in this phase.
 
 ## Verdict
 
-**Not LIVE-CORPUS-VERIFIED. Not REAL-MODEL-VALIDATED.**
+**Phases A to C ran on a Neon branch of production on 2026-10-06. Not yet LIVE-CORPUS-VERIFIED. Not REAL-MODEL-VALIDATED. Production is unchanged.**
 
 - Phase A (pre-flight) ran.
-- Phases B to G did not run against the production corpus, against a copy of it, or against real models. Each is **BLOCKED BY EXTERNAL DEPENDENCY**.
-- The blockers in [§1](#1-phase-a-pre-flight-executed) were checked in this environment, not assumed.
-- Everything that does not depend on them was built, tested, and rehearsed end to end on a production-shaped stand-in database ([§3](#3-rehearsal-on-a-production-shaped-stand-in)).
-- The live work is now one reviewed command sequence ([§8](#8-exact-commands)).
+- Phases B and C ran on `phase24-verify`, a branch made from production on 2026-10-06 ([§3a](#3a-branch-run-on-a-copy-of-production-2026-10-06)):
+  - identity, snapshot and inventory before any change;
+  - the migration of the branch;
+  - a dry run of the preparation, reviewed and approved;
+  - the preparation, applied.
+- Phases D to G need `OPENAI_API_KEY`, which is not set yet: the critical-law checks, the probes, real models. They are **BLOCKED BY EXTERNAL DEPENDENCY** ([§7](#7-exact-external-dependencies)).
+- Production has not been migrated or prepared.
+- Everything was first built, tested, and rehearsed end to end on a production-shaped stand-in database ([§3](#3-rehearsal-on-a-production-shaped-stand-in)), and the live work is one reviewed command sequence ([§8](#8-exact-commands)).
 
-**No number in this report measures the real corpus.**
+**The numbers in §3a and §5 are read from the branch copy of production. The probe scores of §3 (stand-in) still say nothing about the corpus.**
 
 **Status words.**
 - **FIXED**: the code or data was changed.
 - **TESTED**: a test exercises the change and passes.
 - **REHEARSED**: run end to end on the stand-in database of §3. Its texts are invented placeholders. It proves the procedure works and measures nothing about the corpus.
+- **BRANCH-VERIFIED**: read from, or changed on, the branch copy of production, with the output committed as evidence (`evidence/live-20261006/` in the engine).
 - **UNVERIFIED**: no evidence yet on the production corpus or with real models.
 - **BLOCKED BY EXTERNAL DEPENDENCY**: cannot advance without something named in [§7](#7-exact-external-dependencies).
 
@@ -31,19 +36,19 @@
 
 | Check | Result |
 |---|---|
-| Engine repository | Branch `claude/ailegal-hussein-phase2`. Parent `901ef9f` had a green CI run. This phase is commits `c9793d0`, `5efbca1` and `47d2036`. |
-| Dastoori repository | Branch `claude/hopeful-ritchie-gip3i7` at `01b22a7`, plus this report. |
-| `DATABASE_URL` | **Absent** from this session. No `.env` file (the engine has only `.env.example`). |
-| `DATABASE_ENVIRONMENT`, `PRODUCTION_DATABASE_HOST`, `DATABASE_TRANSPORT` | Absent. |
-| `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `COHERE_API_KEY`, `VOYAGE_API_KEY` | **Absent.** Checked by name only; no value was read or printed. |
-| Network to Neon | The environment's egress proxy refuses `console.neon.tech:443` and a Neon endpoint host (`*.aws.neon.tech:443`) with HTTP 403: no allowlist rule. Direct TCP to port 5432 times out (filtered). The policy was not routed around. |
-| Network to OpenAI | The proxy refuses `api.openai.com:443`. The engine's own provider probe, sent through the proxy, reports `403 request blocked: no rule or allowlist entry allows host "api.openai.com"`. |
+| Engine repository | Branch `claude/ailegal-hussein-phase2`. Parent `901ef9f` had a green CI run. This phase is commits `c9793d0`, `5efbca1`, `47d2036` and `a1e22b0` (evidence). |
+| Dastoori repository | Branch `claude/hopeful-ritchie-gip3i7`, from `01b22a7`: this report and its updates only. |
+| `DATABASE_URL` | **Absent** at first. No `.env` file (the engine has only `.env.example`). On 2026-10-06: a connection string for the branch `phase24-verify`, kept outside the repository and never printed by any command. |
+| `DATABASE_ENVIRONMENT`, `PRODUCTION_DATABASE_HOST`, `DATABASE_TRANSPORT` | Absent at first. Set on 2026-10-06 in the environment's settings: `branch`, the production endpoint host, `neon-websocket`. |
+| `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `COHERE_API_KEY`, `VOYAGE_API_KEY` | **Absent.** Checked by name only; no value was read or printed. `OPENAI_API_KEY` is still not set. |
+| Network to Neon | The environment's egress proxy refuses `console.neon.tech:443` and a Neon endpoint host (`*.aws.neon.tech:443`) with HTTP 403: no allowlist rule. Direct TCP to port 5432 times out (filtered). The policy was not routed around. Since 2026-10-06 the policy is Custom: the branch's two hostnames (direct and pooled) are allowed; the production hosts are still refused (proxy 403, checked for both). |
+| Network to OpenAI | The proxy refuses `api.openai.com:443`. The engine's own provider probe, sent through the proxy, reports `403 request blocked: no rule or allowlist entry allows host "api.openai.com"`. Allowed since 2026-10-06: `api.openai.com` answers 401 to a request without a key. |
 | Network to Anthropic | `api.anthropic.com` is on the proxy's bypass list, but no key is set. No call was attempted. |
-| Neon from the desktop | No Neon connector is attached to this session. Computer use (operating the Neon console on your computer) is not available in this conversation. |
-| Database identity, migration version | **Not readable: there is no target.** `npm run db:identity` now prints both on any schema ([§2](#2-what-was-built-in-this-phase), A-2). This checkout's schema fingerprint is `01541b3d842852ae…` (sha256 of `db/schema.sql`). |
+| Neon from the desktop | No Neon connector is attached to this session, and it cannot operate your browser. On 2026-10-06 you created the branch and changed the environment's settings with Claude in Chrome, a separate session. |
+| Database identity, migration version | **On the branch:** PostgreSQL 18.6, no recorded schema version, 8 items the pipeline needs missing (the schema predates Phase 2.1). After the migration: fingerprint `01541b3d842852ae…` (sha256 of `db/schema.sql`), matching the checkout, nothing missing. |
 | Engine ↔ Dastoori compatibility | Unchanged: no API shape changed in this phase. Pairing still requires Dastoori `c4a522d` or later with engine `901ef9f` or later (the `law_unavailable` mode). |
 | `npm ci` | The lockfile carries the new dependencies. CI's `npm ci` passed on `5efbca1`. |
-| `npm run db:migrate` on Neon | **Not run.** There is no target, and the rule is to migrate only after confirming a branch. The migration now enforces that rule itself (A-1). |
+| `npm run db:migrate` on Neon | **Run on the branch only**, 2026-10-06, after `db:identity` confirmed the target was the branch. Not run on production. |
 
 ---
 
@@ -139,6 +144,55 @@ The probe scores on the stand-in (17/32) measure placeholder texts under hash em
 
 ---
 
+## 3a. Branch run on a copy of production (2026-10-06)
+
+**BRANCH-VERIFIED.** Evidence: `evidence/live-20261006/` in the engine (`a1e22b0`). It contains no credential (checked before the commit).
+
+**Setup.**
+- Branch `phase24-verify` of the Neon project `ai-legal`, made from production with all its data. Endpoint `ep-noisy-base-asxes3nn`.
+- The production endpoint, `ep-empty-butterfly-asmauhcv`, is in `PRODUCTION_DATABASE_HOST`. The guard refuses it, direct and pooled (checked with the real host), and the network policy refuses it too (proxy 403).
+- Transport: `neon-websocket`, through the environment's proxy.
+
+**before.**
+
+| Step | Result |
+|---|---|
+| Identity | The branch, labelled BRANCH. PostgreSQL 18.6. No recorded schema version; 8 items the pipeline needs are missing (the schema predates Phase 2.1). |
+| Snapshot | 230 sources, 7,531 chunks, all embedded. |
+| Inventory | All 19 registry laws present. 77 critical anomalies: 40 garbled texts, 26 article gaps, and 11 P0 laws with no servable text (every text was still unchecked). |
+| Migration | The branch only. Schema fingerprint `01541b3d…`, matching the checkout. All 230 sources `unchecked`. |
+| Dry run | Manifest: 21 to apply, 2 already done, 4 not in this database, 0 mismatches, 0 conflicts, 0 for review. Download lists: 0 sources matched. Titles: 6. Integrity: 174 pass, 56 quarantined. |
+
+**Review.** You reviewed the dry run and approved applying it as is, on 2026-10-06. That includes serving the Civil Code copy 172 under an unverified label.
+
+**apply.**
+
+| Step | Result |
+|---|---|
+| Manifest | 21 applied, 2 already done, 4 not in this database, 0 conflicts. |
+| Titles, numbers, years | 8 sources: the dry run's 6, plus a year read from the titles of 57 and 60 once the manifest had reclassified them. The 6 are tatweel, Arabic-Indic digits, a broken "الإ" ligature, and two law numbers read from the titles. A dry run computes each step on the unchanged database, so it could not see the extra 2. Nothing was invented. |
+| Integrity | 174 passed, 56 quarantined (54 by the check, 2 by the manifest before it). |
+| History | Ids 2 and 3: the quarantine and its reason are recorded as events. |
+| Snapshot comparison | 13 rows changed. **0 texts changed, 0 sources removed or added.** |
+| Inventory after | All 19 registry laws servable, none Gazette-verified. 66 critical anomalies remain, **all on 53 held-back texts, none on a served text**. |
+
+**Findings that differ from the earlier reports.**
+1. **All 19 registry laws are present** and servable after preparation. Evidence, Landlords & Tenants and Income Tax were "not proven present".
+2. **The Civil Code has a second copy, id 172, that passes the check.** It is served, and the corrupted id 2 is held back. 172's provenance is not recorded. Its article numbering is complete except 436, 454, 773, 881 and 1080. A lawyer should compare it with an official text.
+3. **Most laws and regulations are stored twice:** an older copy (ids 2–70), many garbled, and a newer one (ids 172–228), nearly all clean. The garbled copies are held back. Where both copies pass, both are served, so results contain duplicates.
+4. **Texts with no servable copy after preparation:**
+   - amending laws: Penal Code 10/2022 (6, 183), Civil Procedure 6/2024 (4, 181), Notary 3/2026 (194);
+   - regulations: the Ministry of Justice's administrative organisation 2/2022 (65, 212), the fund for victims of human trafficking 6/2023 (70, 224), alternatives to custodial sentences 46 (36, 228);
+   - Constitution chapters 3 and 10 (30, 32);
+   - 8 interpretation decisions (74, 79, 100, 102, 107, 124, 126, 135) and 2 Bar Association decisions (151, 158).
+5. **Some of those look like false positives.** 183 and 194 are held back on article gaps alone, and an amending law cites the article numbers of the law it amends. Chapter 3 of the Constitution is very short. A reviewer can release each one after reading it (`corpus:integrity pass`, with a recorded reason). Until then they are not served.
+6. **Provenance is recorded for 12 sources only:** 159–161 official; 170 and the 8 Bar Association decisions secondary. No source matched a download list, so the other 218 have no recorded provenance.
+7. **Four manifest entries do not apply to this database.** It has no separate entry for Labour article 138. The Real Property title (165) is already clean, with its number and year. The interpretation-decision reclassification found no match.
+8. **Two served court decisions have file names for titles:** 152 ("camscanner1") and 154 ("h2023.4564 (1)"). They need a human title.
+9. **The session's automatic safety check blocked one read-only command during the review,** a dry-run listing of the title changes. It was not worked around; the changes are in the snapshot comparison.
+
+---
+
 ## 4. Regression
 
 Run on `5efbca1`, this phase's final code. `47d2036` changes only the README and script comments.
@@ -161,35 +215,34 @@ Run on `5efbca1`, this phase's final code. `47d2036` changes only the README and
 
 ## 5. The 19 registry laws: what is established
 
-**No law is DATABASE VERIFIED. This database was never read.**
-
-The **Repository evidence** column records what the repository shows, as in the corpus-repair report §5. "Retrieved" means the law appears in a saved historical retrieval result. **That is not proof that it is in the database today** (constraint 5).
+**BRANCH-VERIFIED (2026-10-06), after preparation.** Every law is PRESENT and SERVABLE. The table is read from the branch's inventory (`evidence/live-20261006/inventory-after.json`).
 
 **Facts common to all 19 laws.**
-- **Gazette: UNVERIFIED.** No source anywhere is Gazette-verified, and an official publisher is not counted as Gazette verification (constraint 6).
-- **Lawyer review needed:** the number, year and version in force of every registry entry.
+- **Gazette: UNVERIFIED.** No source is Gazette-verified, and an official publisher is not counted as Gazette verification (constraint 6).
+- **Lawyer review needed:** the number, year and version in force of every registry entry, and every text whose provenance is not recorded.
+- "Articles" is the number of distinct article numbers in the served texts.
 
-| Law | No./year (where copied from) | Repository evidence | Will be decided by the live run |
-|---|---|---|---|
-| Constitution | — (Ministry list) | LISTED FOR INGESTION only | Present? Do its chapter files pass the integrity check? |
-| Civil Code | 43/1976 (Ministry file name) | PRESENT / RETRIEVED HISTORICALLY. **Corrupted.** The manifest quarantines id 2. | Expected PRESENT BUT QUARANTINED. A replacement is needed. |
-| Penal Code | 16/1960 (Ministry) | RETRIEVED. Id 170 is secondary. Id 3 is corrupted and the manifest quarantines it. | Is id 170 servable as secondary? Is id 3 quarantined? |
-| Civil Procedure | 24/1988 (Ministry) | RETRIEVED | State |
-| Criminal Procedure | 9/1961 (Ministry) | RETRIEVED | State |
-| Execution | 25/2007 (Ministry) | LISTED FOR INGESTION only | Present? |
-| Evidence | 30/1952 (guidance list) | **NOT PROVEN PRESENT** | Present, absent, under another title, or quarantined (`corpus:critical`) |
-| Commercial | 12/1966 (guidance) | RETRIEVED (id 159, Legislation Bureau per the record) | Provenance and integrity of id 159 |
-| Labour | 8/1996 (guidance) | RETRIEVED (id 160). Article 138 entered by hand. | Article 138 compared text against text |
-| Companies | 22/1997 (guidance) | RETRIEVED (id 161) | Provenance and integrity of id 161 |
-| Personal Status | 15/2019 (guidance; amended) | RETRIEVED | Number, year and version |
-| Courts Formation | 17/2001 (Ministry) | LISTED FOR INGESTION only | Present? |
-| Notary | 11/1952 (Ministry) | LISTED FOR INGESTION only | Present? |
-| Mediation | 12/2006 (Ministry) | LISTED FOR INGESTION only | Present? |
-| Landlords & Tenants | 11/1994 (guidance) | **NOT PROVEN PRESENT** | As for Evidence |
-| Real Property | 13/2019 (guidance only) | RETRIEVED under a damaged title. **METADATA INCOMPLETE.** | Title repaired. Number and year stay empty until official evidence. |
-| Arbitration | 31/2001 (guidance) | RETRIEVED | State |
-| Income Tax | 34/2014 (guidance) | **NOT PROVEN PRESENT** | As for Evidence |
-| Consumer Protection | 7/2017 (guidance) | RETRIEVED | State |
+| Law | Served (passed) | Held back | Articles | Provenance of the served texts | Note |
+|---|---|---|---|---|---|
+| Constitution | 8 chapter files (26–29, 31, 33–35) | chapters 3 and 10 (30, 32) | 122 | not recorded | Chapter 3 may be a false positive. |
+| Civil Code 43/1976 | 172 | 2 (corrupted) | 1,444 | not recorded | Article numbers 436, 454, 773, 881, 1080 absent. Compare with an official text. |
+| Penal Code 16/1960 | 170; 188 (amending law 2025) | 3 (old, corrupted); 6 and 183 (amending law 10/2022); 7 (old copy of the 2025 amendment) | 486 | 170 secondary; 188 not recorded | Amending law 10/2022 has no servable copy. |
+| Civil Procedure 24/1988 | 175; 20 and 182 (amending law 14/2023) | 25 (old copy); 4 and 181 (amending law 6/2024) | 225 | not recorded | Amending law 6/2024 has no servable copy. |
+| Criminal Procedure 9/1961 | 185 | 24 (old copy) | 368 | not recorded | |
+| Execution 25/2007 | 193; 187 (amending law 9/2022) | 15 (old copy); 18 (old copy of the amendment) | 119 | not recorded | |
+| Evidence 30/1952 | 166 | — | 71 | not recorded | Was "not proven present". |
+| Commercial 12/1966 | 159 | — | 479 | official (Legislation Bureau) | |
+| Labour 8/1996 | 160 | — | 142 | official (Legislation Bureau) | No separate article 138 entry in this database. |
+| Companies 22/1997 | 161 | — | 288 | official (Legislation Bureau) | |
+| Personal Status 15/2019 | 169 | — | 329 | not recorded | |
+| Courts Formation 17/2001 | 23, 179 | — | 23 | not recorded | Two copies served. |
+| Notary 11/1952 | 177 | 16 (old copy); 194 (amending law 3/2026) | 34 | not recorded | 194 is held back on article gaps alone. |
+| Mediation 12/2006 | 10, 178 | — | 14 | not recorded | Two copies served. |
+| Landlords & Tenants 11/1994 | 164 | — | 22 | not recorded | Was "not proven present". |
+| Real Property 13/2019 | 165 | — | 224 | not recorded | Title already clean, with number and year. |
+| Arbitration 31/2001 | 163 | — | 56 | not recorded | |
+| Income Tax 34/2014 | 167 | — | 81 | not recorded | Was "not proven present". |
+| Consumer Protection 7/2017 | 168, 171 | — | 27 | not recorded | Two copies served. |
 
 ---
 
@@ -204,48 +257,46 @@ The **Repository evidence** column records what the repository shows, as in the 
 - **No reconstruction.** Nothing reconstructs, guesses, or has a model rewrite a corrupted text (constraints 3 and 4). The only remedy is a clean official text, ingested and then linked with `corpus:integrity replace`.
 - **Nothing is deleted.** Quarantine and replacement keep the row, the text and the event history (constraint 11).
 
-### Still to be read from the database
+### Read on the branch (2026-10-06)
 
-Run `corpus:critical` and `corpus:inventory` on the branch. **BLOCKED BY EXTERNAL DEPENDENCY.**
+**BRANCH-VERIFIED.**
 
-- **Civil Code.**
-  - Is id 2 still the Civil Code, and what is its corruption ratio?
-  - Is there a clean text, or an amending act?
-  - Do any of the routes listed in §2 reach it?
-- **Penal Code.**
-  - The state and provenance of ids 3 and 170.
-  - Does a historical question reach id 3?
-- **Ids 159, 160, 161.** Their provenance as stored.
-- **Labour article 138.** Is source 200 the same text as article 138 of id 160 (identical, contained, or different)? This is not guessed: the command compares the stored texts.
-- **Real Property.**
-  - The stored title, number, year and version.
-  - The number and year are added only from official evidence.
-- **Evidence, Landlords & Tenants, Income Tax.**
-  - Present, absent, under a different title, or quarantined: in any status, and by a loose name match too.
+- **Civil Code.** Id 2 is the Civil Code 43/1976. It is held back on the manifest's corruption evidence and on the check's own: 88% of article numbers absent. Another copy, id 172, passed and is served (§3a, finding 2). No amending act of the Civil Code is stored under a title that names it.
+- **Penal Code.** Id 3 is held back: 14.4% orphaned letters, 75% unreadable chunks, 83% of article numbers absent. Id 170 passed, with its provenance recorded as secondary.
+- **Ids 159, 160, 161.** Passed. Provenance recorded as official (Legislation Bureau), from the manifest.
+- **Labour article 138.** The database has no separate entry for it: the manifest's id and title matched nothing. There is nothing to compare.
+- **Real Property (165).** Title "قانون الملكية العقارية رقم 13 لسنة 2019", passed. The damaged title described in the corpus-repair report is not in this database.
+- **Evidence (166), Landlords & Tenants (164), Income Tax (167).** Present, and passed.
+
+### Still to run on the branch
+
+`corpus:critical`, in the `live` stage. **BLOCKED BY EXTERNAL DEPENDENCY** (`OPENAI_API_KEY`).
+- Does any route reach a held-back text: a search with the Civil Code's own stored words, its chunk ids, a citation of it, a historical Penal Code question?
+- The source-class audit, with the reclassifications applied.
 
 ---
 
 ## 7. Exact external dependencies
 
-**1. A Neon branch connection string, with write access.**
+**1. A Neon branch connection string, with write access.** **Done on 2026-10-06:** branch `phase24-verify`. The string reached this session through the chat, so its password should be reset in Neon once the run is over.
 - `db:migrate` and `prepare --apply` write, so the first run is on a **branch** (a copy) of production, never on production itself.
 - Set it as the environment variable `DATABASE_URL` in this cloud environment's settings (the environment menu in the session's title bar, then **Edit**), together with:
   - `DATABASE_ENVIRONMENT=branch`;
   - `PRODUCTION_DATABASE_HOST=<the production endpoint host>`, so that production is refused even if mislabelled;
   - `DATABASE_TRANSPORT=neon-websocket` when the network filters port 5432, as this cloud environment does.
 
-**2. Model credentials, set the same way.**
-- `OPENAI_API_KEY`, for embeddings and for chat with `CHAT_PROVIDER=openai`.
+**2. Model credentials, set the same way.** **Still needed.**
+- `OPENAI_API_KEY`, for embeddings and for chat with `CHAT_PROVIDER=openai` (the default).
 - `ANTHROPIC_API_KEY` only if `CHAT_PROVIDER=anthropic`.
 - A reranker key only if `RERANK_PROVIDER` is set.
 - **Never pasted into a chat.**
 
-**3. Network access from wherever the commands run.**
+**3. Network access from wherever the commands run.** **Done on 2026-10-06** for this environment: Custom, with the branch's two hostnames and `api.openai.com`.
 - In this cloud environment, the network policy must allow:
   - the Neon endpoint host(s), or `*.neon.tech`;
   - `api.openai.com`.
 - Where: the same settings, **Network access**. Choose a broader level, or **Custom** with these hosts under Allowed domains, keeping the default package-manager list. Steps: <https://code.claude.com/docs/en/cloud-environments#network-access>.
-- Environment changes apply to a **new session**.
+- Environment changes are documented to apply to a **new session**. In this session, the 2026-10-06 changes took effect without a restart.
 - Alternatively, run the commands on your own computer (for example a local Claude Code session), where this proxy does not apply.
 
 **4. Beyond the live run.**
@@ -253,7 +304,7 @@ Run `corpus:critical` and `corpus:inventory` on the branch. **BLOCKED BY EXTERNA
 - Gazette access for verification.
 - A qualified Jordanian lawyer for the reviews in the corpus-repair report §8.
 
-**Not available in this conversation:** computer use, which would be needed to operate the Neon console on your desktop, and a Neon connector.
+**Not available in this conversation:** computer use and a Neon connector. The Neon and settings steps were done by you, with Claude in Chrome.
 
 ---
 
@@ -272,6 +323,8 @@ bash deploy/live-corpus-sequence.sh apply             # prepare --apply, history
 bash deploy/live-corpus-sequence.sh live              # preflight --probe → corpus:critical → eval:probes → eval:probes --answers → eval:live
 ```
 
+**Done on the branch:** `before` and `apply`, 2026-10-06, with `OUT=evidence/live-20261006`. **Next:** `live`, once `OPENAI_API_KEY` is set.
+
 **Every output stays in `$OUT` as evidence.** That includes the before and after inventories, snapshots and their diff, the critical-law table, the probe results labelled LIVE with provider, model and corpus identity, and the live evaluation.
 
 **Then production.**
@@ -284,11 +337,9 @@ bash deploy/live-corpus-sequence.sh live              # preflight --probe → co
 
 All of the following:
 
-- The sequence above has run on a branch, and its dry run was reviewed.
-- Its outputs are committed as evidence.
-- The preflight passes, and the probes and `eval:live` report LIVE results with no hard-check violation.
-- Production has been migrated and prepared the same way.
-- The Civil Code is replaced, or the launch is consciously held for it.
-- A lawyer has signed off on the corpus-repair report §8.
-
-**None of this has happened yet.**
+- The sequence above has run on a branch, and its dry run was reviewed. **Partly done:** `before` and `apply` ran, and the dry run was reviewed and approved. `live` has not run.
+- Its outputs are committed as evidence. **Partly done:** `before` and `apply` (`a1e22b0`).
+- The preflight passes, and the probes and `eval:live` report LIVE results with no hard-check violation. **Not done.**
+- Production has been migrated and prepared the same way. **Not done.**
+- The Civil Code is replaced, or the launch is consciously held for it. **Changed:** a copy that passes the check (172) is served; it still needs a lawyer's comparison with an official text.
+- A lawyer has signed off on the corpus-repair report §8. **Not done.**

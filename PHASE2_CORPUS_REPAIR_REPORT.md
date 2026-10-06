@@ -6,6 +6,8 @@
 - Engine `ailegal_hussein`: `901ef9f`, branch `claude/ailegal-hussein-phase2`. CI `ai-engine` run #13: green.
 - Dastoori: `c4a522d` (code), plus the commit carrying this report. Branch `claude/hopeful-ritchie-gip3i7`.
 
+**Update, Phase 2.4.** The live run is still blocked. The commands in [§10](#10-exact-commands-to-finish-live-verification) are superseded by `deploy/live-corpus-sequence.sh`. The migration, ingest and corpus-repair commands now refuse to write to a remote database unless `DATABASE_ENVIRONMENT` is declared. See `PHASE2_4_LIVE_VERIFICATION_REPORT.md`.
+
 **This phase is NOT complete.** What follows is everything that could be fixed from the repository without the production corpus, and the exact work still owed against it.
 
 The production database (Neon) and model credentials were not available in this environment. Nothing below was measured on the real corpus.

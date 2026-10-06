@@ -278,8 +278,16 @@ export async function hybridSearch(
   // For a conceptual question the pipeline adds a notice instead — a
   // mis-parsed name must never block an answerable question.
   const requestedLawMissing = lawNotFound && intent.articleNumbers.length > 0 ? lawRef!.display : null;
-  // Not absent but held back: the law is in the database, its text is not servable.
-  const requestedLawHeldBack = lawNotFound && lawRef ? await heldBackLaw(lawRef) : null;
+  // Not absent but held back: the law is in the database, its text is not
+  // servable — or the law is served, but the version the question cites by
+  // number/year (an amending act) is held back (law-reference.ts heldBackLaw).
+  const requestedLawHeldBack = !lawRef
+    ? null
+    : lawNotFound
+      ? await heldBackLaw(lawRef)
+      : resolved?.citationMismatch
+        ? await heldBackLaw(lawRef, { citedVersionOnly: true })
+        : null;
 
   // Phase 2.1 — LAW-SCOPED RETRIEVAL. A question that names a law that is in
   // the corpus is answered from that law: the ranked arms (vector, keyword,

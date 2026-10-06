@@ -364,11 +364,19 @@ async function sourceTitles(): Promise<SourceTitle[]> {
  * because its text has not passed the integrity checks (unchecked,
  * quarantined, or replaced with no servable replacement). The answer must say
  * so — "not in the corpus" would be untrue, and quoting it is not allowed.
+ *
+ * `citedVersionOnly` (Phase 2.4): the law itself is served, but the question
+ * cites a number or year none of its servable texts carries. Only a held-back
+ * text carrying them counts: an amending act whose copies are all held back
+ * ("القانون المعدل لقانون العقوبات رقم 10 لسنة 2022", probe p14 on
+ * 2026-10-06, answered "no evidence"). A held-back old copy of the served law
+ * does not, or every mis-cited question would be told it is held back.
  */
-export async function heldBackLaw(ref: LawReference): Promise<{ display: string; statuses: string[] } | null> {
+export async function heldBackLaw(ref: LawReference, opts: { citedVersionOnly?: boolean } = {}): Promise<{ display: string; statuses: string[] } | null> {
   const { heldBack } = await loadTitles();
   const r = resolveAgainstTitles(ref, heldBack);
   if (r.sourceIds.length === 0) return null;
+  if (opts.citedVersionOnly && !r.pinned) return null;
   const statuses = [...new Set(heldBack.filter((t) => r.sourceIds.includes(t.id)).map((t) => t.integrity))].sort();
   return { display: ref.display, statuses };
 }

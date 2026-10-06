@@ -238,6 +238,45 @@ test("the Civil Code case: quarantined from the manifest, kept as evidence, and 
   assert.equal(await integrityOf(id), "quarantined");
 });
 
+test("a held-back amending act cited by its number and year is 'unavailable', while the law it amends stays served (p14, 2026-10-06)", async () => {
+  const base = await ingest(
+    "قانون الحدائق التجريبي رقم 51 لسنة 2099",
+    "المادة 1: يسمى هذا القانون قانون الحدائق التجريبي لسنة 2099 ويعمل به من تاريخ نشره في الجريدة الرسمية.\n" +
+      "المادة 2: تتولى البلدية صيانة الحدائق العامة وري الأشجار فيها مرتين في الأسبوع على الأقل خلال فصل الصيف.\n" +
+      "المادة 3: يعاقب كل من قطع شجرة في حديقة عامة دون ترخيص بغرامة لا تقل عن مئة دينار ولا تزيد على خمسمئة دينار.\n" +
+      "المادة 4: يصدر الوزير التعليمات اللازمة لتنظيم ساعات فتح الحدائق العامة وشروط إقامة الأنشطة فيها.",
+    { lawNumber: "51" }
+  );
+  const amending = await ingest(
+    "قانون معدل لقانون الحدائق التجريبي رقم 3 لسنة 2100",
+    "المادة 1: يسمى هذا القانون قانون معدل لقانون الحدائق التجريبي لسنة 2100 ويقرأ مع القانون رقم 51 لسنة 2099 المشار إليه فيما يلي بالقانون الأصلي.\n" +
+      "المادة 2: تعدل المادة 3 من القانون الأصلي بإلغاء عبارة مئة دينار الواردة فيها والاستعاضة عنها بعبارة مئتي دينار.\n" +
+      "المادة 3: يضاف إلى القانون الأصلي نص يلزم البلدية بنشر جدول ري الأشجار على موقعها الإلكتروني.",
+    { lawNumber: "3" }
+  );
+  // Both copies of the real 10/2022 amending act were held back on article gaps.
+  if ((await integrityOf(amending)) !== "quarantined") await setIntegrity(amending, "quarantined", { actor: "integration-test", reason: "article gaps (test)" });
+  refresh();
+  const ask = (question: string) => runChatPipeline({ question }, A());
+
+  // Cited the way p14 cited it: the base law's name with the amending act's number and year.
+  const r = await ask("ما الذي عدّله القانون المعدل لقانون الحدائق التجريبي رقم 3 لسنة 2100؟");
+  assert.equal(r.mode, "law_unavailable", r.answer);
+  assert.match(r.answer, /محجوب/);
+  assert.deepEqual(r.sources, [], "nothing of it is cited, and no other law stands in for it");
+  // Named directly (this path already answered "unavailable").
+  assert.equal((await ask("ما نص المادة 2 من قانون معدل لقانون الحدائق التجريبي رقم 3 لسنة 2100؟")).mode, "law_unavailable");
+
+  // The base law is still served under its own number and year.
+  const served = await hybridSearch("ما عقوبة قطع شجرة في قانون الحدائق التجريبي رقم 51 لسنة 2099؟");
+  assert.equal(served.requestedLawHeldBack ?? null, null);
+  assert.ok(fromSource(served.chunks, base), "answered from the base law");
+  // A number and year that no stored version carries is not "held back": unchanged.
+  const miscited = await hybridSearch("ما أحكام قانون الحدائق التجريبي رقم 9 لسنة 2101؟");
+  assert.equal(miscited.requestedLawHeldBack ?? null, null);
+  assert.equal(fromSource(miscited.chunks, amending), false);
+});
+
 test("Gazette verification: needs the reference and a passed text, never changes provenance; the database refuses a claim without evidence", async () => {
   const id = await ingest("قانون تنظيم الأسواق التجريبي رقم 46 لسنة 2099", BEES.replace(/تربية النحل/g, "تنظيم الأسواق"), { lawNumber: "46", provenance: "secondary" });
   const change = { actor: "integration-test", reason: "compared with the Gazette (test)" };

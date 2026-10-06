@@ -159,6 +159,34 @@ describe('askLegalRag — signed request, validated JSON response', () => {
     }
   })
 
+  it.each([
+    ['nothing listening', Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:3001'), { code: 'ECONNREFUSED' }), 'ECONNREFUSED: nothing is listening there'],
+    ['a Docker-only host name', Object.assign(new Error('getaddrinfo ENOTFOUND legal_app'), { code: 'ENOTFOUND' }), 'ENOTFOUND: the host name does not resolve'],
+    ['IPv4 and IPv6 both refused', new AggregateError([Object.assign(new Error('connect ECONNREFUSED ::1:3001'), { code: 'ECONNREFUSED' })]), 'ECONNREFUSED'],
+  ])('an engine that cannot be reached (%s) is "unreachable" for the user and explained in the server log, without the key', async (_label, cause, logged) => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('fetch failed', { cause })))
+    const logSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { askLegalRag, LegalRagError } = await import('./legal-rag-client')
+    await expect(askLegalRag('س', undefined, ACTOR)).rejects.toSatisfy((e: unknown) => e instanceof LegalRagError && e.status === 502 && e.code === 'unreachable')
+    const line = logSpy.mock.calls.map((c) => c.join(' ')).join('\n')
+    expect(line).toContain('/api/chat: cannot reach ailegal_hussein at http://localhost:3001')
+    expect(line).toContain(logged)
+    expect(line).not.toContain(KEY)
+    logSpy.mockRestore()
+  })
+
+  it('a URL that does not parse is named as the problem, and its value is not echoed', async () => {
+    vi.stubEnv('AI_LEGAL_SERVICE_URL', 'localhost:4000')
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to parse URL from localhost:4000/api/chat')))
+    const logSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { askLegalRag, LegalRagError } = await import('./legal-rag-client')
+    await expect(askLegalRag('س', undefined, ACTOR)).rejects.toSatisfy((e: unknown) => e instanceof LegalRagError && e.code === 'unreachable')
+    const line = logSpy.mock.calls.map((c) => c.join(' ')).join('\n')
+    expect(line).toContain('AI_LEGAL_SERVICE_URL is not a valid URL')
+    expect(line).not.toContain('localhost:4000/api/chat')
+    logSpy.mockRestore()
+  })
+
   it('an upstream that sends headers and then stalls ends in a 504 within the deadline', async () => {
     vi.stubEnv('AI_LEGAL_SERVICE_TIMEOUT_MS', '200')
     vi.stubGlobal(

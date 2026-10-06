@@ -94,6 +94,41 @@ function upstreamMessage(value: unknown, fallback: string): string {
   return typeof value === 'string' && value.trim() && value.length <= MAX_UPSTREAM_MESSAGE ? value : fallback
 }
 
+/** What the most common connection failures mean, for the server log. */
+const CAUSE_HINTS: Record<string, string> = {
+  ECONNREFUSED: 'nothing is listening there; is ailegal_hussein running (run-dev.bat starts it on port 4000)?',
+  ENOTFOUND: 'the host name does not resolve; "legal_app" exists only inside Docker',
+  EAI_AGAIN: 'the host name could not be resolved right now',
+  ECONNRESET: 'the connection was reset',
+  ETIMEDOUT: 'the connection timed out',
+  EHOSTUNREACH: 'the host is unreachable',
+}
+
+function originOf(url: string): string {
+  try {
+    const origin = new URL(url).origin
+    return origin === 'null' ? '(an invalid URL)' : origin // "localhost:4000" parses with "localhost:" as its scheme
+  } catch {
+    return '(an invalid URL)'
+  }
+}
+
+/**
+ * Why fetch rejected. Node's fetch throws TypeError('fetch failed') and puts
+ * the socket error in `cause` (an AggregateError when both IPv4 and IPv6 were
+ * tried). A URL that does not parse is reported as such, never echoed: the
+ * message would repeat the whole value.
+ */
+function networkCause(err: unknown): string {
+  const cause = (err as { cause?: unknown } | null)?.cause
+  const inner = cause instanceof AggregateError && cause.errors.length ? cause.errors[0] : cause
+  const code = (inner as { code?: unknown } | null)?.code
+  if (typeof code === 'string') return CAUSE_HINTS[code] ? `${code}: ${CAUSE_HINTS[code]}` : code
+  if (err instanceof TypeError && /URL/i.test(err.message)) return 'AI_LEGAL_SERVICE_URL is not a valid URL'
+  if (inner instanceof Error && !inner.message.includes('://')) return inner.message.slice(0, 120)
+  return err instanceof Error ? err.name : 'unknown error'
+}
+
 /**
  * Shared plumbing for every ailegal_hussein call: signing, upstream status
  * mapping, and ONE deadline covering the whole exchange — connect, headers
@@ -127,10 +162,13 @@ async function callLegalService<T>(
         body,
         signal: controller.signal,
       })
-    } catch {
-      throw timedOut
-        ? new LegalRagError('انتهت مهلة الاتصال بخدمة الذكاء الاصطناعي القانوني', 504, 'timeout')
-        : new LegalRagError('تعذّر الاتصال بخدمة الذكاء الاصطناعي القانوني', 502, 'unreachable')
+    } catch (err) {
+      if (timedOut) throw new LegalRagError('انتهت مهلة الاتصال بخدمة الذكاء الاصطناعي القانوني', 504, 'timeout')
+      // The user sees "unreachable"; the operator needs to know why (nothing
+      // listening, a host that does not resolve, a TLS failure) and where
+      // Dostoori was trying to go. Origin only: never the key, path or query.
+      console.error(`[legal-rag] ${path}: cannot reach ailegal_hussein at ${originOf(baseUrl)} — ${networkCause(err)}`)
+      throw new LegalRagError('تعذّر الاتصال بخدمة الذكاء الاصطناعي القانوني', 502, 'unreachable')
     }
 
     if (res.status === 401) throw new LegalRagError('تعذّر التحقق من هوية الخدمة لدى خدمة الذكاء الاصطناعي القانوني', 502, 'auth_rejected')

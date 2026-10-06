@@ -283,7 +283,7 @@ Adversarial outputs: 18 tried, 0 survived.
 
 ## 3c. After the live run: fixes and corrections
 
-**FIXED and TESTED** unless the row says otherwise. Engine CI: green on `2bb1559` (run 18) and `978342d` (run 19); the run on `85b975c` (run 20) was still in progress when this was written. The measurements of §3b are unchanged: they are the first live run's record. The fixes are measured by the next run.
+**FIXED and TESTED** unless the row says otherwise. Engine CI: green on `2bb1559` (run 18), `978342d` (run 19) and `85b975c` (run 20). The measurements of §3b are unchanged: they are the first live run's record. The fixes are measured by the next run.
 
 | # | Found by the live run | What was done | Evidence |
 |---|---|---|---|

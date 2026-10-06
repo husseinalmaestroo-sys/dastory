@@ -3,8 +3,8 @@
 **Date:** 2026-10-05 to 2026-10-06.
 
 **Commits.**
-- Engine `ailegal_hussein`: `c9793d0` (the pre-registered probes, committed alone and before any live run), then `5efbca1` (this phase's tooling), then `47d2036` (README and script comments only: when the guard refuses), then `a1e22b0` and `f83fe4f` (the evidence of the branch run, §3a and §3b). Branch `claude/ailegal-hussein-phase2`, parent `901ef9f`.
-- Dastoori: `d7634c8` (this report), then the commit carrying the branch-run update; branch `claude/hopeful-ritchie-gip3i7` (parent `01b22a7`). No Dastoori code changed in this phase.
+- Engine `ailegal_hussein`: `c9793d0` (the pre-registered probes, committed alone and before any live run), then `5efbca1` (this phase's tooling), then `47d2036` (README and script comments only: when the guard refuses), then `a1e22b0` and `f83fe4f` (the evidence of the branch run, §3a and §3b), then `2bb1559`, `978342d` and `85b975c` (the fixes, §3c). Branch `claude/ailegal-hussein-phase2`, parent `901ef9f`.
+- Dastoori: `d7634c8` (this report), its updates, and `2e7ae93` (why the assistant cannot reach the engine, §3c); branch `claude/hopeful-ritchie-gip3i7` (parent `01b22a7`). No Dastoori code changed in this phase.
 
 ## Verdict
 
@@ -19,6 +19,7 @@
 - Phases D to G ran on the same branch with real models ([§3b](#3b-live-measurements-with-real-models-2026-10-06)):
   - **The corpus holds.** The preflight passes; every critical-law check passes; the pre-registered probes pass 30 of 32, with no hard-check violation; every security gate passes.
   - **The answers do not yet meet their gates.** 3 of 101 article mentions fail the fabricated-citation test (a hard gate); citation support is 89.5% (gate 95%); 8 of 18 answerable questions get a grounded answer (gate 80%).
+  - Analysis after the run ([§3c](#3c-after-the-live-run-fixes-and-corrections)): the one fabricated citation that could be inspected (p25) was a measurement artifact, and the 3 were measured the same way. The measurement is corrected. The gates stand until a re-run.
   - Two retrieval gates of the live suite cannot be measured in live mode and are scored as failures: a defect in the gate setup.
 - Production has not been migrated or prepared.
 - Everything was first built, tested, and rehearsed end to end on a production-shaped stand-in database ([§3](#3-rehearsal-on-a-production-shaped-stand-in)), and the live work is one reviewed command sequence ([§8](#8-exact-commands)).
@@ -230,7 +231,7 @@ The probe scores on the stand-in (17/32) measure placeholder texts under hash em
 
 - **p14** asks what the Penal Code amending law 10/2022 changed. Both copies of that law are held back (183 on article gaps alone), so the question's number and year match no servable text, and the pipeline stopped at `no_evidence`. Safe, but `law_unavailable` would be the right answer.
 - **p24** asks for interpretation decision no. 30. Retrieval found 8 interpretation decisions, not number 30 (105). The 80 interpretation decisions are typed `court_decision` with no recorded number. "30" is only in a title made from a file name, and it is not established that it is the decision's own number.
-- **p25** asks about labour case law on arbitrary dismissal. Its sources-only answer names article 14. Article 14 is not among the retrieved articles (28, 49, 54, 15, 25, 26, 47 of 160), and none of their texts mentions it. The serve-time guard (`src/lib/ai/guard.ts`) did not remove it; why is not yet established.
+- **p25** asks about labour case law on arbitrary dismissal. Its sources-only answer names article 14, which is not among the retrieved articles (28, 49, 54, 15, 25, 26, 47 of 160). **Corrected after the run: a measurement artifact** ([§3c](#3c-after-the-live-run-fixes-and-corrections)). A sources-only answer quotes its passages in full and the model writes none of it; the scorer read the pipeline's passages only by their 400-character excerpts.
 
 **Live evaluation suite (`eval:live`).**
 - 79 cases: 32 answered by the real model, 8 security cases, 6 documents.
@@ -257,7 +258,7 @@ The probe scores on the stand-in (17/32) measure placeholder texts under hash em
 Adversarial outputs: 18 tried, 0 survived.
 
 **What the failures mean.**
-- **Fabricated citations (a hard gate).** An article number in an answer fails this test when it is neither the article of a cited source nor written in that source's first 400 characters. 3 of 101 mentions failed it. The run did not keep the answers, so the 3 cannot be told apart: some may be cross-references further into a source's text, which the serve-time guard rightly allows. The probe run shows one real instance (p25).
+- **Fabricated citations (a hard gate).** An article number in an answer fails this test when it is neither the article of a cited source nor written in that source's first 400 characters. 3 of 101 mentions failed it. The run did not keep the answers, so the 3 cannot be told apart: some may be cross-references further into a source's text, which the serve-time guard rightly allows. 6 of the 32 answers were sources-only, whose text is quoted from the database, and p25 shows that such a cross-reference fails this test (§3c).
 - **Grounded answer rate.** Of the 18 answerable questions:
   - 8 got a partly grounded answer;
   - 6 got sources only (leases, annual leave, damage to public property);
@@ -276,14 +277,41 @@ Adversarial outputs: 18 tried, 0 survived.
 
 **Cost** (estimated from measured tokens): about 5,451 tokens in and 168 out per query, about $0.0009 per query with `gpt-4o-mini`. Retries add 28%.
 
-**Defects the live run found** (not fixed in this phase).
-1. The two retrieval gates of the live suite cannot be measured, and count as failures.
-2. The live suite keeps neither the answers nor the article numbers it failed, so a gate failure cannot be inspected.
-3. The suite's fabricated-citation test reads a source's first 400 characters, while the serve-time guard reads the whole passage; the two definitions should agree.
-4. The serve-time guard let an article number through that no retrieved passage holds (p25).
-5. A held-back amending law is answered `no_evidence`, not `law_unavailable` (p14).
-6. Interpretation decisions are typed `court_decision`, with no recorded number, and the class audit does not flag them (p24).
-7. `eval:live` writes the suite's results to `eval/results/`, not to `$OUT`.
+**Defects the live run found.** All seven were dealt with after the run: see §3c.
+
+---
+
+## 3c. After the live run: fixes and corrections
+
+**FIXED and TESTED** unless the row says otherwise. Engine CI: green on `2bb1559` (run 18) and `978342d` (run 19); the run on `85b975c` (run 20) was still in progress when this was written. The measurements of §3b are unchanged: they are the first live run's record. The fixes are measured by the next run.
+
+| # | Found by the live run | What was done | Evidence |
+|---|---|---|---|
+| 1 | The live suite's two retrieval gates fail on a null in every live run. | A gate with nothing to measure in a mode is reported NOT MEASURED, with the reason, and binds nothing. Any other missing value still fails. (`2bb1559`) | `tests/unit/gate.test.ts` |
+| 2 | A failed article check could not be inspected. | The answer and the failing numbers are kept in the results, in the suite and in the probes. (`2bb1559`) | — |
+| 3 | The fabricated-citation tests read a passage's first 400 characters; the serve-time guard reads the whole passage. | Both tests read whole passages, as the guard does. (`2bb1559`) | `tests/unit/probes.test.ts` (`backedArticles`) |
+| 4 | p25: an article "no retrieved passage holds". | **Not a fault of the answer or the guard.** A sources-only answer is built from database fields: law name and number, article number, the passage verbatim. The model writes none of it, so it cannot invent an article. The probe scorer read the pipeline's own passages only by their excerpts. By construction, then, article 14 can only come from the text of one of those passages, beyond the excerpt the scorer read. Fixed by row 3. | `src/lib/ai/prompts.ts` `buildDirectSourceAnswer`; the test of row 3 |
+| 5 | p14: a held-back amending act cited by its number and year was answered `no_evidence`. | Answered `law_unavailable`. On a citation mismatch, retrieval also looks for a held-back text carrying the cited number and year. Only a text that matches name and citation counts, so a mis-cited question is not told the law is held back. (`978342d`) | Integration test: fails without the change with `no_evidence`, exactly as p14 did. |
+| 6 | p24: the 80 interpretation decisions are typed `court_decision`, and the class audit passed them. | Classed as interpretation decisions by their unambiguous title; the audit flags them; the manifest entry now matches `court_decision` too (bounded, 200). A real court decision keeps its class. (`85b975c`) | `tests/unit/corpus-repair.test.ts` |
+| 7 | `eval:live` wrote the suite's results outside `$OUT`. | The suite and the benchmark also write into `EVAL_RESULTS_DIR`. (`2bb1559`) | — |
+
+**Still open, and why.**
+- **p24's decision number.** The "30" in source 105's title came from a file name, and it is not established that it is the decision's own number. Nothing records it as one, and nothing will until official evidence does.
+- **p14 against its gold.** The probe's pre-registered expectation is unchanged, so p14 still counts as a miss against it. The behaviour is now the designed one.
+- **Grounded answer rate (44%) and citation support (89.5%).** These are real quality gaps with `gpt-4o-mini`. The guards remove unsupported claims and the answers fall back to sources. To be measured again, and compared with a stronger chat model, before any change.
+
+**Regression on the final code** (local; CI the same):
+- Typecheck: 0 errors.
+- Unit: 129/129 (5 new).
+- Integration: 72/72 (1 new).
+- Offline evaluation: every gate, metric and all 79 cases identical to the committed 2026-10-05 run.
+
+**Before re-measuring on the branch.**
+- Rotate the two credentials that were pasted into the chat.
+- Run `prepare` again, dry run first. It will list the 80 reclassifications of row 6, and the preflight blocks until they are applied.
+- Then run the `live` stage again.
+
+**Dastoori (`2e7ae93`).** When the engine cannot be reached, the user still sees "تعذّر الاتصال بخدمة الذكاء الاصطناعي القانوني". The server log now says why: nothing listening (the engine not started; `run-dev.bat` serves it on port 4000), a host that does not resolve ("legal_app" exists only inside Docker), or an invalid URL. The log gives the origin only, never the key. Tested; 218/218 unit tests; CI green.
 
 ---
 

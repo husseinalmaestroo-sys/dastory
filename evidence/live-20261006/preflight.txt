@@ -1,0 +1,24 @@
+(node:725) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+✓ chat_provider        CHAT_PROVIDER=openai
+✓ chat_key             OPENAI_API_KEY is set
+✓ embedding_provider   EMBEDDING_PROVIDER=openai
+✓ embedding_key        OPENAI_API_KEY is set
+✓ synthetic_corpus_off evaluation fixtures are not served
+✓ database             reachable
+✓ schema               migrated
+✓ vector_width         EMBEDDING_DIM 1536, vector column 1536
+✓ real_corpus          174 non-synthetic servable source(s)
+✓ integrity_checked    every non-synthetic source has been through the integrity check (56 held back: quarantined or replaced)
+✓ known_defects        no launch-blocking defect of the manifest can be served
+✓ repairs_applied      every applicable manifest repair is applied
+✓ repairs_review       no manifest entry needs a reviewer
+✓ no_test_vectors      no test-model vectors
+✓ embedding_model      6018 of 6018 servable chunks (100%) carry a text-embedding-3-small vector; required ≥ 90%
+✓ p0_any               11 of 11 P0 laws servable
+✓ p0_all               every P0 law is servable
+! authoritative        no Gazette-verified source: every grounded answer will say its texts were not compared with the Official Gazette (an official provenance is not a Gazette verification)
+! anomalies            66 critical / 463 warning inventory anomalies (npm run corpus:inventory)
+✓ probe_embedding      answered in 2282 ms, width 1536
+✓ probe_chat           gpt-4o-mini answered in 1189 ms
+Preflight: PASS — a live run would measure real models over the real corpus.

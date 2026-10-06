@@ -1,0 +1,3370 @@
+{
+ "label": "LIVE",
+ "live": true,
+ "ranAt": "2026-10-06T16:32:15.981Z",
+ "commit": "a1e22b00cf3fe9ca53af92222cbfb4b9530b3661",
+ "probeFile": {
+  "path": "benchmark/live-probes-2.4.json",
+  "sha256": "c5eb0c0f238c8d68b8bde004d442ea6618f794d08a51c3428c8fa0fc1d56a9b4",
+  "changes": 1
+ },
+ "target": {
+  "host": "ep-noisy-base-asxes3nn.c-4.eu-central-1.aws.neon.tech",
+  "port": "5432",
+  "database": "neondb",
+  "neonEndpoint": "ep-noisy-base-asxes3nn",
+  "environment": "branch",
+  "basis": "DATABASE_ENVIRONMENT"
+ },
+ "transport": "neon-websocket",
+ "corpusVersion": "c-f0fdea7d0a58",
+ "promptVersion": "p2-c5ad1854b44e",
+ "embedding": {
+  "provider": "openai",
+  "model": "text-embedding-3-small",
+  "dim": 1536
+ },
+ "chat": null,
+ "rerank": {
+  "provider": "none",
+  "model": null
+ },
+ "retrieval": {
+  "topK": 8,
+  "scoredAtK": 8,
+  "llmQueryExpansion": false
+ },
+ "preflight": [
+  {
+   "id": "chat_provider",
+   "blocking": false,
+   "ok": true,
+   "detail": "CHAT_PROVIDER=openai"
+  },
+  {
+   "id": "chat_key",
+   "blocking": false,
+   "ok": true,
+   "detail": "OPENAI_API_KEY is set"
+  },
+  {
+   "id": "embedding_provider",
+   "blocking": true,
+   "ok": true,
+   "detail": "EMBEDDING_PROVIDER=openai"
+  },
+  {
+   "id": "embedding_key",
+   "blocking": true,
+   "ok": true,
+   "detail": "OPENAI_API_KEY is set"
+  },
+  {
+   "id": "synthetic_corpus_off",
+   "blocking": true,
+   "ok": true,
+   "detail": "evaluation fixtures are not served"
+  },
+  {
+   "id": "database",
+   "blocking": true,
+   "ok": true,
+   "detail": "reachable"
+  },
+  {
+   "id": "schema",
+   "blocking": true,
+   "ok": true,
+   "detail": "migrated"
+  },
+  {
+   "id": "vector_width",
+   "blocking": true,
+   "ok": true,
+   "detail": "EMBEDDING_DIM 1536, vector column 1536"
+  },
+  {
+   "id": "real_corpus",
+   "blocking": true,
+   "ok": true,
+   "detail": "174 non-synthetic servable source(s)"
+  },
+  {
+   "id": "integrity_checked",
+   "blocking": true,
+   "ok": true,
+   "detail": "every non-synthetic source has been through the integrity check (56 held back: quarantined or replaced)"
+  },
+  {
+   "id": "known_defects",
+   "blocking": true,
+   "ok": true,
+   "detail": "no launch-blocking defect of the manifest can be served"
+  },
+  {
+   "id": "repairs_applied",
+   "blocking": true,
+   "ok": true,
+   "detail": "every applicable manifest repair is applied"
+  },
+  {
+   "id": "repairs_review",
+   "blocking": false,
+   "ok": true,
+   "detail": "no manifest entry needs a reviewer"
+  },
+  {
+   "id": "no_test_vectors",
+   "blocking": true,
+   "ok": true,
+   "detail": "no test-model vectors"
+  },
+  {
+   "id": "embedding_model",
+   "blocking": true,
+   "ok": true,
+   "detail": "6018 of 6018 servable chunks (100%) carry a text-embedding-3-small vector; required ≥ 90%"
+  },
+  {
+   "id": "p0_any",
+   "blocking": true,
+   "ok": true,
+   "detail": "11 of 11 P0 laws servable"
+  },
+  {
+   "id": "p0_all",
+   "blocking": false,
+   "ok": true,
+   "detail": "every P0 law is servable"
+  },
+  {
+   "id": "authoritative",
+   "blocking": false,
+   "ok": false,
+   "detail": "no Gazette-verified source: every grounded answer will say its texts were not compared with the Official Gazette (an official provenance is not a Gazette verification)"
+  },
+  {
+   "id": "anomalies",
+   "blocking": false,
+   "ok": false,
+   "detail": "66 critical / 463 warning inventory anomalies (npm run corpus:inventory)"
+  },
+  {
+   "id": "probe_embedding",
+   "blocking": true,
+   "ok": true,
+   "detail": "answered in 1319 ms, width 1536"
+  }
+ ],
+ "corpus": {
+  "servableSources": 174,
+  "servableChunks": 6018,
+  "visibleChunks": 6018,
+  "uncheckedSources": 0,
+  "heldBackSources": 56,
+  "gazetteVerifiedSources": 0,
+  "authoritativeSources": 0,
+  "p0Laws": 11,
+  "p0Servable": 11,
+  "p0Missing": [],
+  "criticalAnomalies": 66
+ },
+ "metrics": {
+  "probes": 32,
+  "passed": 30,
+  "lawLevel": {
+   "n": 28,
+   "recallAtK": 0.9285714285714286,
+   "mrr": 0.9285714285714286,
+   "precisionAtK": 0.785501700680272
+  },
+  "articleLevel": {
+   "n": 4,
+   "hitAt1": 1,
+   "mrr": 1
+  },
+  "modes": {
+   "n": 3,
+   "correct": 3
+  },
+  "articleIntegrity": {
+   "checked": 14,
+   "whole": 14
+  },
+  "hard": {
+   "heldBackRetrieved": 0,
+   "classOrderViolations": 0,
+   "citedNotServable": 0
+  },
+  "citations": null,
+  "byCategory": {
+   "exact_law_name": {
+    "n": 2,
+    "passed": 2
+   },
+   "law_and_article": {
+    "n": 2,
+    "passed": 2
+   },
+   "article_only": {
+    "n": 1,
+    "passed": 1
+   },
+   "arabic_indic_digits": {
+    "n": 2,
+    "passed": 2
+   },
+   "morphology": {
+    "n": 2,
+    "passed": 2
+   },
+   "provisos": {
+    "n": 2,
+    "passed": 2
+   },
+   "definitions": {
+    "n": 2,
+    "passed": 2
+   },
+   "amended_articles": {
+    "n": 2,
+    "passed": 1
+   },
+   "historical_version": {
+    "n": 2,
+    "passed": 2
+   },
+   "false_premise": {
+    "n": 2,
+    "passed": 2
+   },
+   "unavailable_law": {
+    "n": 2,
+    "passed": 2
+   },
+   "cross_law_ambiguity": {
+    "n": 2,
+    "passed": 2
+   },
+   "decision_query": {
+    "n": 2,
+    "passed": 1
+   },
+   "regulation_query": {
+    "n": 2,
+    "passed": 2
+   },
+   "class_ordering": {
+    "n": 2,
+    "passed": 2
+   },
+   "not_proven_law": {
+    "n": 3,
+    "passed": 3
+   }
+  }
+ },
+ "results": [
+  {
+   "id": "p01",
+   "category": "exact_law_name",
+   "question": "ما هو قانون العمل الأردني رقم 8 لسنة 1996؟",
+   "expected": {
+    "kind": "retrieve",
+    "sources": [
+     160
+    ],
+    "why": "the law is servable (160)"
+   },
+   "decided": "generation",
+   "finalMode": null,
+   "retrieved": [
+    {
+     "rank": 1,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "12",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 2,
+     "sourceId": 35,
+     "title": "الدستور الأردني — الفصل02",
+     "article": "7",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 3,
+     "sourceId": 35,
+     "title": "الدستور الأردني — الفصل02",
+     "article": "23",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 4,
+     "sourceId": 35,
+     "title": "الدستور الأردني — الفصل02",
+     "article": "16",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 5,
+     "sourceId": 35,
+     "title": "الدستور الأردني — الفصل02",
+     "article": "22",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 6,
+     "sourceId": 189,
+     "title": "معدل لقانون المعاملات الالكترونية",
+     "article": null,
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 7,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "141",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    }
+   ],
+   "firstGoldRank": 1,
+   "goldInTopK": 2,
+   "articleRank": null,
+   "heldBackRetrieved": [],
+   "classViolations": [],
+   "integrity": [],
+   "notices": {
+    "citedSuperseded": false,
+    "citationMismatch": false
+   },
+   "answer": null,
+   "pass": true,
+   "why": "first source of it at rank 1"
+  },
+  {
+   "id": "p02",
+   "category": "exact_law_name",
+   "question": "ما موضوع قانون الشركات رقم 22 لسنة 1997؟",
+   "expected": {
+    "kind": "retrieve",
+    "sources": [
+     161
+    ],
+    "why": "the law is servable (161)"
+   },
+   "decided": "generation",
+   "finalMode": null,
+   "retrieved": [
+    {
+     "rank": 1,
+     "sourceId": 161,
+     "title": "قانون الشركات رقم 22 لسنة 1997",
+     "article": "21",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 2,
+     "sourceId": 161,
+     "title": "قانون الشركات رقم 22 لسنة 1997",
+     "article": "196",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 3,
+     "sourceId": 161,
+     "title": "قانون الشركات رقم 22 لسنة 1997",
+     "article": "171",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 4,
+     "sourceId": 161,
+     "title": "قانون الشركات رقم 22 لسنة 1997",
+     "article": "195",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 5,
+     "sourceId": 161,
+     "title": "قانون الشركات رقم 22 لسنة 1997",
+     "article": "148",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 6,
+     "sourceId": 161,
+     "title": "قانون الشركات رقم 22 لسنة 1997",
+     "article": "234",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 7,
+     "sourceId": 161,
+     "title": "قانون الشركات رقم 22 لسنة 1997",
+     "article": "174",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 8,
+     "sourceId": 161,
+     "title": "قانون الشركات رقم 22 لسنة 1997",
+     "article": "275",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    }
+   ],
+   "firstGoldRank": 1,
+   "goldInTopK": 8,
+   "articleRank": null,
+   "heldBackRetrieved": [],
+   "classViolations": [],
+   "integrity": [],
+   "notices": {
+    "citedSuperseded": false,
+    "citationMismatch": false
+   },
+   "answer": null,
+   "pass": true,
+   "why": "first source of it at rank 1"
+  },
+  {
+   "id": "p03",
+   "category": "law_and_article",
+   "question": "ما نص المادة 28 من قانون العمل؟",
+   "expected": {
+    "kind": "article_first",
+    "sources": [
+     160
+    ],
+    "article": "28",
+    "why": "article 28 is in the servable text of the law"
+   },
+   "decided": "generation",
+   "finalMode": null,
+   "retrieved": [
+    {
+     "rank": 1,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "28",
+     "class": "legislation",
+     "exactHit": true,
+     "companion": false
+    },
+    {
+     "rank": 2,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "29",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 3,
+     "sourceId": 170,
+     "title": "قانون العقوبات رقم 16 لسنة 1960",
+     "article": "28",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 4,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "86",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 5,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "48",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 6,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "3",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 7,
+     "sourceId": 172,
+     "title": "القانون المدني الأردني رقم 43 لسنة 1976",
+     "article": "827",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 8,
+     "sourceId": 172,
+     "title": "القانون المدني الأردني رقم 43 لسنة 1976",
+     "article": "824",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    }
+   ],
+   "firstGoldRank": 1,
+   "goldInTopK": 5,
+   "articleRank": 1,
+   "heldBackRetrieved": [],
+   "classViolations": [],
+   "integrity": [],
+   "notices": {
+    "citedSuperseded": false,
+    "citationMismatch": false
+   },
+   "answer": null,
+   "pass": true,
+   "why": "the named article ranks first"
+  },
+  {
+   "id": "p04",
+   "category": "law_and_article",
+   "question": "ما نص المادة 5 من قانون التجارة؟",
+   "expected": {
+    "kind": "article_first",
+    "sources": [
+     159
+    ],
+    "article": "5",
+    "why": "article 5 is in the servable text of the law"
+   },
+   "decided": "generation",
+   "finalMode": null,
+   "retrieved": [
+    {
+     "rank": 1,
+     "sourceId": 159,
+     "title": "قانون التجارة رقم 12 لسنة 1966",
+     "article": "5",
+     "class": "legislation",
+     "exactHit": true,
+     "companion": false
+    },
+    {
+     "rank": 2,
+     "sourceId": 159,
+     "title": "قانون التجارة رقم 12 لسنة 1966",
+     "article": "15",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 3,
+     "sourceId": 159,
+     "title": "قانون التجارة رقم 12 لسنة 1966",
+     "article": "60",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 4,
+     "sourceId": 159,
+     "title": "قانون التجارة رقم 12 لسنة 1966",
+     "article": "2",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 5,
+     "sourceId": 159,
+     "title": "قانون التجارة رقم 12 لسنة 1966",
+     "article": "45",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 6,
+     "sourceId": 159,
+     "title": "قانون التجارة رقم 12 لسنة 1966",
+     "article": "50",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 7,
+     "sourceId": 161,
+     "title": "قانون الشركات رقم 22 لسنة 1997",
+     "article": "3",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 8,
+     "sourceId": 159,
+     "title": "قانون التجارة رقم 12 لسنة 1966",
+     "article": "38",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    }
+   ],
+   "firstGoldRank": 1,
+   "goldInTopK": 7,
+   "articleRank": 1,
+   "heldBackRetrieved": [],
+   "classViolations": [],
+   "integrity": [],
+   "notices": {
+    "citedSuperseded": false,
+    "citationMismatch": false
+   },
+   "answer": null,
+   "pass": true,
+   "why": "the named article ranks first"
+  },
+  {
+   "id": "p05",
+   "category": "article_only",
+   "question": "ما نص المادة 28؟",
+   "expected": {
+    "kind": "mode",
+    "modes": [
+     "clarification"
+    ],
+    "why": "article 28 is in 17 servable texts (177, 193, 185, 166, 163, 161, 165, 174, 34, 167, 160, 176, …)"
+   },
+   "decided": "clarification",
+   "finalMode": null,
+   "retrieved": [
+    {
+     "rank": 1,
+     "sourceId": 166,
+     "title": "قانون البينات رقم 30 لسنة 1952",
+     "article": "28",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 2,
+     "sourceId": 170,
+     "title": "قانون العقوبات رقم 16 لسنة 1960",
+     "article": "308",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 3,
+     "sourceId": 222,
+     "title": "نظام رقم 46 لسنة 2023 نظام معدل لنظام دور إيواء المجنى عليهم والمتضررين من جرائم الاتجار بالبشر",
+     "article": null,
+     "class": "regulation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 4,
+     "sourceId": 170,
+     "title": "قانون العقوبات رقم 16 لسنة 1960",
+     "article": "28",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 5,
+     "sourceId": 222,
+     "title": "نظام رقم 46 لسنة 2023 نظام معدل لنظام دور إيواء المجنى عليهم والمتضررين من جرائم الاتجار بالبشر",
+     "article": null,
+     "class": "regulation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 6,
+     "sourceId": 165,
+     "title": "قانون الملكية العقارية رقم 13 لسنة 2019",
+     "article": "81",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 7,
+     "sourceId": 159,
+     "title": "قانون التجارة رقم 12 لسنة 1966",
+     "article": "241",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 8,
+     "sourceId": 184,
+     "title": "قانون معدل لقانون ضمان ق الحصول على المعلومات رقم 3 لسنة 2024",
+     "article": null,
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    }
+   ],
+   "firstGoldRank": null,
+   "goldInTopK": 0,
+   "articleRank": null,
+   "heldBackRetrieved": [],
+   "classViolations": [],
+   "integrity": [],
+   "notices": {
+    "citedSuperseded": false,
+    "citationMismatch": false
+   },
+   "answer": null,
+   "pass": true,
+   "why": "mode clarification"
+  },
+  {
+   "id": "p06",
+   "category": "arabic_indic_digits",
+   "question": "ما نص المادة ٢٨ من قانون العمل؟",
+   "expected": {
+    "kind": "article_first",
+    "sources": [
+     160
+    ],
+    "article": "28",
+    "why": "article 28 is in the servable text of the law"
+   },
+   "decided": "generation",
+   "finalMode": null,
+   "retrieved": [
+    {
+     "rank": 1,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "28",
+     "class": "legislation",
+     "exactHit": true,
+     "companion": false
+    },
+    {
+     "rank": 2,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "29",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 3,
+     "sourceId": 170,
+     "title": "قانون العقوبات رقم 16 لسنة 1960",
+     "article": "28",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 4,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "86",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 5,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "48",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 6,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "3",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 7,
+     "sourceId": 172,
+     "title": "القانون المدني الأردني رقم 43 لسنة 1976",
+     "article": "827",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 8,
+     "sourceId": 172,
+     "title": "القانون المدني الأردني رقم 43 لسنة 1976",
+     "article": "824",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    }
+   ],
+   "firstGoldRank": 1,
+   "goldInTopK": 5,
+   "articleRank": 1,
+   "heldBackRetrieved": [],
+   "classViolations": [],
+   "integrity": [],
+   "notices": {
+    "citedSuperseded": false,
+    "citationMismatch": false
+   },
+   "answer": null,
+   "pass": true,
+   "why": "the named article ranks first"
+  },
+  {
+   "id": "p07",
+   "category": "arabic_indic_digits",
+   "question": "ما نص المادة ٥ من قانون التجارة الأردني رقم ١٢ لسنة ١٩٦٦؟",
+   "expected": {
+    "kind": "article_first",
+    "sources": [
+     159
+    ],
+    "article": "5",
+    "why": "article 5 is in the servable text of the law"
+   },
+   "decided": "generation",
+   "finalMode": null,
+   "retrieved": [
+    {
+     "rank": 1,
+     "sourceId": 159,
+     "title": "قانون التجارة رقم 12 لسنة 1966",
+     "article": "5",
+     "class": "legislation",
+     "exactHit": true,
+     "companion": false
+    },
+    {
+     "rank": 2,
+     "sourceId": 189,
+     "title": "معدل لقانون المعاملات الالكترونية",
+     "article": null,
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 3,
+     "sourceId": 159,
+     "title": "قانون التجارة رقم 12 لسنة 1966",
+     "article": "12",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 4,
+     "sourceId": 159,
+     "title": "قانون التجارة رقم 12 لسنة 1966",
+     "article": "60",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 5,
+     "sourceId": 159,
+     "title": "قانون التجارة رقم 12 لسنة 1966",
+     "article": "259",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 6,
+     "sourceId": 34,
+     "title": "الدستور الأردني — الفصل04",
+     "article": "33",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 7,
+     "sourceId": 34,
+     "title": "الدستور الأردني — الفصل04",
+     "article": "42",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 8,
+     "sourceId": 35,
+     "title": "الدستور الأردني — الفصل02",
+     "article": "7",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    }
+   ],
+   "firstGoldRank": 1,
+   "goldInTopK": 4,
+   "articleRank": 1,
+   "heldBackRetrieved": [],
+   "classViolations": [],
+   "integrity": [],
+   "notices": {
+    "citedSuperseded": false,
+    "citationMismatch": false
+   },
+   "answer": null,
+   "pass": true,
+   "why": "the named article ranks first"
+  },
+  {
+   "id": "p08",
+   "category": "morphology",
+   "question": "ما حقوق العاملات أثناء إجازة الأمومة في قانون العمل؟",
+   "expected": {
+    "kind": "retrieve",
+    "sources": [
+     160
+    ],
+    "why": "the law is servable (160)"
+   },
+   "decided": "generation",
+   "finalMode": null,
+   "retrieved": [
+    {
+     "rank": 1,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "27",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 2,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "71",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 3,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "70",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 4,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "66",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 5,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "61",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 6,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "68",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 7,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "29",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 8,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "28",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    }
+   ],
+   "firstGoldRank": 1,
+   "goldInTopK": 8,
+   "articleRank": null,
+   "heldBackRetrieved": [],
+   "classViolations": [],
+   "integrity": [],
+   "notices": {
+    "citedSuperseded": false,
+    "citationMismatch": false
+   },
+   "answer": null,
+   "pass": true,
+   "why": "first source of it at rank 1"
+  },
+  {
+   "id": "p09",
+   "category": "morphology",
+   "question": "هل يحق للمستخدَمين المطالبة بأجور العمل الإضافي وفق قانون العمل؟",
+   "expected": {
+    "kind": "retrieve",
+    "sources": [
+     160
+    ],
+    "why": "the law is servable (160)"
+   },
+   "decided": "generation",
+   "finalMode": null,
+   "retrieved": [
+    {
+     "rank": 1,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "2",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 2,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "46",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 3,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "54",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 4,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "26",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 5,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "29",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 6,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "138",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 7,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "35",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 8,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "89",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    }
+   ],
+   "firstGoldRank": 1,
+   "goldInTopK": 8,
+   "articleRank": null,
+   "heldBackRetrieved": [],
+   "classViolations": [],
+   "integrity": [],
+   "notices": {
+    "citedSuperseded": false,
+    "citationMismatch": false
+   },
+   "answer": null,
+   "pass": true,
+   "why": "first source of it at rank 1"
+  },
+  {
+   "id": "p10",
+   "category": "provisos",
+   "question": "متى يجوز لصاحب العمل إنهاء عقد العامل دون إشعار وفق قانون العمل؟",
+   "expected": {
+    "kind": "retrieve",
+    "sources": [
+     160
+    ],
+    "why": "the law is servable (160)"
+   },
+   "decided": "generation",
+   "finalMode": null,
+   "retrieved": [
+    {
+     "rank": 1,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "35",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 2,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "31",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 3,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "23",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 4,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "40",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 5,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "27",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 6,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "135",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 7,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "28",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 8,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "26",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    }
+   ],
+   "firstGoldRank": 1,
+   "goldInTopK": 8,
+   "articleRank": null,
+   "heldBackRetrieved": [],
+   "classViolations": [],
+   "integrity": [
+    {
+     "sourceId": 160,
+     "article": "35",
+     "verdict": "whole"
+    },
+    {
+     "sourceId": 160,
+     "article": "31",
+     "verdict": "whole"
+    },
+    {
+     "sourceId": 160,
+     "article": "23",
+     "verdict": "whole"
+    },
+    {
+     "sourceId": 160,
+     "article": "40",
+     "verdict": "whole"
+    },
+    {
+     "sourceId": 160,
+     "article": "27",
+     "verdict": "whole"
+    },
+    {
+     "sourceId": 160,
+     "article": "135",
+     "verdict": "whole"
+    },
+    {
+     "sourceId": 160,
+     "article": "28",
+     "verdict": "whole"
+    },
+    {
+     "sourceId": 160,
+     "article": "26",
+     "verdict": "whole"
+    }
+   ],
+   "notices": {
+    "citedSuperseded": false,
+    "citationMismatch": false
+   },
+   "answer": null,
+   "pass": true,
+   "why": "first source of it at rank 1"
+  },
+  {
+   "id": "p11",
+   "category": "provisos",
+   "question": "ما الاستثناءات من مدة الإشعار عند إنهاء عقد العمل غير محدد المدة؟",
+   "expected": {
+    "kind": "retrieve",
+    "sources": [
+     160
+    ],
+    "why": "the law is servable (160)"
+   },
+   "decided": "generation",
+   "finalMode": null,
+   "retrieved": [
+    {
+     "rank": 1,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "23",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 2,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "26",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 3,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "40",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 4,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "31",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 5,
+     "sourceId": 172,
+     "title": "القانون المدني الأردني رقم 43 لسنة 1976",
+     "article": "828",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 6,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "15",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 7,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "35",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 8,
+     "sourceId": 172,
+     "title": "القانون المدني الأردني رقم 43 لسنة 1976",
+     "article": "826",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    }
+   ],
+   "firstGoldRank": 1,
+   "goldInTopK": 6,
+   "articleRank": null,
+   "heldBackRetrieved": [],
+   "classViolations": [],
+   "integrity": [
+    {
+     "sourceId": 160,
+     "article": "23",
+     "verdict": "whole"
+    },
+    {
+     "sourceId": 160,
+     "article": "26",
+     "verdict": "whole"
+    },
+    {
+     "sourceId": 160,
+     "article": "40",
+     "verdict": "whole"
+    },
+    {
+     "sourceId": 160,
+     "article": "31",
+     "verdict": "whole"
+    },
+    {
+     "sourceId": 160,
+     "article": "15",
+     "verdict": "whole"
+    },
+    {
+     "sourceId": 160,
+     "article": "35",
+     "verdict": "whole"
+    }
+   ],
+   "notices": {
+    "citedSuperseded": false,
+    "citationMismatch": false
+   },
+   "answer": null,
+   "pass": true,
+   "why": "first source of it at rank 1"
+  },
+  {
+   "id": "p12",
+   "category": "definitions",
+   "question": "ما تعريف العامل في قانون العمل الأردني؟",
+   "expected": {
+    "kind": "retrieve",
+    "sources": [
+     160
+    ],
+    "why": "the law is servable (160)"
+   },
+   "decided": "generation",
+   "finalMode": null,
+   "retrieved": [
+    {
+     "rank": 1,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "2",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 2,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "12",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 3,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "28",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 4,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "61",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 5,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "15",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    }
+   ],
+   "firstGoldRank": 1,
+   "goldInTopK": 5,
+   "articleRank": null,
+   "heldBackRetrieved": [],
+   "classViolations": [],
+   "integrity": [],
+   "notices": {
+    "citedSuperseded": false,
+    "citationMismatch": false
+   },
+   "answer": null,
+   "pass": true,
+   "why": "first source of it at rank 1"
+  },
+  {
+   "id": "p13",
+   "category": "definitions",
+   "question": "ما المقصود بالتاجر في قانون التجارة؟",
+   "expected": {
+    "kind": "retrieve",
+    "sources": [
+     159
+    ],
+    "why": "the law is servable (159)"
+   },
+   "decided": "generation",
+   "finalMode": null,
+   "retrieved": [
+    {
+     "rank": 1,
+     "sourceId": 159,
+     "title": "قانون التجارة رقم 12 لسنة 1966",
+     "article": "8",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 2,
+     "sourceId": 159,
+     "title": "قانون التجارة رقم 12 لسنة 1966",
+     "article": "41",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 3,
+     "sourceId": 159,
+     "title": "قانون التجارة رقم 12 لسنة 1966",
+     "article": "42",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 4,
+     "sourceId": 159,
+     "title": "قانون التجارة رقم 12 لسنة 1966",
+     "article": "321",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 5,
+     "sourceId": 159,
+     "title": "قانون التجارة رقم 12 لسنة 1966",
+     "article": "316",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 6,
+     "sourceId": 159,
+     "title": "قانون التجارة رقم 12 لسنة 1966",
+     "article": "26",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 7,
+     "sourceId": 159,
+     "title": "قانون التجارة رقم 12 لسنة 1966",
+     "article": "38",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 8,
+     "sourceId": 159,
+     "title": "قانون التجارة رقم 12 لسنة 1966",
+     "article": "325",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    }
+   ],
+   "firstGoldRank": 1,
+   "goldInTopK": 8,
+   "articleRank": null,
+   "heldBackRetrieved": [],
+   "classViolations": [],
+   "integrity": [],
+   "notices": {
+    "citedSuperseded": false,
+    "citationMismatch": false
+   },
+   "answer": null,
+   "pass": true,
+   "why": "first source of it at rank 1"
+  },
+  {
+   "id": "p14",
+   "category": "amended_articles",
+   "question": "ما الذي عدّله القانون المعدل لقانون العقوبات رقم 10 لسنة 2022؟",
+   "expected": {
+    "kind": "retrieve",
+    "sources": [
+     170,
+     188
+    ],
+    "why": "the law is servable (170, 188)"
+   },
+   "decided": "no_evidence",
+   "finalMode": null,
+   "retrieved": [],
+   "firstGoldRank": null,
+   "goldInTopK": 0,
+   "articleRank": null,
+   "heldBackRetrieved": [],
+   "classViolations": [],
+   "integrity": [],
+   "notices": {
+    "citedSuperseded": false,
+    "citationMismatch": true
+   },
+   "answer": null,
+   "pass": false,
+   "why": "no source of it in the top 8 (mode no_evidence)"
+  },
+  {
+   "id": "p15",
+   "category": "amended_articles",
+   "question": "ما تعديلات قانون أصول المحاكمات المدنية لسنة 2023؟",
+   "expected": {
+    "kind": "retrieve",
+    "sources": [
+     175,
+     20,
+     182
+    ],
+    "why": "the law is servable (175, 20, 182)"
+   },
+   "decided": "generation",
+   "finalMode": null,
+   "retrieved": [
+    {
+     "rank": 1,
+     "sourceId": 182,
+     "title": "قانون معدل لقانون اصول المحاكمات المدنية رقم 14 لسنة 2023",
+     "article": null,
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 2,
+     "sourceId": 182,
+     "title": "قانون معدل لقانون اصول المحاكمات المدنية رقم 14 لسنة 2023",
+     "article": null,
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 3,
+     "sourceId": 182,
+     "title": "قانون معدل لقانون اصول المحاكمات المدنية رقم 14 لسنة 2023",
+     "article": null,
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 4,
+     "sourceId": 182,
+     "title": "قانون معدل لقانون اصول المحاكمات المدنية رقم 14 لسنة 2023",
+     "article": null,
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 5,
+     "sourceId": 182,
+     "title": "قانون معدل لقانون اصول المحاكمات المدنية رقم 14 لسنة 2023",
+     "article": null,
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 6,
+     "sourceId": 182,
+     "title": "قانون معدل لقانون اصول المحاكمات المدنية رقم 14 لسنة 2023",
+     "article": null,
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 7,
+     "sourceId": 182,
+     "title": "قانون معدل لقانون اصول المحاكمات المدنية رقم 14 لسنة 2023",
+     "article": null,
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 8,
+     "sourceId": 182,
+     "title": "قانون معدل لقانون اصول المحاكمات المدنية رقم 14 لسنة 2023",
+     "article": null,
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    }
+   ],
+   "firstGoldRank": 1,
+   "goldInTopK": 8,
+   "articleRank": null,
+   "heldBackRetrieved": [],
+   "classViolations": [],
+   "integrity": [],
+   "notices": {
+    "citedSuperseded": false,
+    "citationMismatch": false
+   },
+   "answer": null,
+   "pass": true,
+   "why": "first source of it at rank 1"
+  },
+  {
+   "id": "p16",
+   "category": "historical_version",
+   "question": "ما نص المادة 2 من قانون العقوبات رقم 16 لسنة 1960 كما كان قبل التعديل؟",
+   "expected": {
+    "kind": "retrieve",
+    "sources": [
+     170,
+     188
+    ],
+    "why": "the law is servable (170, 188)"
+   },
+   "decided": "generation",
+   "finalMode": null,
+   "retrieved": [
+    {
+     "rank": 1,
+     "sourceId": 170,
+     "title": "قانون العقوبات رقم 16 لسنة 1960",
+     "article": "2",
+     "class": "legislation",
+     "exactHit": true,
+     "companion": false
+    },
+    {
+     "rank": 2,
+     "sourceId": 170,
+     "title": "قانون العقوبات رقم 16 لسنة 1960",
+     "article": "72",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 3,
+     "sourceId": 170,
+     "title": "قانون العقوبات رقم 16 لسنة 1960",
+     "article": "177",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 4,
+     "sourceId": 170,
+     "title": "قانون العقوبات رقم 16 لسنة 1960",
+     "article": "389",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 5,
+     "sourceId": 170,
+     "title": "قانون العقوبات رقم 16 لسنة 1960",
+     "article": "149",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 6,
+     "sourceId": 170,
+     "title": "قانون العقوبات رقم 16 لسنة 1960",
+     "article": null,
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 7,
+     "sourceId": 170,
+     "title": "قانون العقوبات رقم 16 لسنة 1960",
+     "article": "238",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 8,
+     "sourceId": 170,
+     "title": "قانون العقوبات رقم 16 لسنة 1960",
+     "article": "476",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    }
+   ],
+   "firstGoldRank": 1,
+   "goldInTopK": 8,
+   "articleRank": null,
+   "heldBackRetrieved": [],
+   "classViolations": [],
+   "integrity": [],
+   "notices": {
+    "citedSuperseded": false,
+    "citationMismatch": false
+   },
+   "answer": null,
+   "pass": true,
+   "why": "first source of it at rank 1"
+  },
+  {
+   "id": "p17",
+   "category": "historical_version",
+   "question": "ما عقوبة السرقة في قانون العقوبات القديم قبل تعديلات 2022؟",
+   "expected": {
+    "kind": "retrieve",
+    "sources": [
+     170,
+     188
+    ],
+    "why": "the law is servable (170, 188)"
+   },
+   "decided": "generation",
+   "finalMode": null,
+   "retrieved": [
+    {
+     "rank": 1,
+     "sourceId": 170,
+     "title": "قانون العقوبات رقم 16 لسنة 1960",
+     "article": "401",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 2,
+     "sourceId": 170,
+     "title": "قانون العقوبات رقم 16 لسنة 1960",
+     "article": "407",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 3,
+     "sourceId": 170,
+     "title": "قانون العقوبات رقم 16 لسنة 1960",
+     "article": "399",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 4,
+     "sourceId": 170,
+     "title": "قانون العقوبات رقم 16 لسنة 1960",
+     "article": "406",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 5,
+     "sourceId": 170,
+     "title": "قانون العقوبات رقم 16 لسنة 1960",
+     "article": "4",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 6,
+     "sourceId": 170,
+     "title": "قانون العقوبات رقم 16 لسنة 1960",
+     "article": "400",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 7,
+     "sourceId": 170,
+     "title": "قانون العقوبات رقم 16 لسنة 1960",
+     "article": "389",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 8,
+     "sourceId": 170,
+     "title": "قانون العقوبات رقم 16 لسنة 1960",
+     "article": "203",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    }
+   ],
+   "firstGoldRank": 1,
+   "goldInTopK": 8,
+   "articleRank": null,
+   "heldBackRetrieved": [],
+   "classViolations": [],
+   "integrity": [],
+   "notices": {
+    "citedSuperseded": false,
+    "citationMismatch": false
+   },
+   "answer": null,
+   "pass": true,
+   "why": "first source of it at rank 1"
+  },
+  {
+   "id": "p18",
+   "category": "false_premise",
+   "question": "ما رقم المادة في قانون العمل التي تجيز تشغيل العامل تسعين ساعة أسبوعياً دون أجر إضافي؟",
+   "expected": {
+    "kind": "retrieve",
+    "sources": [
+     160
+    ],
+    "why": "the law is servable (160)"
+   },
+   "decided": "generation",
+   "finalMode": null,
+   "retrieved": [
+    {
+     "rank": 1,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "59",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 2,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "56",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 3,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "57",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 4,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "48",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 5,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "35",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 6,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "2",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 7,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "75",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 8,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "66",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    }
+   ],
+   "firstGoldRank": 1,
+   "goldInTopK": 8,
+   "articleRank": null,
+   "heldBackRetrieved": [],
+   "classViolations": [],
+   "integrity": [],
+   "notices": {
+    "citedSuperseded": false,
+    "citationMismatch": false
+   },
+   "answer": null,
+   "pass": true,
+   "why": "first source of it at rank 1"
+  },
+  {
+   "id": "p19",
+   "category": "false_premise",
+   "question": "لماذا ألغى قانون الشركات الأردني الشركات ذات المسؤولية المحدودة؟",
+   "expected": {
+    "kind": "retrieve",
+    "sources": [
+     161
+    ],
+    "why": "the law is servable (161)"
+   },
+   "decided": "generation",
+   "finalMode": null,
+   "retrieved": [
+    {
+     "rank": 1,
+     "sourceId": 161,
+     "title": "قانون الشركات رقم 22 لسنة 1997",
+     "article": "54",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 2,
+     "sourceId": 161,
+     "title": "قانون الشركات رقم 22 لسنة 1997",
+     "article": "53",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 3,
+     "sourceId": 161,
+     "title": "قانون الشركات رقم 22 لسنة 1997",
+     "article": "76",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 4,
+     "sourceId": 161,
+     "title": "قانون الشركات رقم 22 لسنة 1997",
+     "article": "64",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 5,
+     "sourceId": 161,
+     "title": "قانون الشركات رقم 22 لسنة 1997",
+     "article": "57",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 6,
+     "sourceId": 161,
+     "title": "قانون الشركات رقم 22 لسنة 1997",
+     "article": "66",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 7,
+     "sourceId": 161,
+     "title": "قانون الشركات رقم 22 لسنة 1997",
+     "article": "168",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    }
+   ],
+   "firstGoldRank": 1,
+   "goldInTopK": 7,
+   "articleRank": null,
+   "heldBackRetrieved": [],
+   "classViolations": [],
+   "integrity": [],
+   "notices": {
+    "citedSuperseded": false,
+    "citationMismatch": false
+   },
+   "answer": null,
+   "pass": true,
+   "why": "first source of it at rank 1"
+  },
+  {
+   "id": "p20",
+   "category": "unavailable_law",
+   "question": "ما نص المادة 3 من القانون المدني؟",
+   "expected": {
+    "kind": "retrieve",
+    "sources": [
+     172
+    ],
+    "why": "the law is servable (172)"
+   },
+   "decided": "generation",
+   "finalMode": null,
+   "retrieved": [
+    {
+     "rank": 1,
+     "sourceId": 172,
+     "title": "القانون المدني الأردني رقم 43 لسنة 1976",
+     "article": "3",
+     "class": "legislation",
+     "exactHit": true,
+     "companion": false
+    },
+    {
+     "rank": 2,
+     "sourceId": 166,
+     "title": "قانون البينات رقم 30 لسنة 1952",
+     "article": "28",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 3,
+     "sourceId": 193,
+     "title": "قانون التنفيذ وتعديلاته رقم 25 لسنة 2007",
+     "article": "28",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 4,
+     "sourceId": 163,
+     "title": "قانون التحكيم رقم 31 لسنة 2001",
+     "article": "3",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 5,
+     "sourceId": 165,
+     "title": "قانون الملكية العقارية رقم 13 لسنة 2019",
+     "article": "13",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 6,
+     "sourceId": 193,
+     "title": "قانون التنفيذ وتعديلاته رقم 25 لسنة 2007",
+     "article": "117",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 7,
+     "sourceId": 185,
+     "title": "قانون اصول المحاكمات الجزائية وتعديلاته رقم 9 لسنة 1961",
+     "article": "333",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 8,
+     "sourceId": 165,
+     "title": "قانون الملكية العقارية رقم 13 لسنة 2019",
+     "article": "33",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    }
+   ],
+   "firstGoldRank": 1,
+   "goldInTopK": 1,
+   "articleRank": null,
+   "heldBackRetrieved": [],
+   "classViolations": [],
+   "integrity": [],
+   "notices": {
+    "citedSuperseded": false,
+    "citationMismatch": false
+   },
+   "answer": null,
+   "pass": true,
+   "why": "first source of it at rank 1"
+  },
+  {
+   "id": "p21",
+   "category": "unavailable_law",
+   "question": "ما أحكام ضمان العيوب الخفية في القانون المدني الأردني؟",
+   "expected": {
+    "kind": "retrieve",
+    "sources": [
+     172
+    ],
+    "why": "the law is servable (172)"
+   },
+   "decided": "generation",
+   "finalMode": null,
+   "retrieved": [
+    {
+     "rank": 1,
+     "sourceId": 172,
+     "title": "القانون المدني الأردني رقم 43 لسنة 1976",
+     "article": "512",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 2,
+     "sourceId": 172,
+     "title": "القانون المدني الأردني رقم 43 لسنة 1976",
+     "article": "513",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 3,
+     "sourceId": 172,
+     "title": "القانون المدني الأردني رقم 43 لسنة 1976",
+     "article": "519",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 4,
+     "sourceId": 172,
+     "title": "القانون المدني الأردني رقم 43 لسنة 1976",
+     "article": "514",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 5,
+     "sourceId": 172,
+     "title": "القانون المدني الأردني رقم 43 لسنة 1976",
+     "article": "521",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 6,
+     "sourceId": 172,
+     "title": "القانون المدني الأردني رقم 43 لسنة 1976",
+     "article": "516",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 7,
+     "sourceId": 172,
+     "title": "القانون المدني الأردني رقم 43 لسنة 1976",
+     "article": "517",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 8,
+     "sourceId": 172,
+     "title": "القانون المدني الأردني رقم 43 لسنة 1976",
+     "article": "515",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    }
+   ],
+   "firstGoldRank": 1,
+   "goldInTopK": 8,
+   "articleRank": null,
+   "heldBackRetrieved": [],
+   "classViolations": [],
+   "integrity": [],
+   "notices": {
+    "citedSuperseded": false,
+    "citationMismatch": false
+   },
+   "answer": null,
+   "pass": true,
+   "why": "first source of it at rank 1"
+  },
+  {
+   "id": "p22",
+   "category": "cross_law_ambiguity",
+   "question": "ما نص المادة 2 من القانون؟",
+   "expected": {
+    "kind": "mode",
+    "modes": [
+     "clarification"
+    ],
+    "why": "article 2 is in 39 servable texts (73, 227, 160, 159, 96, 165, 177, 167, 213, 230, 172, 27, …)"
+   },
+   "decided": "clarification",
+   "finalMode": null,
+   "retrieved": [
+    {
+     "rank": 1,
+     "sourceId": 178,
+     "title": "قانون الوساطة لتسوية النزاعات المدنية وتعديلاته رقم 12 لسنة 2006",
+     "article": "11",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 2,
+     "sourceId": 209,
+     "title": "نظام استخدام وسائل التقنية الحديثة في الاجراءات الجزائية رقم 96 لسنة 2018",
+     "article": null,
+     "class": "regulation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 3,
+     "sourceId": 185,
+     "title": "قانون اصول المحاكمات الجزائية وتعديلاته رقم 9 لسنة 1961",
+     "article": "334",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 4,
+     "sourceId": 159,
+     "title": "قانون التجارة رقم 12 لسنة 1966",
+     "article": "2",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 5,
+     "sourceId": 184,
+     "title": "قانون معدل لقانون ضمان ق الحصول على المعلومات رقم 3 لسنة 2024",
+     "article": null,
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 6,
+     "sourceId": 170,
+     "title": "قانون العقوبات رقم 16 لسنة 1960",
+     "article": "427",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 7,
+     "sourceId": 169,
+     "title": "قانون الأحوال الشخصية رقم 15 لسنة 2019",
+     "article": "323",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 8,
+     "sourceId": 177,
+     "title": "قانون الكاتب العدل وتعديلاته رقم 11 لسنة 1952",
+     "article": "2",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    }
+   ],
+   "firstGoldRank": null,
+   "goldInTopK": 0,
+   "articleRank": null,
+   "heldBackRetrieved": [],
+   "classViolations": [],
+   "integrity": [],
+   "notices": {
+    "citedSuperseded": false,
+    "citationMismatch": false
+   },
+   "answer": null,
+   "pass": true,
+   "why": "mode clarification"
+  },
+  {
+   "id": "p23",
+   "category": "cross_law_ambiguity",
+   "question": "ما مدة التقادم في المادة 138؟",
+   "expected": {
+    "kind": "mode",
+    "modes": [
+     "clarification",
+     "grounded",
+     "partial",
+     "sources_only",
+     "no_evidence"
+    ],
+    "why": "the designed behaviour (pre-registered)"
+   },
+   "decided": "clarification",
+   "finalMode": null,
+   "retrieved": [
+    {
+     "rank": 1,
+     "sourceId": 185,
+     "title": "قانون اصول المحاكمات الجزائية وتعديلاته رقم 9 لسنة 1961",
+     "article": "346",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 2,
+     "sourceId": 172,
+     "title": "القانون المدني الأردني رقم 43 لسنة 1976",
+     "article": "1188",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 3,
+     "sourceId": 180,
+     "title": "قانون ضمان حق الحصول على المعلومات رقم 47 لسنة 2007",
+     "article": "17",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 4,
+     "sourceId": 185,
+     "title": "قانون اصول المحاكمات الجزائية وتعديلاته رقم 9 لسنة 1961",
+     "article": "116",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 5,
+     "sourceId": 185,
+     "title": "قانون اصول المحاكمات الجزائية وتعديلاته رقم 9 لسنة 1961",
+     "article": "347",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 6,
+     "sourceId": 185,
+     "title": "قانون اصول المحاكمات الجزائية وتعديلاته رقم 9 لسنة 1961",
+     "article": "341",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 7,
+     "sourceId": 185,
+     "title": "قانون اصول المحاكمات الجزائية وتعديلاته رقم 9 لسنة 1961",
+     "article": "345",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 8,
+     "sourceId": 185,
+     "title": "قانون اصول المحاكمات الجزائية وتعديلاته رقم 9 لسنة 1961",
+     "article": "343",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    }
+   ],
+   "firstGoldRank": null,
+   "goldInTopK": 0,
+   "articleRank": null,
+   "heldBackRetrieved": [],
+   "classViolations": [],
+   "integrity": [],
+   "notices": {
+    "citedSuperseded": false,
+    "citationMismatch": false
+   },
+   "answer": null,
+   "pass": true,
+   "why": "mode clarification"
+  },
+  {
+   "id": "p24",
+   "category": "decision_query",
+   "question": "ما قرار الديوان الخاص بتفسير القوانين رقم 30؟",
+   "expected": {
+    "kind": "retrieve",
+    "sources": [
+     105
+    ],
+    "why": "servable source(s) titled with \"تفسير + 30\": 105"
+   },
+   "decided": "generation",
+   "finalMode": null,
+   "retrieved": [
+    {
+     "rank": 1,
+     "sourceId": 133,
+     "title": "قرار الديوان الخاص بتفسير القوانين — 8",
+     "article": null,
+     "class": "court_decision",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 2,
+     "sourceId": 96,
+     "title": "قرار الديوان الخاص بتفسير القوانين — 19",
+     "article": null,
+     "class": "court_decision",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 3,
+     "sourceId": 95,
+     "title": "قرار الديوان الخاص بتفسير القوانين — 26",
+     "article": null,
+     "class": "court_decision",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 4,
+     "sourceId": 89,
+     "title": "قرار الديوان الخاص بتفسير القوانين — 25",
+     "article": null,
+     "class": "court_decision",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 5,
+     "sourceId": 99,
+     "title": "قرار الديوان الخاص بتفسير القوانين — 34",
+     "article": null,
+     "class": "court_decision",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 6,
+     "sourceId": 80,
+     "title": "قرار الديوان الخاص بتفسير القوانين — 17",
+     "article": null,
+     "class": "court_decision",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 7,
+     "sourceId": 101,
+     "title": "قرار الديوان الخاص بتفسير القوانين — 9",
+     "article": null,
+     "class": "court_decision",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 8,
+     "sourceId": 97,
+     "title": "قرار الديوان الخاص بتفسير القوانين — 11",
+     "article": null,
+     "class": "court_decision",
+     "exactHit": false,
+     "companion": false
+    }
+   ],
+   "firstGoldRank": null,
+   "goldInTopK": 0,
+   "articleRank": null,
+   "heldBackRetrieved": [],
+   "classViolations": [],
+   "integrity": [],
+   "notices": {
+    "citedSuperseded": false,
+    "citationMismatch": false
+   },
+   "answer": null,
+   "pass": false,
+   "why": "no source of it in the top 8 (mode generation)"
+  },
+  {
+   "id": "p25",
+   "category": "decision_query",
+   "question": "ما اجتهاد المحاكم في الفصل التعسفي للعامل؟",
+   "expected": {
+    "kind": "retrieve",
+    "sources": [
+     160
+    ],
+    "why": "the law is servable (160)"
+   },
+   "decided": "generation",
+   "finalMode": null,
+   "retrieved": [
+    {
+     "rank": 1,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "54",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 2,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "49",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 3,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "25",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 4,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "28",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 5,
+     "sourceId": 170,
+     "title": "قانون العقوبات رقم 16 لسنة 1960",
+     "article": "86",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 6,
+     "sourceId": 160,
+     "title": "قانون العمل رقم 8 لسنة 1996",
+     "article": "9",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    }
+   ],
+   "firstGoldRank": 1,
+   "goldInTopK": 5,
+   "articleRank": null,
+   "heldBackRetrieved": [],
+   "classViolations": [],
+   "integrity": [],
+   "notices": {
+    "citedSuperseded": false,
+    "citationMismatch": false
+   },
+   "answer": null,
+   "pass": true,
+   "why": "first source of it at rank 1"
+  },
+  {
+   "id": "p26",
+   "category": "regulation_query",
+   "question": "ما رسوم الكاتب العدل وفق نظام رسوم الكاتب العدل؟",
+   "expected": {
+    "kind": "retrieve",
+    "sources": [
+     201
+    ],
+    "why": "servable source(s) titled with \"نظام + رسوم + الكاتب العدل\": 201"
+   },
+   "decided": "generation",
+   "finalMode": null,
+   "retrieved": [
+    {
+     "rank": 1,
+     "sourceId": 201,
+     "title": "نظام رسوم الكاتب العدل 2026",
+     "article": "9",
+     "class": "regulation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 2,
+     "sourceId": 201,
+     "title": "نظام رسوم الكاتب العدل 2026",
+     "article": null,
+     "class": "regulation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 3,
+     "sourceId": 201,
+     "title": "نظام رسوم الكاتب العدل 2026",
+     "article": "2",
+     "class": "regulation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 4,
+     "sourceId": 201,
+     "title": "نظام رسوم الكاتب العدل 2026",
+     "article": "3",
+     "class": "regulation",
+     "exactHit": false,
+     "companion": false
+    }
+   ],
+   "firstGoldRank": 1,
+   "goldInTopK": 4,
+   "articleRank": null,
+   "heldBackRetrieved": [],
+   "classViolations": [],
+   "integrity": [],
+   "notices": {
+    "citedSuperseded": false,
+    "citationMismatch": false
+   },
+   "answer": null,
+   "pass": true,
+   "why": "first source of it at rank 1"
+  },
+  {
+   "id": "p27",
+   "category": "regulation_query",
+   "question": "ما أجور أتعاب الكاتب العدل المرخص؟",
+   "expected": {
+    "kind": "retrieve",
+    "sources": [
+     9,
+     52,
+     60,
+     177,
+     198,
+     200,
+     201,
+     204,
+     208,
+     220
+    ],
+    "why": "servable source(s) titled with \"الكاتب العدل\": 9, 52, 60, 177, 198, 200, 201, 204, 208, 220"
+   },
+   "decided": "generation",
+   "finalMode": null,
+   "retrieved": [
+    {
+     "rank": 1,
+     "sourceId": 9,
+     "title": "معدل لقانون الكاتب العدل",
+     "article": null,
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 2,
+     "sourceId": 200,
+     "title": "تعليمات تنظيم عمل الكاتب العدل المرخص رقم 1 لسنة 2015",
+     "article": null,
+     "class": "instruction",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 3,
+     "sourceId": 198,
+     "title": "تعليمات امتحان مزاولة اعمال الكاتب العدل المرخص رقم 2 لسنة 2015",
+     "article": null,
+     "class": "instruction",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 4,
+     "sourceId": 200,
+     "title": "تعليمات تنظيم عمل الكاتب العدل المرخص رقم 1 لسنة 2015",
+     "article": null,
+     "class": "instruction",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 5,
+     "sourceId": 200,
+     "title": "تعليمات تنظيم عمل الكاتب العدل المرخص رقم 1 لسنة 2015",
+     "article": null,
+     "class": "instruction",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 6,
+     "sourceId": 220,
+     "title": "نظام ترخيص الكاتب العدل وتعديلاته رقم 22 لسنة 2015",
+     "article": null,
+     "class": "regulation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 7,
+     "sourceId": 9,
+     "title": "معدل لقانون الكاتب العدل",
+     "article": null,
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 8,
+     "sourceId": 220,
+     "title": "نظام ترخيص الكاتب العدل وتعديلاته رقم 22 لسنة 2015",
+     "article": null,
+     "class": "regulation",
+     "exactHit": false,
+     "companion": false
+    }
+   ],
+   "firstGoldRank": 1,
+   "goldInTopK": 8,
+   "articleRank": null,
+   "heldBackRetrieved": [],
+   "classViolations": [],
+   "integrity": [],
+   "notices": {
+    "citedSuperseded": false,
+    "citationMismatch": false
+   },
+   "answer": null,
+   "pass": true,
+   "why": "first source of it at rank 1"
+  },
+  {
+   "id": "p28",
+   "category": "class_ordering",
+   "question": "ما إجراءات الربط الإلكتروني بين المحاكم والمحامين في التبليغ؟",
+   "expected": {
+    "kind": "class_order",
+    "why": "legislation before lower classes (the hard check)"
+   },
+   "decided": "generation",
+   "finalMode": null,
+   "retrieved": [
+    {
+     "rank": 1,
+     "sourceId": 210,
+     "title": "نظام استعمال الوسائل الالكترونية في الاجراءات القضائية المدنية رقم 95 لسنة 2018",
+     "article": null,
+     "class": "regulation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 2,
+     "sourceId": 210,
+     "title": "نظام استعمال الوسائل الالكترونية في الاجراءات القضائية المدنية رقم 95 لسنة 2018",
+     "article": null,
+     "class": "regulation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 3,
+     "sourceId": 163,
+     "title": "قانون التحكيم رقم 31 لسنة 2001",
+     "article": "6",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 4,
+     "sourceId": 210,
+     "title": "نظام استعمال الوسائل الالكترونية في الاجراءات القضائية المدنية رقم 95 لسنة 2018",
+     "article": null,
+     "class": "regulation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 5,
+     "sourceId": 210,
+     "title": "نظام استعمال الوسائل الالكترونية في الاجراءات القضائية المدنية رقم 95 لسنة 2018",
+     "article": null,
+     "class": "regulation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 6,
+     "sourceId": 182,
+     "title": "قانون معدل لقانون اصول المحاكمات المدنية رقم 14 لسنة 2023",
+     "article": null,
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 7,
+     "sourceId": 197,
+     "title": "تعليمات المراقبة الالكترونية 2025",
+     "article": null,
+     "class": "instruction",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 8,
+     "sourceId": 161,
+     "title": "قانون الشركات رقم 22 لسنة 1997",
+     "article": "284",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    }
+   ],
+   "firstGoldRank": null,
+   "goldInTopK": 0,
+   "articleRank": null,
+   "heldBackRetrieved": [],
+   "classViolations": [],
+   "integrity": [],
+   "notices": {
+    "citedSuperseded": false,
+    "citationMismatch": false
+   },
+   "answer": null,
+   "pass": true,
+   "why": "class order holds over 8 result(s)"
+  },
+  {
+   "id": "p29",
+   "category": "class_ordering",
+   "question": "ما مذكرة التفاهم بين وزارة العدل ونقابة المحامين حول الربط الإلكتروني؟",
+   "expected": {
+    "kind": "retrieve",
+    "sources": [
+     229,
+     230,
+     231,
+     232,
+     233
+    ],
+    "why": "servable source(s) titled with \"مذكرة تفاهم\": 229, 230, 231, 232, 233"
+   },
+   "decided": "generation",
+   "finalMode": null,
+   "retrieved": [
+    {
+     "rank": 1,
+     "sourceId": 229,
+     "title": "مذكرة تفاهم حول الربط الإلكتروني بين وزارة العدل ونقابة المحامين",
+     "article": null,
+     "class": "mou",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 2,
+     "sourceId": 230,
+     "title": "مذكرة تفاهم في مجال المساعدة القانونية بين وزارة العدل ونقابة المحامين",
+     "article": null,
+     "class": "mou",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 3,
+     "sourceId": 231,
+     "title": "مذكرة تفاهم بين وزارة العدل وشركة قسطاس لتقنية المعلومات",
+     "article": null,
+     "class": "mou",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 4,
+     "sourceId": 232,
+     "title": "مذكرة تفاهم بين وزارة العدل ومديرية الأمن العام حول الربط الالكتروني لإدارة ترخيص السواقين والمركبات",
+     "article": "1",
+     "class": "mou",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 5,
+     "sourceId": 232,
+     "title": "مذكرة تفاهم بين وزارة العدل ومديرية الأمن العام حول الربط الالكتروني لإدارة ترخيص السواقين والمركبات",
+     "article": null,
+     "class": "mou",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 6,
+     "sourceId": 233,
+     "title": "مذكرة تفاهم في مجال تبادل المعلومات بين وزارة العدل ودائرة الجمارك الأردنية",
+     "article": null,
+     "class": "mou",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 7,
+     "sourceId": 229,
+     "title": "مذكرة تفاهم حول الربط الإلكتروني بين وزارة العدل ونقابة المحامين",
+     "article": "2",
+     "class": "mou",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 8,
+     "sourceId": 208,
+     "title": "نظام استخدام الوسائل الالكترونية في معاملات الكاتب العدل 2026",
+     "article": null,
+     "class": "regulation",
+     "exactHit": false,
+     "companion": false
+    }
+   ],
+   "firstGoldRank": 1,
+   "goldInTopK": 7,
+   "articleRank": null,
+   "heldBackRetrieved": [],
+   "classViolations": [],
+   "integrity": [],
+   "notices": {
+    "citedSuperseded": false,
+    "citationMismatch": false
+   },
+   "answer": null,
+   "pass": true,
+   "why": "first source of it at rank 1"
+  },
+  {
+   "id": "p30",
+   "category": "not_proven_law",
+   "question": "ما نص المادة 2 من قانون البينات؟",
+   "expected": {
+    "kind": "retrieve",
+    "sources": [
+     166
+    ],
+    "why": "the law is servable (166)"
+   },
+   "decided": "generation",
+   "finalMode": null,
+   "retrieved": [
+    {
+     "rank": 1,
+     "sourceId": 166,
+     "title": "قانون البينات رقم 30 لسنة 1952",
+     "article": "2",
+     "class": "legislation",
+     "exactHit": true,
+     "companion": false
+    },
+    {
+     "rank": 2,
+     "sourceId": 166,
+     "title": "قانون البينات رقم 30 لسنة 1952",
+     "article": "6",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 3,
+     "sourceId": 166,
+     "title": "قانون البينات رقم 30 لسنة 1952",
+     "article": null,
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 4,
+     "sourceId": 175,
+     "title": "قانون اصول المحاكمات المدنية وتعديلاته رقم 24 لسنة 1988",
+     "article": "186",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 5,
+     "sourceId": 172,
+     "title": "القانون المدني الأردني رقم 43 لسنة 1976",
+     "article": "78",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 6,
+     "sourceId": 166,
+     "title": "قانون البينات رقم 30 لسنة 1952",
+     "article": "58",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 7,
+     "sourceId": 172,
+     "title": "القانون المدني الأردني رقم 43 لسنة 1976",
+     "article": "1424",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 8,
+     "sourceId": 172,
+     "title": "القانون المدني الأردني رقم 43 لسنة 1976",
+     "article": "1201",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    }
+   ],
+   "firstGoldRank": 1,
+   "goldInTopK": 4,
+   "articleRank": null,
+   "heldBackRetrieved": [],
+   "classViolations": [],
+   "integrity": [],
+   "notices": {
+    "citedSuperseded": false,
+    "citationMismatch": false
+   },
+   "answer": null,
+   "pass": true,
+   "why": "first source of it at rank 1"
+  },
+  {
+   "id": "p31",
+   "category": "not_proven_law",
+   "question": "ما مدة الإخلاء في قانون المالكين والمستأجرين؟",
+   "expected": {
+    "kind": "retrieve",
+    "sources": [
+     164
+    ],
+    "why": "the law is servable (164)"
+   },
+   "decided": "generation",
+   "finalMode": null,
+   "retrieved": [
+    {
+     "rank": 1,
+     "sourceId": 164,
+     "title": "قانون المالكين والمستأجرين رقم 11 لسنة 1994",
+     "article": "19",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 2,
+     "sourceId": 164,
+     "title": "قانون المالكين والمستأجرين رقم 11 لسنة 1994",
+     "article": "9",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 3,
+     "sourceId": 164,
+     "title": "قانون المالكين والمستأجرين رقم 11 لسنة 1994",
+     "article": "13",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 4,
+     "sourceId": 164,
+     "title": "قانون المالكين والمستأجرين رقم 11 لسنة 1994",
+     "article": "5",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    }
+   ],
+   "firstGoldRank": 1,
+   "goldInTopK": 4,
+   "articleRank": null,
+   "heldBackRetrieved": [],
+   "classViolations": [],
+   "integrity": [],
+   "notices": {
+    "citedSuperseded": false,
+    "citationMismatch": false
+   },
+   "answer": null,
+   "pass": true,
+   "why": "first source of it at rank 1"
+  },
+  {
+   "id": "p32",
+   "category": "not_proven_law",
+   "question": "ما نسبة ضريبة الدخل على الشركات في قانون ضريبة الدخل؟",
+   "expected": {
+    "kind": "retrieve",
+    "sources": [
+     167
+    ],
+    "why": "the law is servable (167)"
+   },
+   "decided": "generation",
+   "finalMode": null,
+   "retrieved": [
+    {
+     "rank": 1,
+     "sourceId": 167,
+     "title": "قانون ضريبة الدخل رقم 34 لسنة 2014",
+     "article": "71",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 2,
+     "sourceId": 167,
+     "title": "قانون ضريبة الدخل رقم 34 لسنة 2014",
+     "article": "2",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 3,
+     "sourceId": 167,
+     "title": "قانون ضريبة الدخل رقم 34 لسنة 2014",
+     "article": "11",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 4,
+     "sourceId": 167,
+     "title": "قانون ضريبة الدخل رقم 34 لسنة 2014",
+     "article": "4",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 5,
+     "sourceId": 167,
+     "title": "قانون ضريبة الدخل رقم 34 لسنة 2014",
+     "article": "12",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    },
+    {
+     "rank": 6,
+     "sourceId": 167,
+     "title": "قانون ضريبة الدخل رقم 34 لسنة 2014",
+     "article": "6",
+     "class": "legislation",
+     "exactHit": false,
+     "companion": false
+    }
+   ],
+   "firstGoldRank": 1,
+   "goldInTopK": 6,
+   "articleRank": null,
+   "heldBackRetrieved": [],
+   "classViolations": [],
+   "integrity": [],
+   "notices": {
+    "citedSuperseded": false,
+    "citationMismatch": false
+   },
+   "answer": null,
+   "pass": true,
+   "why": "first source of it at rank 1"
+  }
+ ]
+}

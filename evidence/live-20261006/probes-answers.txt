@@ -1,0 +1,151 @@
+Target:    ep-noisy-base-asxes3nn.c-4.eu-central-1.aws.neon.tech:5432/neondb (Neon endpoint ep-noisy-base-asxes3nn) — BRANCH (DATABASE_ENVIRONMENT)
+Transport: neon-websocket
+(node:1177) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+✓ chat_provider        CHAT_PROVIDER=openai
+✓ chat_key             OPENAI_API_KEY is set
+✓ embedding_provider   EMBEDDING_PROVIDER=openai
+✓ embedding_key        OPENAI_API_KEY is set
+✓ synthetic_corpus_off evaluation fixtures are not served
+✓ database             reachable
+✓ schema               migrated
+✓ vector_width         EMBEDDING_DIM 1536, vector column 1536
+✓ real_corpus          174 non-synthetic servable source(s)
+✓ integrity_checked    every non-synthetic source has been through the integrity check (56 held back: quarantined or replaced)
+✓ known_defects        no launch-blocking defect of the manifest can be served
+✓ repairs_applied      every applicable manifest repair is applied
+✓ repairs_review       no manifest entry needs a reviewer
+✓ no_test_vectors      no test-model vectors
+✓ embedding_model      6018 of 6018 servable chunks (100%) carry a text-embedding-3-small vector; required ≥ 90%
+✓ p0_any               11 of 11 P0 laws servable
+✓ p0_all               every P0 law is servable
+! authoritative        no Gazette-verified source: every grounded answer will say its texts were not compared with the Official Gazette (an official provenance is not a Gazette verification)
+! anomalies            66 critical / 463 warning inventory anomalies (npm run corpus:inventory)
+✓ probe_embedding      answered in 651 ms, width 1536
+✓ probe_chat           gpt-4o-mini answered in 921 ms
+Preflight: PASS — a live run would measure real models over the real corpus.
+
+Label: LIVE
+
+{"evt":"ai_request","requestId":"probe-zf9z8b7nuv","caller":"service","office":"probe-office","user":"probe-user","lawyer":null,"feature":"chat","models":["gpt-4o-mini"],"embeddingModel":"text-embedding-3-small","promptVersion":"p2-c5ad1854b44e","corpusVersion":"c-f0fdea7d0a58","latencyMs":6471,"success":true,"outcome":"partial","grounding":"partial","retrieved":9,"sources":7,"stageMs":{"retrieval":1156,"grounding":35,"model.expand":945,"model.retrieval":340,"model.answer":2959,"model.judge":1342},"llmCalls":3,"failedCalls":0,"tokensIn":9673,"tokensOut":320,"embeddingTokens":73,"costUsd":0.001644}
+✓ p01 exact_law_name       first source of it at rank 1
+{"evt":"ai_request","requestId":"probe-w9bjbfhwyl","caller":"service","office":"probe-office","user":"probe-user","lawyer":null,"feature":"chat","models":["gpt-4o-mini"],"embeddingModel":"text-embedding-3-small","promptVersion":"p2-c5ad1854b44e","corpusVersion":"c-f0fdea7d0a58","latencyMs":6959,"success":true,"outcome":"partial","grounding":"partial","retrieved":2,"sources":2,"stageMs":{"retrieval":1159,"grounding":8,"model.expand":1110,"model.retrieval":336,"model.answer":3351,"model.judge":1316},"llmCalls":3,"failedCalls":0,"tokensIn":5170,"tokensOut":349,"embeddingTokens":69,"costUsd":0.000986}
+✓ p02 exact_law_name       first source of it at rank 1
+{"evt":"ai_request","requestId":"probe-r5wb7irbit","caller":"service","office":"probe-office","user":"probe-user","lawyer":null,"feature":"chat","models":["gpt-4o-mini"],"embeddingModel":null,"promptVersion":"p2-c5ad1854b44e","corpusVersion":"c-f0fdea7d0a58","latencyMs":14118,"success":true,"outcome":"partial","grounding":"partial","retrieved":8,"sources":1,"stageMs":{"retrieval":548,"grounding":12,"model.answer":5470,"model.judge":988,"model.repair":5570,"model.judge_repair":1488},"llmCalls":4,"failedCalls":0,"tokensIn":13253,"tokensOut":1160,"embeddingTokens":0,"costUsd":0.002684}
+✓ p03 law_and_article      the named article ranks first
+{"evt":"ai_request","requestId":"probe-ldpzouu7sq","caller":"service","office":"probe-office","user":"probe-user","lawyer":null,"feature":"chat","models":["gpt-4o-mini"],"embeddingModel":null,"promptVersion":"p2-c5ad1854b44e","corpusVersion":"c-f0fdea7d0a58","latencyMs":4604,"success":true,"outcome":"partial","grounding":"partial","retrieved":8,"sources":1,"stageMs":{"retrieval":528,"grounding":6,"model.answer":2749,"model.judge":1315},"llmCalls":2,"failedCalls":0,"tokensIn":4712,"tokensOut":275,"embeddingTokens":0,"costUsd":0.000872}
+✓ p04 law_and_article      the named article ranks first
+{"evt":"ai_request","requestId":"probe-k0zbgls696","caller":"service","office":"probe-office","user":"probe-user","lawyer":null,"feature":"chat","models":[],"embeddingModel":null,"promptVersion":"p2-c5ad1854b44e","corpusVersion":"c-f0fdea7d0a58","latencyMs":936,"success":true,"outcome":"clarification","grounding":"none","retrieved":8,"sources":0,"stageMs":{"retrieval":934},"llmCalls":0,"failedCalls":0,"tokensIn":0,"tokensOut":0,"embeddingTokens":0,"costUsd":0}
+✓ p05 article_only         mode clarification
+{"evt":"ai_request","requestId":"probe-yip2dyx9uq","caller":"service","office":"probe-office","user":"probe-user","lawyer":null,"feature":"chat","models":["gpt-4o-mini"],"embeddingModel":null,"promptVersion":"p2-c5ad1854b44e","corpusVersion":"c-f0fdea7d0a58","latencyMs":8773,"success":true,"outcome":"sources_only","grounding":"none","retrieved":8,"sources":8,"stageMs":{"retrieval":587,"grounding":8,"model.answer":8174},"llmCalls":1,"failedCalls":0,"tokensIn":3856,"tokensOut":512,"embeddingTokens":0,"costUsd":0.000886}
+✓ p06 arabic_indic_digits  the named article ranks first
+{"evt":"ai_request","requestId":"probe-o6pqljcg75","caller":"service","office":"probe-office","user":"probe-user","lawyer":null,"feature":"chat","models":["gpt-4o-mini"],"embeddingModel":null,"promptVersion":"p2-c5ad1854b44e","corpusVersion":"c-f0fdea7d0a58","latencyMs":4431,"success":true,"outcome":"partial","grounding":"partial","retrieved":8,"sources":1,"stageMs":{"retrieval":477,"grounding":4,"model.answer":3015,"model.judge":929},"llmCalls":2,"failedCalls":0,"tokensIn":5041,"tokensOut":242,"embeddingTokens":0,"costUsd":0.000901}
+✓ p07 arabic_indic_digits  the named article ranks first
+{"evt":"ai_request","requestId":"probe-0961zwch5g","caller":"service","office":"probe-office","user":"probe-user","lawyer":null,"feature":"chat","models":["gpt-4o-mini"],"embeddingModel":null,"promptVersion":"p2-c5ad1854b44e","corpusVersion":"c-f0fdea7d0a58","latencyMs":7635,"success":true,"outcome":"partial","grounding":"partial","retrieved":8,"sources":2,"stageMs":{"retrieval":678,"grounding":9,"model.expand":844,"model.answer":4102,"model.judge":1852},"llmCalls":3,"failedCalls":0,"tokensIn":6922,"tokensOut":446,"embeddingTokens":0,"costUsd":0.001306}
+✓ p08 morphology           first source of it at rank 1
+{"evt":"ai_request","requestId":"probe-litj3jz8jo","caller":"service","office":"probe-office","user":"probe-user","lawyer":null,"feature":"chat","models":["gpt-4o-mini"],"embeddingModel":null,"promptVersion":"p2-c5ad1854b44e","corpusVersion":"c-f0fdea7d0a58","latencyMs":6609,"success":true,"outcome":"partial","grounding":"partial","retrieved":8,"sources":1,"stageMs":{"retrieval":811,"grounding":16,"model.expand":1007,"model.answer":3438,"model.judge":1317},"llmCalls":3,"failedCalls":0,"tokensIn":8715,"tokensOut":332,"embeddingTokens":0,"costUsd":0.001506}
+✓ p09 morphology           first source of it at rank 1
+{"evt":"ai_request","requestId":"probe-llrz2wpdxq","caller":"service","office":"probe-office","user":"probe-user","lawyer":null,"feature":"chat","models":["gpt-4o-mini"],"embeddingModel":"text-embedding-3-small","promptVersion":"p2-c5ad1854b44e","corpusVersion":"c-f0fdea7d0a58","latencyMs":8407,"success":true,"outcome":"sources_only","grounding":"none","retrieved":8,"sources":8,"stageMs":{"retrieval":1043,"grounding":5,"model.expand":1080,"model.retrieval":361,"model.answer":6269},"llmCalls":2,"failedCalls":0,"tokensIn":4810,"tokensOut":575,"embeddingTokens":62,"costUsd":0.001068}
+✓ p10 provisos             first source of it at rank 1
+{"evt":"ai_request","requestId":"probe-mqtnwt6h6s","caller":"service","office":"probe-office","user":"probe-user","lawyer":null,"feature":"chat","models":["gpt-4o-mini"],"embeddingModel":"text-embedding-3-small","promptVersion":"p2-c5ad1854b44e","corpusVersion":"c-f0fdea7d0a58","latencyMs":6963,"success":true,"outcome":"partial","grounding":"partial","retrieved":9,"sources":1,"stageMs":{"retrieval":1381,"grounding":21,"model.expand":1292,"model.retrieval":291,"model.answer":2993,"model.judge":1259},"llmCalls":3,"failedCalls":0,"tokensIn":8172,"tokensOut":348,"embeddingTokens":52,"costUsd":0.001436}
+✓ p11 provisos             first source of it at rank 1
+{"evt":"ai_request","requestId":"probe-vl862geybp","caller":"service","office":"probe-office","user":"probe-user","lawyer":null,"feature":"chat","models":["gpt-4o-mini"],"embeddingModel":null,"promptVersion":"p2-c5ad1854b44e","corpusVersion":"c-f0fdea7d0a58","latencyMs":4273,"success":true,"outcome":"grounded","grounding":"full","retrieved":5,"sources":1,"stageMs":{"retrieval":489,"grounding":16,"model.answer":2476,"model.judge":1279},"llmCalls":2,"failedCalls":0,"tokensIn":7081,"tokensOut":293,"embeddingTokens":0,"costUsd":0.001238}
+✓ p12 definitions          first source of it at rank 1
+{"evt":"ai_request","requestId":"probe-karthz16cp","caller":"service","office":"probe-office","user":"probe-user","lawyer":null,"feature":"chat","models":["gpt-4o-mini"],"embeddingModel":null,"promptVersion":"p2-c5ad1854b44e","corpusVersion":"c-f0fdea7d0a58","latencyMs":7976,"success":true,"outcome":"partial","grounding":"partial","retrieved":8,"sources":1,"stageMs":{"retrieval":482,"grounding":7,"model.answer":2705,"model.judge":1116,"model.repair":2197,"model.judge_repair":1456},"llmCalls":4,"failedCalls":0,"tokensIn":10316,"tokensOut":521,"embeddingTokens":0,"costUsd":0.00186}
+✓ p13 definitions          first source of it at rank 1
+{"evt":"ai_request","requestId":"probe-7ki5e94457","caller":"service","office":"probe-office","user":"probe-user","lawyer":null,"feature":"chat","models":[],"embeddingModel":null,"promptVersion":"p2-c5ad1854b44e","corpusVersion":"c-f0fdea7d0a58","latencyMs":380,"success":true,"outcome":"no_evidence","grounding":"none","retrieved":0,"sources":0,"stageMs":{"retrieval":188},"llmCalls":0,"failedCalls":0,"tokensIn":0,"tokensOut":0,"embeddingTokens":0,"costUsd":0}
+✗ p14 amended_articles     no source of it in the top 8 (mode no_evidence)
+{"evt":"ai_request","requestId":"probe-l36vejkesw","caller":"service","office":"probe-office","user":"probe-user","lawyer":null,"feature":"chat","models":["gpt-4o-mini"],"embeddingModel":"text-embedding-3-small","promptVersion":"p2-c5ad1854b44e","corpusVersion":"c-f0fdea7d0a58","latencyMs":5509,"success":true,"outcome":"partial","grounding":"partial","retrieved":6,"sources":2,"stageMs":{"retrieval":770,"grounding":7,"model.expand":961,"model.retrieval":343,"model.answer":2217,"model.judge":1542},"llmCalls":3,"failedCalls":0,"tokensIn":7174,"tokensOut":262,"embeddingTokens":41,"costUsd":0.001234}
+✓ p15 amended_articles     first source of it at rank 1
+{"evt":"ai_request","requestId":"probe-vgfc1yiq09","caller":"service","office":"probe-office","user":"probe-user","lawyer":null,"feature":"chat","models":["gpt-4o-mini"],"embeddingModel":null,"promptVersion":"p2-c5ad1854b44e","corpusVersion":"c-f0fdea7d0a58","latencyMs":2719,"success":true,"outcome":"no_evidence","grounding":"none","retrieved":7,"sources":0,"stageMs":{"retrieval":628,"model.answer":961,"model.reread":988},"llmCalls":2,"failedCalls":0,"tokensIn":9076,"tokensOut":34,"embeddingTokens":0,"costUsd":0.001382}
+✓ p16 historical_version   first source of it at rank 1
+{"evt":"ai_request","requestId":"probe-9l2bx4wce4","caller":"service","office":"probe-office","user":"probe-user","lawyer":null,"feature":"chat","models":["gpt-4o-mini"],"embeddingModel":null,"promptVersion":"p2-c5ad1854b44e","corpusVersion":"c-f0fdea7d0a58","latencyMs":6616,"success":true,"outcome":"partial","grounding":"partial","retrieved":8,"sources":4,"stageMs":{"retrieval":895,"grounding":14,"model.answer":4091,"model.judge":1606},"llmCalls":2,"failedCalls":0,"tokensIn":7051,"tokensOut":487,"embeddingTokens":0,"costUsd":0.00135}
+✓ p17 historical_version   first source of it at rank 1
+{"evt":"ai_request","requestId":"probe-q469g737b7","caller":"service","office":"probe-office","user":"probe-user","lawyer":null,"feature":"chat","models":["gpt-4o-mini"],"embeddingModel":null,"promptVersion":"p2-c5ad1854b44e","corpusVersion":"c-f0fdea7d0a58","latencyMs":3458,"success":true,"outcome":"no_evidence","grounding":"none","retrieved":8,"sources":0,"stageMs":{"retrieval":684,"model.expand":964,"model.answer":935,"model.reread":860},"llmCalls":3,"failedCalls":0,"tokensIn":9630,"tokensOut":60,"embeddingTokens":0,"costUsd":0.001481}
+✓ p18 false_premise        first source of it at rank 1
+{"evt":"ai_request","requestId":"probe-vnx96serjo","caller":"service","office":"probe-office","user":"probe-user","lawyer":null,"feature":"chat","models":["gpt-4o-mini"],"embeddingModel":null,"promptVersion":"p2-c5ad1854b44e","corpusVersion":"c-f0fdea7d0a58","latencyMs":3547,"success":true,"outcome":"no_evidence","grounding":"none","retrieved":8,"sources":0,"stageMs":{"retrieval":788,"model.expand":1027,"model.answer":830,"model.reread":892},"llmCalls":3,"failedCalls":0,"tokensIn":11746,"tokensOut":70,"embeddingTokens":0,"costUsd":0.001804}
+✓ p19 false_premise        first source of it at rank 1
+{"evt":"ai_request","requestId":"probe-msysad6h7c","caller":"service","office":"probe-office","user":"probe-user","lawyer":null,"feature":"chat","models":["gpt-4o-mini"],"embeddingModel":null,"promptVersion":"p2-c5ad1854b44e","corpusVersion":"c-f0fdea7d0a58","latencyMs":2477,"success":true,"outcome":"sources_only","grounding":"none","retrieved":8,"sources":8,"stageMs":{"retrieval":522,"grounding":3,"model.answer":1949},"llmCalls":1,"failedCalls":0,"tokensIn":3484,"tokensOut":134,"embeddingTokens":0,"costUsd":0.000603}
+✓ p20 unavailable_law      first source of it at rank 1
+{"evt":"ai_request","requestId":"probe-0k12u0kvyy","caller":"service","office":"probe-office","user":"probe-user","lawyer":null,"feature":"chat","models":["gpt-4o-mini"],"embeddingModel":"text-embedding-3-small","promptVersion":"p2-c5ad1854b44e","corpusVersion":"c-f0fdea7d0a58","latencyMs":13253,"success":true,"outcome":"sources_only","grounding":"none","retrieved":8,"sources":8,"stageMs":{"retrieval":1083,"grounding":7,"model.expand":944,"model.retrieval":392,"model.answer":4580,"model.judge":1310,"model.repair":4408,"model.judge_repair":908},"llmCalls":5,"failedCalls":0,"tokensIn":11575,"tokensOut":908,"embeddingTokens":63,"costUsd":0.002282}
+✓ p21 unavailable_law      first source of it at rank 1
+{"evt":"ai_request","requestId":"probe-g4x0zuu9bh","caller":"service","office":"probe-office","user":"probe-user","lawyer":null,"feature":"chat","models":[],"embeddingModel":null,"promptVersion":"p2-c5ad1854b44e","corpusVersion":"c-f0fdea7d0a58","latencyMs":552,"success":true,"outcome":"clarification","grounding":"none","retrieved":8,"sources":0,"stageMs":{"retrieval":551},"llmCalls":0,"failedCalls":0,"tokensIn":0,"tokensOut":0,"embeddingTokens":0,"costUsd":0}
+✓ p22 cross_law_ambiguity  mode clarification
+{"evt":"ai_request","requestId":"probe-08ps6wnrfo","caller":"service","office":"probe-office","user":"probe-user","lawyer":null,"feature":"chat","models":[],"embeddingModel":null,"promptVersion":"p2-c5ad1854b44e","corpusVersion":"c-f0fdea7d0a58","latencyMs":538,"success":true,"outcome":"clarification","grounding":"none","retrieved":8,"sources":0,"stageMs":{"retrieval":536},"llmCalls":0,"failedCalls":0,"tokensIn":0,"tokensOut":0,"embeddingTokens":0,"costUsd":0}
+✓ p23 cross_law_ambiguity  mode clarification
+{"evt":"ai_request","requestId":"probe-nqjuw6q3a7","caller":"service","office":"probe-office","user":"probe-user","lawyer":null,"feature":"chat","models":["gpt-4o-mini"],"embeddingModel":null,"promptVersion":"p2-c5ad1854b44e","corpusVersion":"c-f0fdea7d0a58","latencyMs":3532,"success":true,"outcome":"no_evidence","grounding":"none","retrieved":8,"sources":0,"stageMs":{"retrieval":765,"model.expand":709,"model.answer":830,"model.reread":1221},"llmCalls":3,"failedCalls":0,"tokensIn":10059,"tokensOut":39,"embeddingTokens":0,"costUsd":0.001532}
+✗ p24 decision_query       no source of it in the top 8 (mode no_evidence)
+{"evt":"ai_request","requestId":"probe-4gdzngdpxy","caller":"service","office":"probe-office","user":"probe-user","lawyer":null,"feature":"chat","models":["gpt-4o-mini"],"embeddingModel":"text-embedding-3-small","promptVersion":"p2-c5ad1854b44e","corpusVersion":"c-f0fdea7d0a58","latencyMs":3162,"success":true,"outcome":"sources_only","grounding":"none","retrieved":6,"sources":6,"stageMs":{"retrieval":1337,"grounding":6,"model.expand":950,"model.retrieval":379,"model.answer":861},"llmCalls":2,"failedCalls":0,"tokensIn":5276,"tokensOut":58,"embeddingTokens":71,"costUsd":0.000828}
+✓ p25 decision_query       first source of it at rank 1
+{"evt":"ai_request","requestId":"probe-8t7mqd5kmk","caller":"service","office":"probe-office","user":"probe-user","lawyer":null,"feature":"chat","models":["gpt-4o-mini"],"embeddingModel":"text-embedding-3-small","promptVersion":"p2-c5ad1854b44e","corpusVersion":"c-f0fdea7d0a58","latencyMs":9228,"success":true,"outcome":"partial","grounding":"partial","retrieved":4,"sources":2,"stageMs":{"retrieval":951,"grounding":13,"model.expand":845,"model.retrieval":364,"model.answer":2093,"model.judge":1050,"model.repair":2736,"model.judge_repair":1511},"llmCalls":5,"failedCalls":0,"tokensIn":11527,"tokensOut":569,"embeddingTokens":29,"costUsd":0.002071}
+✓ p26 regulation_query     first source of it at rank 1
+{"evt":"ai_request","requestId":"probe-it3bn3ri34","caller":"service","office":"probe-office","user":"probe-user","lawyer":null,"feature":"chat","models":["gpt-4o-mini"],"embeddingModel":null,"promptVersion":"p2-c5ad1854b44e","corpusVersion":"c-f0fdea7d0a58","latencyMs":1488,"success":true,"outcome":"sources_only","grounding":"none","retrieved":8,"sources":8,"stageMs":{"retrieval":463,"grounding":4,"model.answer":872},"llmCalls":1,"failedCalls":0,"tokensIn":4660,"tokensOut":21,"embeddingTokens":0,"costUsd":0.000712}
+✓ p27 regulation_query     first source of it at rank 1
+{"evt":"ai_request","requestId":"probe-vgr9usd0gf","caller":"service","office":"probe-office","user":"probe-user","lawyer":null,"feature":"chat","models":["gpt-4o-mini"],"embeddingModel":null,"promptVersion":"p2-c5ad1854b44e","corpusVersion":"c-f0fdea7d0a58","latencyMs":12753,"success":true,"outcome":"grounded","grounding":"full","retrieved":8,"sources":1,"stageMs":{"retrieval":969,"grounding":19,"model.expand":1154,"model.answer":4225,"model.judge":1149,"model.repair":3621,"model.judge_repair":1591},"llmCalls":5,"failedCalls":0,"tokensIn":15697,"tokensOut":641,"embeddingTokens":0,"costUsd":0.002739}
+✓ p28 class_ordering       class order holds over 8 result(s)
+{"evt":"ai_request","requestId":"probe-3q3w4g8wb1","caller":"service","office":"probe-office","user":"probe-user","lawyer":null,"feature":"chat","models":["gpt-4o-mini"],"embeddingModel":null,"promptVersion":"p2-c5ad1854b44e","corpusVersion":"c-f0fdea7d0a58","latencyMs":5627,"success":true,"outcome":"partial","grounding":"partial","retrieved":8,"sources":2,"stageMs":{"retrieval":931,"grounding":11,"model.expand":1006,"model.answer":2309,"model.judge":1360},"llmCalls":3,"failedCalls":0,"tokensIn":7161,"tokensOut":300,"embeddingTokens":0,"costUsd":0.001254}
+✓ p29 class_ordering       first source of it at rank 1
+{"evt":"ai_request","requestId":"probe-ruqxm1foqi","caller":"service","office":"probe-office","user":"probe-user","lawyer":null,"feature":"chat","models":["gpt-4o-mini"],"embeddingModel":null,"promptVersion":"p2-c5ad1854b44e","corpusVersion":"c-f0fdea7d0a58","latencyMs":4142,"success":true,"outcome":"partial","grounding":"partial","retrieved":8,"sources":1,"stageMs":{"retrieval":542,"grounding":3,"model.answer":2633,"model.judge":960},"llmCalls":2,"failedCalls":0,"tokensIn":4703,"tokensOut":241,"embeddingTokens":0,"costUsd":0.00085}
+✓ p30 not_proven_law       first source of it at rank 1
+{"evt":"ai_request","requestId":"probe-5syp6qytkv","caller":"service","office":"probe-office","user":"probe-user","lawyer":null,"feature":"chat","models":["gpt-4o-mini"],"embeddingModel":"text-embedding-3-small","promptVersion":"p2-c5ad1854b44e","corpusVersion":"c-f0fdea7d0a58","latencyMs":3250,"success":true,"outcome":"sources_only","grounding":"none","retrieved":5,"sources":5,"stageMs":{"retrieval":989,"grounding":5,"model.expand":1284,"model.retrieval":342,"model.answer":962},"llmCalls":2,"failedCalls":0,"tokensIn":5786,"tokensOut":66,"embeddingTokens":36,"costUsd":0.000908}
+✓ p31 not_proven_law       first source of it at rank 1
+{"evt":"ai_request","requestId":"probe-ehp67jfmqw","caller":"service","office":"probe-office","user":"probe-user","lawyer":null,"feature":"chat","models":["gpt-4o-mini"],"embeddingModel":null,"promptVersion":"p2-c5ad1854b44e","corpusVersion":"c-f0fdea7d0a58","latencyMs":4276,"success":true,"outcome":"partial","grounding":"partial","retrieved":6,"sources":1,"stageMs":{"retrieval":516,"grounding":22,"model.answer":2719,"model.judge":997},"llmCalls":2,"failedCalls":0,"tokensIn":10943,"tokensOut":258,"embeddingTokens":0,"costUsd":0.001796}
+✓ p32 not_proven_law       first source of it at rank 1
+
+# Real-corpus probes — LIVE
+
+- Ran: 2026-10-06T16:33:01.610Z · commit a1e22b00cf3f · probe file sha256 c5eb0c0f238c8d68… (1 recorded change(s))
+- Target: ep-noisy-base-asxes3nn.c-4.eu-central-1.aws.neon.tech:5432/neondb (Neon endpoint ep-noisy-base-asxes3nn) — BRANCH (DATABASE_ENVIRONMENT) · transport neon-websocket
+- Corpus c-f0fdea7d0a58 · prompt p2-c5ad1854b44e · embedding openai/text-embedding-3-small (1536) · rerank none · chat openai/gpt-4o-mini
+- Preflight: PASS (provider probe included)
+
+| Metric | Value |
+|---|---|
+| Probes passed | 30 / 32 |
+| Law level (n=28): Recall@8 · MRR · Precision@8 | 92.9% · 0.929 · 80.1% |
+| Named article (n=4): Hit@1 · MRR | 100.0% · 1.000 |
+| Designed behaviour (modes) | 3 / 3 |
+| Article integrity (whole or with provisos) | 15 / 15 |
+| HARD: held-back chunks retrieved | 0 |
+| HARD: class-order violations | 0 |
+| HARD: cited sources not servable | 0 |
+| Citation refs valid | 106 / 106 |
+| Generated answers asserting an article in no retrieved source | 1 / 24 |
+| Named article cited | 4 / 4 |
+
+| Probe | Category | Expected | Outcome | Pass |
+|---|---|---|---|---|
+| p01 | exact_law_name | retrieve: the law is servable (160) | first source of it at rank 1 | ✓ |
+| p02 | exact_law_name | retrieve: the law is servable (161) | first source of it at rank 1 | ✓ |
+| p03 | law_and_article | article_first: article 28 is in the servable text of the law | the named article ranks first | ✓ |
+| p04 | law_and_article | article_first: article 5 is in the servable text of the law | the named article ranks first | ✓ |
+| p05 | article_only | clarification: article 28 is in 17 servable texts (177, 193, 185, 166, 163, 161, 165, 174, 34, 167, 160, 176, …) | mode clarification | ✓ |
+| p06 | arabic_indic_digits | article_first: article 28 is in the servable text of the law | the named article ranks first | ✓ |
+| p07 | arabic_indic_digits | article_first: article 5 is in the servable text of the law | the named article ranks first | ✓ |
+| p08 | morphology | retrieve: the law is servable (160) | first source of it at rank 1 | ✓ |
+| p09 | morphology | retrieve: the law is servable (160) | first source of it at rank 1 | ✓ |
+| p10 | provisos | retrieve: the law is servable (160) | first source of it at rank 1 | ✓ |
+| p11 | provisos | retrieve: the law is servable (160) | first source of it at rank 1 | ✓ |
+| p12 | definitions | retrieve: the law is servable (160) | first source of it at rank 1 | ✓ |
+| p13 | definitions | retrieve: the law is servable (159) | first source of it at rank 1 | ✓ |
+| p14 | amended_articles | retrieve: the law is servable (170, 188) | no source of it in the top 8 (mode no_evidence) | ✗ |
+| p15 | amended_articles | retrieve: the law is servable (175, 20, 182) | first source of it at rank 1 | ✓ |
+| p16 | historical_version | retrieve: the law is servable (170, 188) | first source of it at rank 1 | ✓ |
+| p17 | historical_version | retrieve: the law is servable (170, 188) | first source of it at rank 1 | ✓ |
+| p18 | false_premise | retrieve: the law is servable (160) | first source of it at rank 1 | ✓ |
+| p19 | false_premise | retrieve: the law is servable (161) | first source of it at rank 1 | ✓ |
+| p20 | unavailable_law | retrieve: the law is servable (172) | first source of it at rank 1 | ✓ |
+| p21 | unavailable_law | retrieve: the law is servable (172) | first source of it at rank 1 | ✓ |
+| p22 | cross_law_ambiguity | clarification: article 2 is in 39 servable texts (73, 227, 160, 159, 96, 165, 177, 167, 213, 230, 172, 27, …) | mode clarification | ✓ |
+| p23 | cross_law_ambiguity | clarification / grounded / partial / sources_only / no_evidence: the designed behaviour (pre-registered) | mode clarification | ✓ |
+| p24 | decision_query | retrieve: servable source(s) titled with "تفسير + 30": 105 | no source of it in the top 8 (mode no_evidence) | ✗ |
+| p25 | decision_query | retrieve: the law is servable (160) | first source of it at rank 1 | ✓ |
+| p26 | regulation_query | retrieve: servable source(s) titled with "نظام + رسوم + الكاتب العدل": 201 | first source of it at rank 1 | ✓ |
+| p27 | regulation_query | retrieve: servable source(s) titled with "الكاتب العدل": 9, 52, 60, 177, 198, 200, 201, 204, 208, 220 | first source of it at rank 1 | ✓ |
+| p28 | class_ordering | class_order: legislation before lower classes (the hard check) | class order holds over 8 result(s) | ✓ |
+| p29 | class_ordering | retrieve: servable source(s) titled with "مذكرة تفاهم": 229, 230, 231, 232, 233 | first source of it at rank 1 | ✓ |
+| p30 | not_proven_law | retrieve: the law is servable (166) | first source of it at rank 1 | ✓ |
+| p31 | not_proven_law | retrieve: the law is servable (164) | first source of it at rank 1 | ✓ |
+| p32 | not_proven_law | retrieve: the law is servable (167) | first source of it at rank 1 | ✓ |
+
+Details: evidence/live-20261006/probes-answers.json

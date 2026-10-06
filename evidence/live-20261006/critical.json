@@ -1,0 +1,584 @@
+{
+ "target": {
+  "host": "ep-noisy-base-asxes3nn.c-4.eu-central-1.aws.neon.tech",
+  "port": "5432",
+  "database": "neondb",
+  "neonEndpoint": "ep-noisy-base-asxes3nn",
+  "environment": "branch",
+  "basis": "DATABASE_ENVIRONMENT"
+ },
+ "at": "2026-10-06T16:31:56.204Z",
+ "civil": {
+  "sources": [
+   {
+    "id": 2,
+    "title": "القانون المدني الأردني رقم 43 لسنة 1976",
+    "type": "law",
+    "class": "legislation",
+    "integrity": "quarantined",
+    "gazette": "unverified",
+    "provenance": "not recorded",
+    "authority": null,
+    "current": false,
+    "servable": false,
+    "number": "43",
+    "year": 1976,
+    "chunks": 424,
+    "orphanLetterRatio": 4.4,
+    "commonWords": 27,
+    "garbled": false,
+    "links": {
+     "supersedes": null,
+     "amendment_of": null,
+     "replaced_by": null
+    }
+   },
+   {
+    "id": 172,
+    "title": "القانون المدني الأردني رقم 43 لسنة 1976",
+    "type": "law",
+    "class": "legislation",
+    "integrity": "passed",
+    "gazette": "unverified",
+    "provenance": "not recorded",
+    "authority": null,
+    "current": true,
+    "servable": true,
+    "number": "43",
+    "year": 1976,
+    "chunks": 1449,
+    "orphanLetterRatio": 4.8,
+    "commonWords": 30,
+    "garbled": false,
+    "links": {
+     "supersedes": 2,
+     "amendment_of": null,
+     "replaced_by": null
+    }
+   }
+  ],
+  "amendments": []
+ },
+ "penal": {
+  "sources": [
+   {
+    "id": 3,
+    "title": "قانون العقوبات وتعديلاته رقم 16 لسنة 1960",
+    "type": "law",
+    "class": "legislation",
+    "integrity": "quarantined",
+    "gazette": "unverified",
+    "provenance": "not recorded",
+    "authority": null,
+    "current": false,
+    "servable": false,
+    "number": "16",
+    "year": 1960,
+    "chunks": 227,
+    "orphanLetterRatio": 14.9,
+    "commonWords": 16,
+    "garbled": true,
+    "links": {
+     "supersedes": null,
+     "amendment_of": null,
+     "replaced_by": null
+    }
+   },
+   {
+    "id": 6,
+    "title": "قانون معدل لقانون العقوبات رقم 10 لسنة 2022",
+    "type": "law",
+    "class": "legislation",
+    "integrity": "quarantined",
+    "gazette": "unverified",
+    "provenance": "not recorded",
+    "authority": null,
+    "current": false,
+    "servable": false,
+    "number": "10",
+    "year": 2022,
+    "chunks": 32,
+    "orphanLetterRatio": 5.4,
+    "commonWords": 25,
+    "garbled": true,
+    "links": {
+     "supersedes": null,
+     "amendment_of": "3",
+     "replaced_by": null
+    }
+   },
+   {
+    "id": 7,
+    "title": "قانون معدل لقانون العقوبات 2025",
+    "type": "law",
+    "class": "legislation",
+    "integrity": "quarantined",
+    "gazette": "unverified",
+    "provenance": "not recorded",
+    "authority": null,
+    "current": false,
+    "servable": false,
+    "number": null,
+    "year": 2025,
+    "chunks": 15,
+    "orphanLetterRatio": 6.3,
+    "commonWords": 18,
+    "garbled": true,
+    "links": {
+     "supersedes": null,
+     "amendment_of": null,
+     "replaced_by": null
+    }
+   },
+   {
+    "id": 170,
+    "title": "قانون العقوبات رقم 16 لسنة 1960",
+    "type": "law",
+    "class": "legislation",
+    "integrity": "passed",
+    "gazette": "unverified",
+    "provenance": "secondary",
+    "authority": "مصدر أردني ثانوي (لم يُسمَّ في سجلات المستودع)",
+    "current": true,
+    "servable": true,
+    "number": "16",
+    "year": 1960,
+    "chunks": 496,
+    "orphanLetterRatio": 1.7,
+    "commonWords": 38,
+    "garbled": false,
+    "links": {
+     "supersedes": 3,
+     "amendment_of": null,
+     "replaced_by": null
+    }
+   },
+   {
+    "id": 183,
+    "title": "قانون معدل لقانون العقوبات رقم 10 لسنة 2022",
+    "type": "law",
+    "class": "legislation",
+    "integrity": "quarantined",
+    "gazette": "unverified",
+    "provenance": "not recorded",
+    "authority": null,
+    "current": true,
+    "servable": false,
+    "number": "10",
+    "year": 2022,
+    "chunks": 31,
+    "orphanLetterRatio": 5.1,
+    "commonWords": 25,
+    "garbled": true,
+    "links": {
+     "supersedes": 6,
+     "amendment_of": null,
+     "replaced_by": null
+    }
+   },
+   {
+    "id": 188,
+    "title": "قانون معدل لقانون العقوبات 2025",
+    "type": "law",
+    "class": "legislation",
+    "integrity": "passed",
+    "gazette": "unverified",
+    "provenance": "not recorded",
+    "authority": null,
+    "current": true,
+    "servable": true,
+    "number": null,
+    "year": 2025,
+    "chunks": 13,
+    "orphanLetterRatio": 4.2,
+    "commonWords": 32,
+    "garbled": false,
+    "links": {
+     "supersedes": 7,
+     "amendment_of": null,
+     "replaced_by": null
+    }
+   }
+  ],
+  "id3": {
+   "id": 3,
+   "title": "قانون العقوبات وتعديلاته رقم 16 لسنة 1960",
+   "type": "law",
+   "class": "legislation",
+   "integrity": "quarantined",
+   "gazette": "unverified",
+   "provenance": "not recorded",
+   "authority": null,
+   "current": false,
+   "servable": false,
+   "number": "16",
+   "year": 1960,
+   "chunks": 227,
+   "orphanLetterRatio": 14.9,
+   "commonWords": 16,
+   "garbled": true,
+   "links": {
+    "supersedes": null,
+    "amendment_of": null,
+    "replaced_by": null
+   }
+  },
+  "id170": {
+   "id": 170,
+   "title": "قانون العقوبات رقم 16 لسنة 1960",
+   "type": "law",
+   "class": "legislation",
+   "integrity": "passed",
+   "gazette": "unverified",
+   "provenance": "secondary",
+   "authority": "مصدر أردني ثانوي (لم يُسمَّ في سجلات المستودع)",
+   "current": true,
+   "servable": true,
+   "number": "16",
+   "year": 1960,
+   "chunks": 496,
+   "orphanLetterRatio": 1.7,
+   "commonWords": 38,
+   "garbled": false,
+   "links": {
+    "supersedes": 3,
+    "amendment_of": null,
+    "replaced_by": null
+   }
+  }
+ },
+ "lob": [
+  {
+   "id": 159,
+   "title": "قانون التجارة رقم 12 لسنة 1966",
+   "type": "law",
+   "class": "legislation",
+   "integrity": "passed",
+   "gazette": "unverified",
+   "provenance": "official",
+   "authority": "ديوان التشريع والرأي",
+   "current": true,
+   "servable": true,
+   "number": "12",
+   "year": 1966,
+   "chunks": 489,
+   "orphanLetterRatio": 2.2,
+   "commonWords": 34,
+   "garbled": false,
+   "links": {
+    "supersedes": null,
+    "amendment_of": null,
+    "replaced_by": null
+   }
+  },
+  {
+   "id": 160,
+   "title": "قانون العمل رقم 8 لسنة 1996",
+   "type": "law",
+   "class": "legislation",
+   "integrity": "passed",
+   "gazette": "unverified",
+   "provenance": "official",
+   "authority": "ديوان التشريع والرأي",
+   "current": true,
+   "servable": true,
+   "number": "8",
+   "year": 1996,
+   "chunks": 161,
+   "orphanLetterRatio": 2.6,
+   "commonWords": 38,
+   "garbled": false,
+   "links": {
+    "supersedes": null,
+    "amendment_of": null,
+    "replaced_by": null
+   }
+  },
+  {
+   "id": 161,
+   "title": "قانون الشركات رقم 22 لسنة 1997",
+   "type": "law",
+   "class": "legislation",
+   "integrity": "passed",
+   "gazette": "unverified",
+   "provenance": "official",
+   "authority": "ديوان التشريع والرأي",
+   "current": true,
+   "servable": true,
+   "number": "22",
+   "year": 1997,
+   "chunks": 333,
+   "orphanLetterRatio": 3.8,
+   "commonWords": 38,
+   "garbled": false,
+   "links": {
+    "supersedes": null,
+    "amendment_of": null,
+    "replaced_by": null
+   }
+  }
+ ],
+ "labour138": {
+  "sources": [
+   {
+    "id": 160,
+    "title": "قانون العمل رقم 8 لسنة 1996",
+    "type": "law",
+    "class": "legislation",
+    "integrity": "passed",
+    "gazette": "unverified",
+    "provenance": "official",
+    "authority": "ديوان التشريع والرأي",
+    "current": true,
+    "servable": true,
+    "number": "8",
+    "year": 1996,
+    "chunks": 161,
+    "orphanLetterRatio": 2.6,
+    "commonWords": 38,
+    "garbled": false,
+    "links": {
+     "supersedes": null,
+     "amendment_of": null,
+     "replaced_by": null
+    }
+   }
+  ],
+  "article138In": [
+   160
+  ],
+  "verdict": "article 138 is held by fewer than two sources: nothing to compare"
+ },
+ "realProperty": [
+  {
+   "id": 165,
+   "title": "قانون الملكية العقارية رقم 13 لسنة 2019",
+   "type": "law",
+   "class": "legislation",
+   "integrity": "passed",
+   "gazette": "unverified",
+   "provenance": "not recorded",
+   "authority": null,
+   "current": true,
+   "servable": true,
+   "number": "13",
+   "year": 2019,
+   "chunks": 239,
+   "orphanLetterRatio": 2.6,
+   "commonWords": 35,
+   "garbled": false,
+   "links": {
+    "supersedes": null,
+    "amendment_of": null,
+    "replaced_by": null
+   }
+  }
+ ],
+ "notProven": {
+  "evidence": [
+   {
+    "id": 166,
+    "title": "قانون البينات رقم 30 لسنة 1952",
+    "type": "law",
+    "class": "legislation",
+    "integrity": "passed",
+    "gazette": "unverified",
+    "provenance": "not recorded",
+    "authority": null,
+    "current": true,
+    "servable": true,
+    "number": "30",
+    "year": 1952,
+    "chunks": 72,
+    "orphanLetterRatio": 1.4,
+    "commonWords": 36,
+    "garbled": false,
+    "links": {
+     "supersedes": null,
+     "amendment_of": null,
+     "replaced_by": null
+    }
+   }
+  ],
+  "owners-tenants": [
+   {
+    "id": 164,
+    "title": "قانون المالكين والمستأجرين رقم 11 لسنة 1994",
+    "type": "law",
+    "class": "legislation",
+    "integrity": "passed",
+    "gazette": "unverified",
+    "provenance": "not recorded",
+    "authority": null,
+    "current": true,
+    "servable": true,
+    "number": "11",
+    "year": 1994,
+    "chunks": 29,
+    "orphanLetterRatio": 2.1,
+    "commonWords": 36,
+    "garbled": false,
+    "links": {
+     "supersedes": null,
+     "amendment_of": null,
+     "replaced_by": null
+    }
+   }
+  ],
+  "income-tax": [
+   {
+    "id": 167,
+    "title": "قانون ضريبة الدخل رقم 34 لسنة 2014",
+    "type": "law",
+    "class": "legislation",
+    "integrity": "passed",
+    "gazette": "unverified",
+    "provenance": "not recorded",
+    "authority": null,
+    "current": true,
+    "servable": true,
+    "number": "34",
+    "year": 2014,
+    "chunks": 110,
+    "orphanLetterRatio": 1,
+    "commonWords": 29,
+    "garbled": false,
+    "links": {
+     "supersedes": null,
+     "amendment_of": null,
+     "replaced_by": null
+    }
+   }
+  ]
+ },
+ "classes": {
+  "counts": {
+   "law→legislation": 69,
+   "regulation→regulation": 50,
+   "instruction→instruction": 18,
+   "court_decision→court_decision": 88,
+   "mou→mou": 5
+  },
+  "misfiled": [],
+  "templatesNotPleadings": [],
+  "executiveAsDecision": [],
+  "jbaNoProvenance": []
+ },
+ "checks": [
+  {
+   "id": "civil.id2",
+   "status": "INFO",
+   "detail": "id 2 is \"القانون المدني الأردني رقم 43 لسنة 1976\" — the Civil Code"
+  },
+  {
+   "id": "civil.corrupted_not_servable",
+   "status": "PASS",
+   "detail": "no corrupted Civil Code text is servable (2 source(s) of the law)"
+  },
+  {
+   "id": "civil.replacement",
+   "status": "INFO",
+   "detail": "servable Civil Code text(s): 172 (provenance not recorded, gazette unverified)"
+  },
+  {
+   "id": "civil.amendments",
+   "status": "INFO",
+   "detail": "no amending act of the Civil Code in this database"
+  },
+  {
+   "id": "civil.named_question",
+   "status": "PASS",
+   "detail": "named question: 0 chunk(s) of a held-back text; answered from a servable text"
+  },
+  {
+   "id": "civil.own_words",
+   "status": "PASS",
+   "detail": "searched by its own stored words: not reached"
+  },
+  {
+   "id": "civil.by_id",
+   "status": "PASS",
+   "detail": "client-supplied chunk ids: 0 returned"
+  },
+  {
+   "id": "civil.citation",
+   "status": "PASS",
+   "detail": "citation \"القانون المدني رقم 43 لسنة 1976\": 2 verified"
+  },
+  {
+   "id": "penal.historical",
+   "status": "PASS",
+   "detail": "\"ما نص المادة 2 من قانون العقوبات رقم 16 لسنة 1960 كما كان قبل التعديل؟\": no held-back Penal text reached"
+  },
+  {
+   "id": "penal.historical",
+   "status": "PASS",
+   "detail": "\"ما عقوبة السرقة في قانون العقوبات القديم سنة 1960؟\": no held-back Penal text reached"
+  },
+  {
+   "id": "lob.159",
+   "status": "INFO",
+   "detail": "قانون التجارة رقم 12 لسنة 1966: provenance official (ديوان التشريع والرأي), integrity passed, gazette unverified"
+  },
+  {
+   "id": "lob.160",
+   "status": "INFO",
+   "detail": "قانون العمل رقم 8 لسنة 1996: provenance official (ديوان التشريع والرأي), integrity passed, gazette unverified"
+  },
+  {
+   "id": "lob.161",
+   "status": "INFO",
+   "detail": "قانون الشركات رقم 22 لسنة 1997: provenance official (ديوان التشريع والرأي), integrity passed, gazette unverified"
+  },
+  {
+   "id": "labour.138",
+   "status": "INFO",
+   "detail": "article 138 is held by fewer than two sources: nothing to compare"
+  },
+  {
+   "id": "labour.current_versions",
+   "status": "PASS",
+   "detail": "1 servable \"current\" Labour text(s): 160"
+  },
+  {
+   "id": "real_property",
+   "status": "INFO",
+   "detail": "165 \"قانون الملكية العقارية رقم 13 لسنة 2019\" number 13 year 2019 current true passed"
+  },
+  {
+   "id": "not_proven.evidence",
+   "status": "INFO",
+   "detail": "166 \"قانون البينات رقم 30 لسنة 1952\" (matches the registry; ready/passed; servable true; number 30 year 1952)"
+  },
+  {
+   "id": "not_proven.owners-tenants",
+   "status": "INFO",
+   "detail": "164 \"قانون المالكين والمستأجرين رقم 11 لسنة 1994\" (matches the registry; ready/passed; servable true; number 11 year 1994)"
+  },
+  {
+   "id": "not_proven.income-tax",
+   "status": "INFO",
+   "detail": "167 \"قانون ضريبة الدخل رقم 34 لسنة 2014\" (matches the registry; ready/passed; servable true; number 34 year 2014)"
+  },
+  {
+   "id": "classes.misfiled",
+   "status": "PASS",
+   "detail": "every source type agrees with its title"
+  },
+  {
+   "id": "classes.fee_schedules",
+   "status": "PASS",
+   "detail": "0 non-pleading \"لائحة\" filed as template"
+  },
+  {
+   "id": "classes.executive_decisions",
+   "status": "PASS",
+   "detail": "0 executive decision(s) filed as court decisions"
+  },
+  {
+   "id": "classes.jba_provenance",
+   "status": "PASS",
+   "detail": "0 Bar Association republication(s) without secondary provenance"
+  }
+ ]
+}

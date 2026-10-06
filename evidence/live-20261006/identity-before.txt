@@ -1,0 +1,5 @@
+Target:    ep-noisy-base-asxes3nn.c-4.eu-central-1.aws.neon.tech:5432/neondb (Neon endpoint ep-noisy-base-asxes3nn) — BRANCH (DATABASE_ENVIRONMENT)
+Transport: neon-websocket
+Server:    {"database":"neondb","version":"PostgreSQL 18.6 (4e955f5) on aarch64-unknown-linux-gnu","neonTimeline":"18e698bc0c02861631e5b3c30f578fb5","neonTenant":"d0baa1934a48738606580b6bd40cfdd0"}
+Schema:    {"appliedFingerprint":null,"appliedAt":null,"matchesCheckout":false,"missingForCurrentPipeline":["legal_sources.integrity_status","legal_sources.gazette_status","legal_sources.is_synthetic","legal_sources.provenance","legal_sources.jurisdiction","legal_documents.embedding_model","corpus_integrity_events.kind","schema_versions"]} (this checkout: 01541b3d842852ae…)
+Corpus:    {"sources":230,"synthetic":null,"ready":230,"integrity":"column absent (schema predates Phase 2.1)","chunks":7531,"embedded":7531,"embeddingModels":"column absent"}

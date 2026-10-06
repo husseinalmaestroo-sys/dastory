@@ -1,0 +1,2 @@
+Target: ep-noisy-base-asxes3nn.c-4.eu-central-1.aws.neon.tech:5432/neondb (Neon endpoint ep-noisy-base-asxes3nn) — BRANCH (DATABASE_ENVIRONMENT)
+Snapshot: 230 sources, 7531 chunks → evidence/live-20261006/snapshot-before.json

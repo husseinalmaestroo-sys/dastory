@@ -1,0 +1,43 @@
+{
+ "at": "2026-10-06T10:15:41.849Z",
+ "target": {
+  "host": "ep-noisy-base-asxes3nn.c-4.eu-central-1.aws.neon.tech",
+  "port": "5432",
+  "database": "neondb",
+  "neonEndpoint": "ep-noisy-base-asxes3nn",
+  "environment": "branch",
+  "basis": "DATABASE_ENVIRONMENT"
+ },
+ "transport": "neon-websocket",
+ "checkoutSchema": "01541b3d842852ae2ae0d1abc5dee910e13bd5b45f3601f814388b37ef3d443a",
+ "server": {
+  "database": "neondb",
+  "version": "PostgreSQL 18.6 (4e955f5) on aarch64-unknown-linux-gnu",
+  "neonTimeline": "18e698bc0c02861631e5b3c30f578fb5",
+  "neonTenant": "d0baa1934a48738606580b6bd40cfdd0"
+ },
+ "schema": {
+  "appliedFingerprint": null,
+  "appliedAt": null,
+  "matchesCheckout": false,
+  "missingForCurrentPipeline": [
+   "legal_sources.integrity_status",
+   "legal_sources.gazette_status",
+   "legal_sources.is_synthetic",
+   "legal_sources.provenance",
+   "legal_sources.jurisdiction",
+   "legal_documents.embedding_model",
+   "corpus_integrity_events.kind",
+   "schema_versions"
+  ]
+ },
+ "corpus": {
+  "sources": 230,
+  "synthetic": null,
+  "ready": 230,
+  "integrity": "column absent (schema predates Phase 2.1)",
+  "chunks": 7531,
+  "embedded": 7531,
+  "embeddingModels": "column absent"
+ }
+}

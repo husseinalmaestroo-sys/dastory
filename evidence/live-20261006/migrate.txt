@@ -1,0 +1,22 @@
+Target: ep-noisy-base-asxes3nn.c-4.eu-central-1.aws.neon.tech:5432/neondb (Neon endpoint ep-noisy-base-asxes3nn) — BRANCH (DATABASE_ENVIRONMENT)
+Applying db/schema.sql ...
+Schema version: 01541b3d842852ae…
+Tables now present:
+  - ai_requests
+  - anonymous_usage
+  - chat_history
+  - corpus_integrity_events
+  - cost_ledger
+  - court_cases
+  - error_log
+  - law_versions
+  - legal_documents
+  - legal_sources
+  - maintenance_runs
+  - rate_limit_buckets
+  - schema_versions
+  - search_log
+  - service_request_nonces
+  - uploaded_cases
+  - users
+Migration complete.

@@ -6,7 +6,7 @@
 - Engine `ailegal_hussein`: `901ef9f`, branch `claude/ailegal-hussein-phase2`. CI `ai-engine` run #13: green.
 - Dastoori: `c4a522d` (code), plus the commit carrying this report. Branch `claude/hopeful-ritchie-gip3i7`.
 
-**Update, Phase 2.4.** On 2026-10-06 the first stages ran on a Neon branch of production: the corpus was inventoried, the branch migrated, and the preparation reviewed and applied. All 19 registry laws are present, and a second Civil Code copy (172) passes the check. The measurements with real models still wait on `OPENAI_API_KEY`. The commands in [§10](#10-exact-commands-to-finish-live-verification) are superseded by `deploy/live-corpus-sequence.sh`. The migration, ingest and corpus-repair commands now refuse to write to a remote database unless `DATABASE_ENVIRONMENT` is declared. See `PHASE2_4_LIVE_VERIFICATION_REPORT.md`.
+**Update, Phase 2.4.** On 2026-10-06 the first stages ran on a Neon branch of production: the corpus was inventoried, the branch migrated, and the preparation reviewed and applied. All 19 registry laws are present, and a second Civil Code copy (172) passes the check. The measurements with real models ran the same day: the corpus holds, and three answer-quality gates fail (Phase 2.4 report, §3b). The commands in [§10](#10-exact-commands-to-finish-live-verification) are superseded by `deploy/live-corpus-sequence.sh`. The migration, ingest and corpus-repair commands now refuse to write to a remote database unless `DATABASE_ENVIRONMENT` is declared. See `PHASE2_4_LIVE_VERIFICATION_REPORT.md`.
 
 **This phase is NOT complete.** What follows is everything that could be fixed from the repository without the production corpus, and the exact work still owed against it.
 

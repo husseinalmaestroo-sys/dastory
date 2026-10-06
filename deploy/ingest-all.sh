@@ -6,6 +6,10 @@
 #   bash deploy/ingest-all.sh --dry-run    # plan + cost, spends nothing
 #   bash deploy/ingest-all.sh              # for real
 #
+# Both apply the migrations first; --dry-run applies to the ingests only.
+# On a remote database set DATABASE_ENVIRONMENT; on production also
+# CONFIRM_PRODUCTION=yes, the dry run included, since it migrates.
+#
 # Requires DATABASE_URL (Postgres + pgvector) and OPENAI_API_KEY in .env.
 # Safe to re-run: fetch skips files on disk, ingest skips sources already
 # indexed by content hash. An interrupted run resumes where it stopped.
@@ -15,9 +19,9 @@ cd "$(dirname "$0")/.."
 
 DRY=""
 [[ "${1:-}" == "--dry-run" ]] && DRY="--dry-run"
-# Phase 2.4: the writing commands print their target and refuse an undeclared
-# remote database (set DATABASE_ENVIRONMENT) — and production unless confirmed,
-# as in deploy.sh: CONFIRM_PRODUCTION=yes bash deploy/ingest-all.sh
+# Phase 2.4: migrate and ingest print their target; when they write, they
+# refuse an undeclared remote database, and production unless confirmed, as in
+# deploy.sh (src/lib/db-target.ts).
 CONFIRM=""
 [[ "${CONFIRM_PRODUCTION:-}" == "yes" ]] && CONFIRM="--confirm-production"
 

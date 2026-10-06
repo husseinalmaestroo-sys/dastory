@@ -21,7 +21,7 @@
  * mask any real movement in the pipeline.
  */
 import "dotenv/config";
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { preflightText, runLivePreflight } from "../src/lib/eval/live-preflight";
 import { hybridSearch } from "../src/lib/search/hybrid";
@@ -254,6 +254,11 @@ async function main() {
   const report = { generatedAt: new Date().toISOString(), generate, summary: { before: b, after: a }, cases: { before: out.before, after: out.after } };
   writeFileSync("./benchmark/last-run.json", JSON.stringify(report, null, 2), "utf8");
   console.log(`\nالتفاصيل لكل حالة: benchmark/last-run.json\n`);
+  // A live run keeps its evidence together (eval:live, deploy/live-corpus-sequence.sh).
+  if (process.env.EVAL_RESULTS_DIR) {
+    mkdirSync(process.env.EVAL_RESULTS_DIR, { recursive: true });
+    writeFileSync(resolve(process.env.EVAL_RESULTS_DIR, `benchmark-${report.generatedAt.slice(0, 10)}.json`), JSON.stringify(report, null, 2), "utf8");
+  }
   process.exit(0);
 }
 

@@ -92,6 +92,9 @@ async function main() {
   const { groundAnswer } = await import("../src/lib/ai/grounding");
   const { stripInvalidCitations, verifyCitedNumbers } = await import("../src/lib/ai/guard");
   const { foldForSearch, normalizeDigits } = await import("../src/lib/ingest/clean");
+  const { getChunksByIds } = await import("../src/lib/search/hybrid");
+  const { gateRow } = await import("../src/lib/eval/gate");
+  type GateRow = import("../src/lib/eval/gate").GateRow;
   const { resetLawTitleCache } = await import("../src/lib/search/law-reference");
   const { clearEmbeddingCache } = await import("../src/lib/search/embedding-cache");
   const { testProviderHooks } = await import("../src/lib/ai/test-provider");
@@ -263,16 +266,30 @@ async function main() {
     }
     // Fabricated citations in what the user sees: every article number stated
     // must belong to a source the answer cites (its number, or its own text).
+    // "Its own text" is the whole passage, as the serve-time guard reads it
+    // (src/lib/ai/guard.ts), not the 400-character excerpt in the response:
+    // the live run of 2026-10-06 could not tell a cross-reference further into
+    // a passage from a fabrication.
+    const citedIds = o.sources.filter((s) => s.cited).map((s) => s.id);
+    const citedText = citedIds.length ? (await getChunksByIds(citedIds)).map((ch) => normalizeDigits(ch.chunk_text ?? "")).join("\n") : "";
+    const unbacked: string[] = [];
     for (const m of normalizeDigits(o.answer).matchAll(/ماد[ةه]\s*\(?\s*(\d{1,4})/g)) {
       answer.articleMentions++;
       const n = m[1];
+      const mention = new RegExp(`ماد[ةه]\\s*\\(?\\s*${n}(?!\\d)`);
       const backed =
-        o.sources.some((s) => s.cited && (s.articleNumber === n || new RegExp(`ماد[ةه]\\s*\\(?\\s*${n}(?!\\d)`).test(normalizeDigits(s.excerpt)))) ||
+        o.sources.some((s) => s.cited && (s.articleNumber === n || mention.test(normalizeDigits(s.excerpt)))) ||
+        mention.test(citedText) ||
         (["law_not_in_corpus", "law_unavailable", "article_not_in_corpus", "decision_not_in_corpus", "clarification", "out_of_jurisdiction", "no_evidence"].includes(o.mode) && normalizeDigits(c.question ?? "").includes(n));
-      if (!backed) answer.fabricated++;
+      if (!backed) {
+        answer.fabricated++;
+        unbacked.push(n);
+      }
     }
 
     const row: Record<string, unknown> = { id: c.id, category: c.category, mode: o.mode, groundingLevel: o.groundingLevel, grounded: o.grounded, sources: o.sources.length, claims: o.claims.length, llmCalls: r.usage.llmCalls, retrieval: retrievalRows.get(c.id) ?? null };
+    // A failed gate must be inspectable: keep what was said and which numbers failed.
+    if (unbacked.length) Object.assign(row, { unbackedArticles: unbacked, cited: o.sources.filter((s) => s.cited).map((s) => ({ sourceId: s.sourceId, article: s.articleNumber })), answer: o.answer.slice(0, 2000) });
     const fail = (why: string) => {
       expectationFailures.push(`${c.id}: ${why}`);
       row.fail = [...((row.fail as string[]) ?? []), why];
@@ -505,11 +522,9 @@ async function main() {
 
   // ---- gates
   const hard = gates.security_hard;
-  const gateRows: { gate: string; value: number | null; threshold: string; pass: boolean; binding: boolean }[] = [];
-  const check = (gate: string, value: number | null, t: { max?: number; min?: number }, binding: boolean) => {
-    const pass = value !== null && (t.max === undefined || value <= t.max) && (t.min === undefined || value >= t.min);
-    gateRows.push({ gate, value, threshold: t.max !== undefined ? `≤ ${t.max}` : `≥ ${t.min}`, pass, binding });
-  };
+  const gateRows: GateRow[] = [];
+  // A missing value fails, unless `notMeasured` says why this mode has nothing to measure (src/lib/eval/gate.ts).
+  const check = (...args: Parameters<typeof gateRow>) => gateRows.push(gateRow(...args));
   check("cross_tenant_leakage", metrics.security.cross_tenant_leakage, hard.cross_tenant_leakage, true);
   check("fabricated_citations_in_output", metrics.answers.fabricated_citations_in_output, hard.fabricated_citations_in_output, true);
   check("unauthorized_access_accepted", metrics.security.unauthorized_access_accepted, hard.unauthorized_access_accepted, true);
@@ -522,8 +537,12 @@ async function main() {
   check("grounded_answer_rate", metrics.answers.grounded_answer_rate, q.grounded_answer_rate, !offline);
   check("no_answer_accuracy", metrics.answers.no_answer_accuracy, q.no_answer_accuracy, !offline);
   check("hallucination_rate", metrics.answers.no_evidence_hallucination_rate, q.hallucination_rate, !offline);
-  check("retrieval_recall_at_8", metrics.retrieval.recall_at_8, q.retrieval_recall_at_8, !offline);
-  check("retrieval_mrr", metrics.retrieval.mrr, q.retrieval_mrr, !offline);
+  // Live mode runs no retrieval case (their gold is in the synthetic corpus):
+  // the real-corpus benchmark and the pre-registered probes measure retrieval.
+  // Until 2026-10-06 these two gates failed every live run on a null.
+  const noRetrievalCase = metrics.retrieval.cases === 0 ? "no retrieval case in this mode; the real-corpus benchmark (run by eval:live) and the probes measure retrieval" : undefined;
+  check("retrieval_recall_at_8", metrics.retrieval.recall_at_8, q.retrieval_recall_at_8, !offline, noRetrievalCase);
+  check("retrieval_mrr", metrics.retrieval.mrr, q.retrieval_mrr, !offline, noRetrievalCase);
 
   const report = {
     mode: MODE,
@@ -548,7 +567,8 @@ async function main() {
         ],
     cases: results,
   };
-  const dir = resolve(__dirname, "../eval/results");
+  // EVAL_RESULTS_DIR: where eval:live and the live sequence keep their evidence.
+  const dir = process.env.EVAL_RESULTS_DIR ? resolve(process.env.EVAL_RESULTS_DIR) : resolve(__dirname, "../eval/results");
   mkdirSync(dir, { recursive: true });
   const stamp = new Date().toISOString().slice(0, 10);
   const outPath = resolve(dir, `${MODE}-${stamp}.json`);
@@ -556,7 +576,10 @@ async function main() {
 
   const failedBinding = gateRows.filter((g) => g.binding && !g.pass);
   console.log(`\nPhase 2 evaluation (${MODE}) → ${outPath}`);
-  for (const g of gateRows) console.log(`  ${g.pass ? "PASS" : "FAIL"}${g.binding ? "" : " (info)"}  ${g.gate} = ${g.value} (${g.threshold})`);
+  for (const g of gateRows) {
+    if (g.notMeasured) console.log(`  NOT MEASURED  ${g.gate} (${g.threshold}): ${g.notMeasured}`);
+    else console.log(`  ${g.pass ? "PASS" : "FAIL"}${g.binding ? "" : " (info)"}  ${g.gate} = ${g.value} (${g.threshold})`);
+  }
   console.log(`  expectation failures: ${expectationFailures.length}`);
   for (const f of expectationFailures) console.log(`    - ${f}`);
   await getPool().end();

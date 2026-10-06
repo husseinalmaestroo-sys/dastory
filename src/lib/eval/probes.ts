@@ -164,6 +164,22 @@ export function integrityVerdict(
   return provisos.every((s) => got.includes(squash(s).slice(0, 60))) ? "excerpt_with_provisos" : "excerpt_missing_provisos";
 }
 
+/**
+ * Article numbers a set of passages backs: each passage's own number and every
+ * article its WHOLE text mentions. Whole texts, not the 400-character excerpts
+ * a response carries: a sources-only answer quotes its passages in full, so on
+ * 2026-10-06 an excerpt-based check flagged a cross-reference further into a
+ * passage (p25, "article 14") as an assertion no source backed.
+ */
+export function backedArticles(passages: { article: string | null | undefined; text: string | null | undefined }[]): Set<string> {
+  const backed = new Set<string>();
+  for (const p of passages) {
+    if (p.article) backed.add(articleKey(p.article));
+    for (const a of articlesAsserted(p.text ?? "")) backed.add(a);
+  }
+  return backed;
+}
+
 /** Article numbers a text asserts ("المادة 32", "الماده (7)"). */
 export function articlesAsserted(text: string): string[] {
   return [...normalizeDigits(text).matchAll(/(?:ال)?ماد[ةه]\s*[({[]?\s*(\d{1,4})/g)].map((m) => m[1]);

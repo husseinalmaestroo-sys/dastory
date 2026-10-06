@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { classOrderViolations, expectationFor, integrityVerdict, judge, titleHas, type Gold, type Probe, type ProbeGold } from "@/lib/eval/probes";
+import { articlesAsserted, backedArticles, classOrderViolations, expectationFor, integrityVerdict, judge, titleHas, type Gold, type Probe, type ProbeGold } from "@/lib/eval/probes";
 
 /**
  * Phase 2.4: the scoring of the pre-registered real-corpus probes
@@ -113,4 +113,21 @@ test("the probe file: every probe derives an expectation; nothing in it encodes 
   for (const p of file.probes) for (const key of Object.keys(p)) assert.ok(allowed.has(key), `${p.id}: unexpected field ${key} (no answer text, no expected article content)`);
   const categories = new Set(file.probes.map((p) => p.category));
   assert.ok(categories.size >= 14, "at least the fourteen query types of Phase 2.4");
+});
+
+test("backed articles: a passage's own number and every article its WHOLE text mentions (p25, 2026-10-06)", () => {
+  // A sources-only answer prints its passages in full; a cross-reference past
+  // the first 400 characters is backed by the passage, not invented.
+  const long = "نص ".repeat(200) + "مع مراعاة أحكام المادة (١٤) من هذا القانون";
+  const backed = backedArticles([
+    { article: "15", text: long },
+    { article: null, text: "تعتبر الماده 29 ملغاة" },
+    { article: undefined, text: undefined },
+  ]);
+  assert.ok(backed.has("15"));
+  assert.ok(backed.has("14"), "Arabic-Indic digits past the excerpt are read");
+  assert.ok(backed.has("29"));
+  const answer = `${long}\nالمادة 14 [1]`;
+  assert.deepEqual(articlesAsserted(answer).filter((a) => !backed.has(a)), []);
+  assert.deepEqual(articlesAsserted("المادة 780 من القانون المدني").filter((a) => !backed.has(a)), ["780"], "an article no passage holds is still caught");
 });

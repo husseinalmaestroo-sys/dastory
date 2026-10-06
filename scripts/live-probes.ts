@@ -61,7 +61,7 @@ import { assessArabicText } from "../src/lib/ingest/quality";
 import { isServableSource } from "../src/lib/corpus/integrity";
 import { sourceClassOf, type SourceClass } from "../src/lib/corpus/source-class";
 import { loadRegistry, matchRequiredLaw } from "../src/lib/corpus/inventory";
-import { hybridSearch, type SearchResult } from "../src/lib/search/hybrid";
+import { getChunksByIds, hybridSearch, type SearchResult } from "../src/lib/search/hybrid";
 import { analyzeQueryRules } from "../src/lib/search/query-understanding";
 import { expandQuery } from "../src/lib/search/query-expansion";
 import { normalizeQuery } from "../src/lib/search/normalize";
@@ -76,6 +76,7 @@ import { preflightText, probeProviders, runLivePreflight } from "../src/lib/eval
 import {
   articleKey,
   articlesAsserted,
+  backedArticles,
   GENERATED_MODES,
   classOrderViolations,
   expectationFor,
@@ -129,6 +130,8 @@ type ProbeResult = {
     refsValid: number;
     articlesAsserted: string[];
     articlesUngrounded: string[];
+    /** The answer, kept only when an asserted article is not backed. */
+    text?: string;
     citesGoldArticle: boolean | null;
   } | null;
   pass: boolean;
@@ -318,11 +321,14 @@ async function main() {
         finalMode = o.mode;
         const cited = o.sources.filter((s) => s.cited);
         const refs = [...o.answer.matchAll(/\[(\d{1,2})\]/g)].map((m) => Number(m[1]));
-        const grounded = new Set<string>();
-        for (const c of [...chunks.map((x) => ({ a: x.article_number, t: x.chunk_text })), ...o.sources.map((s) => ({ a: s.articleNumber, t: s.excerpt }))]) {
-          if (c.a) grounded.add(articleKey(c.a));
-          for (const a of articlesAsserted(c.t)) grounded.add(a);
-        }
+        // Every passage the answer could quote, in full: the probe's own search and
+        // the pipeline's sources (whose whole texts a sources-only answer prints).
+        const sourceTexts = await getChunksByIds(o.sources.map((s) => s.id));
+        const grounded = backedArticles([
+          ...chunks.map((x) => ({ article: x.article_number, text: x.chunk_text })),
+          ...sourceTexts.map((x) => ({ article: x.article_number, text: x.chunk_text })),
+          ...o.sources.map((s) => ({ article: s.articleNumber, text: s.excerpt })),
+        ]);
         // Only a generated answer asserts anything: a fixed message (clarification,
         // not in corpus) repeats the article number the question gave.
         const asserted = GENERATED_MODES.includes(o.mode) ? articlesAsserted(o.answer) : [];
@@ -334,6 +340,8 @@ async function main() {
           refsValid: refs.filter((n) => o.sources.some((s) => s.ref === n)).length,
           articlesAsserted: asserted,
           articlesUngrounded: asserted.filter((a) => !grounded.has(a)),
+          // Kept only when something failed, so the failure can be read, not guessed at.
+          ...(asserted.some((a) => !grounded.has(a)) ? { text: o.answer.slice(0, 2000) } : {}),
           citesGoldArticle: expected.kind === "article_first" ? cited.some((s) => goldSet.has(s.sourceId) && articleKey(s.articleNumber) === expected.article) : null,
         };
       } else {
